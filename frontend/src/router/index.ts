@@ -20,6 +20,24 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '概览' }
       },
       {
+        path: 'doc',
+        name: 'doc-list',
+        component: () => import('@/views/doc/DocListView.vue'),
+        meta: { title: '图文档' }
+      },
+      {
+        path: 'doc/:id',
+        name: 'doc-detail',
+        component: () => import('@/views/doc/DocDetailView.vue'),
+        meta: { title: '文档详情' }
+      },
+      {
+        path: 'workspace',
+        name: 'workspace',
+        component: () => import('@/views/workspace/WorkspaceView.vue'),
+        meta: { title: '工作空间' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),

@@ -19,10 +19,14 @@
           <el-menu-item index="/system/security">安全策略</el-menu-item>
           <el-menu-item index="/system/lifecycle">生命周期</el-menu-item>
         </el-sub-menu>
-        <el-menu-item index="/doc" disabled>
-          <el-icon><Document /></el-icon>
-          <span>图文档（P2）</span>
-        </el-menu-item>
+        <el-sub-menu index="/doc-center">
+          <template #title>
+            <el-icon><Document /></el-icon>
+            <span>图文档</span>
+          </template>
+          <el-menu-item index="/doc">文档库</el-menu-item>
+          <el-menu-item index="/workspace">工作空间</el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/pse" disabled>
           <el-icon><Share /></el-icon>
           <span>零部件/BOM（P3）</span>
@@ -76,7 +80,7 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
-const activeMenu = computed(() => route.path)
+const activeMenu = computed(() => (route.path.startsWith('/doc') ? '/doc' : route.path))
 
 function onLogout(): void {
   userStore.logout()

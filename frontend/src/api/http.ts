@@ -109,11 +109,7 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
   })
 }
 
-export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  let response = await send(path, options)
-  if (response.status === 401 && (await doRefresh())) {
-    response = await send(path, options)
-  }
+async function unwrap<T>(response: Response): Promise<T> {
   let payload: ApiResult<T> | null = null
   try {
     payload = (await response.json()) as ApiResult<T>
@@ -126,6 +122,72 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     throw new ApiError(code, message, payload?.traceId)
   }
   return payload.data
+}
+
+/** 上传文件（multipart）。同一 content 接口用于单文件与分片场景。 */
+export async function uploadFile<T>(
+  path: string,
+  file: File,
+  query?: RequestOptions['query'],
+  fieldName = 'file'
+): Promise<T> {
+  const form = new FormData()
+  form.append(fieldName, file)
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  const token = getAccessToken()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  let response = await fetch(buildUrl(path, query), { method: 'POST', headers, body: form })
+  if (response.status === 401 && (await doRefresh())) {
+    const retryHeaders = { ...headers }
+    const newToken = getAccessToken()
+    if (newToken) {
+      retryHeaders.Authorization = `Bearer ${newToken}`
+    }
+    response = await fetch(buildUrl(path, query), { method: 'POST', headers: retryHeaders, body: form })
+  }
+  return unwrap<T>(response)
+}
+
+/** 下载二进制内容（带令牌），返回 blob 与文件名。 */
+export async function downloadFile(
+  path: string,
+  query?: RequestOptions['query']
+): Promise<{ blob: Blob; fileName: string }> {
+  const headers: Record<string, string> = {}
+  const token = getAccessToken()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  const response = await fetch(buildUrl(path, query), { headers })
+  if (!response.ok) {
+    throw new ApiError(`HTTP.${response.status}`, `下载失败（${response.status}）`)
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = /filename\*=UTF-8''([^;]+)/i.exec(disposition) ?? /filename="?([^";]+)"?/i.exec(disposition)
+  const fileName = match ? decodeURIComponent(match[1]) : 'download'
+  return { blob: await response.blob(), fileName }
+}
+
+/** 触发浏览器保存。 */
+export function saveBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  let response = await send(path, options)
+  if (response.status === 401 && (await doRefresh())) {
+    response = await send(path, options)
+  }
+  return unwrap<T>(response)
 }
 
 export const http = {
