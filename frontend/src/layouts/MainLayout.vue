@@ -28,10 +28,13 @@
           <el-menu-item index="/doc/class">文档分类</el-menu-item>
           <el-menu-item index="/workspace">工作空间</el-menu-item>
         </el-sub-menu>
-        <el-menu-item index="/pse" disabled>
-          <el-icon><Share /></el-icon>
-          <span>零部件/BOM（P3）</span>
-        </el-menu-item>
+        <el-sub-menu index="/pse">
+          <template #title>
+            <el-icon><Share /></el-icon>
+            <span>零部件/BOM</span>
+          </template>
+          <el-menu-item index="/item">零部件</el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/change" disabled>
           <el-icon><Refresh /></el-icon>
           <span>变更管理（P5）</span>
@@ -85,7 +88,13 @@ const activeMenu = computed(() => {
   if (route.path === '/doc/class') {
     return '/doc/class'
   }
-  return route.path.startsWith('/doc') ? '/doc' : route.path
+  if (route.path.startsWith('/doc')) {
+    return '/doc'
+  }
+  if (route.path.startsWith('/item')) {
+    return '/item'
+  }
+  return route.path
 })
 
 function onLogout(): void {
