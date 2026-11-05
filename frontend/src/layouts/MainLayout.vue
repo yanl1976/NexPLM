@@ -7,10 +7,16 @@
           <el-icon><HomeFilled /></el-icon>
           <span>概览</span>
         </el-menu-item>
-        <el-menu-item index="/system" disabled>
-          <el-icon><Setting /></el-icon>
-          <span>系统管理（P1）</span>
-        </el-menu-item>
+        <el-sub-menu index="/system">
+          <template #title>
+            <el-icon><Setting /></el-icon>
+            <span>系统管理</span>
+          </template>
+          <el-menu-item index="/system/org">组织架构</el-menu-item>
+          <el-menu-item index="/system/user">用户管理</el-menu-item>
+          <el-menu-item index="/system/role">角色与授权</el-menu-item>
+          <el-menu-item index="/system/meta">元数据建模</el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/doc" disabled>
           <el-icon><Document /></el-icon>
           <span>图文档（P2）</span>
