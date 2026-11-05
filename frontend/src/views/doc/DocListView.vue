@@ -13,12 +13,13 @@
 
       <div class="filters">
         <el-input
-          v-model="query.keyword"
-          placeholder="编码或名称"
+          v-model="query.q"
+          placeholder="全文检索：编码/名称/关键词/描述"
           clearable
           class="filter-input"
           @keyup.enter="search"
         />
+        <el-button @click="openAdvanced">高级查询</el-button>
         <el-select v-model="query.docType" placeholder="文档类型" clearable class="filter-select">
           <el-option v-for="(label, value) in DOC_TYPE_LABEL" :key="value" :label="label" :value="value" />
         </el-select>
@@ -40,7 +41,12 @@
 
       <el-table v-loading="loading" :data="rows" border @row-click="openDetail">
         <el-table-column prop="code" label="编码" width="150" />
-        <el-table-column prop="name" label="名称" min-width="220" show-overflow-tooltip />
+        <el-table-column label="名称" min-width="240">
+          <template #default="{ row }">
+            <div>{{ row.name }}</div>
+            <div v-if="row.highlight" class="highlight" v-html="safeHighlight(row.highlight)" />
+          </template>
+        </el-table-column>
         <el-table-column label="类型" width="110">
           <template #default="{ row }">{{ typeLabel(row.docType) }}</template>
         </el-table-column>
@@ -81,6 +87,68 @@
         @size-change="search"
       />
     </el-card>
+
+    <el-drawer v-model="advancedVisible" title="高级查询" size="620px">
+      <el-form label-width="90px">
+        <el-form-item label="全文检索">
+          <el-input v-model="query.q" placeholder="编码/名称/关键词/描述" clearable />
+        </el-form-item>
+        <el-form-item label="文档类型">
+          <el-select v-model="query.docType" clearable placeholder="全部" style="width: 100%">
+            <el-option v-for="(label, value) in DOC_TYPE_LABEL" :key="value" :label="label" :value="value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="query.lifecycleState" clearable placeholder="全部" style="width: 100%">
+            <el-option v-for="(label, value) in DOC_STATE_LABEL" :key="value" :label="label" :value="value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="分类">
+          <el-tree-select
+            v-model="query.classId"
+            :data="classTree"
+            :props="{ label: 'name', children: 'children' }"
+            node-key="id"
+            check-strictly
+            clearable
+            placeholder="含子分类"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="runAdvanced">查询</el-button>
+          <el-button @click="resetQuery">清空条件</el-button>
+        </el-form-item>
+      </el-form>
+
+      <el-divider content-position="left">保存为常用查询</el-divider>
+      <div class="save-bar">
+        <el-input v-model="saveForm.name" placeholder="查询名称，如「我的装配图」" class="save-name" />
+        <el-switch v-model="saveForm.shared" active-text="共享给他人" />
+        <el-button type="primary" :loading="saving" @click="saveQuery">保存</el-button>
+      </div>
+
+      <el-divider content-position="left">已保存的查询</el-divider>
+      <el-table :data="savedQueries" border size="small">
+        <el-table-column prop="name" label="名称" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="ownerName" label="创建人" width="110" />
+        <el-table-column label="共享" width="80">
+          <template #default="{ row }">
+            <el-tag v-if="row.shared" size="small" type="success">共享</el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="140">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="applyQuery(row)">应用</el-button>
+            <el-button link type="danger" :disabled="!row.mine" @click="removeQuery(row)">删除</el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="暂无保存的查询条件" />
+        </template>
+      </el-table>
+    </el-drawer>
 
     <el-dialog v-model="dialogVisible" title="新建文档" width="560px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
@@ -172,8 +240,10 @@ import {
   DOC_TYPE_LABEL,
   docApi,
   docClassApi,
+  docQueryApi,
   type DocClassAttrDef,
   type DocClassNode,
+  type DocSavedQuery,
   type DocSaveReq,
   type DocSummary
 } from '@/api/doc'
@@ -195,11 +265,15 @@ const enumCache = ref<Record<string, { code: string; name: string }[]>>({})
 const query = reactive({
   page: 1,
   size: 20,
-  keyword: '',
+  q: '',
   docType: '',
   lifecycleState: '',
   classId: '' as string
 })
+
+const advancedVisible = ref(false)
+const savedQueries = ref<DocSavedQuery[]>([])
+const saveForm = reactive({ name: '', shared: false })
 
 const form = reactive<DocSaveReq>({
   code: '',
@@ -255,7 +329,7 @@ async function load(): Promise<void> {
     const page = await docApi.list({
       page: query.page,
       size: query.size,
-      keyword: query.keyword || undefined,
+      q: query.q || undefined,
       docType: query.docType || undefined,
       lifecycleState: query.lifecycleState || undefined,
       classId: query.classId || undefined
@@ -272,6 +346,116 @@ async function load(): Promise<void> {
 function search(): void {
   query.page = 1
   load()
+}
+
+/** 只放行后端插入的 mark 标记，其余 HTML 一律转义，避免检索词注入。 */
+function safeHighlight(text?: string | null): string {
+  if (!text) {
+    return ''
+  }
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/&lt;mark&gt;/g, '<mark>')
+    .replace(/&lt;\/mark&gt;/g, '</mark>')
+}
+
+async function openAdvanced(): Promise<void> {
+  advancedVisible.value = true
+  await loadSavedQueries()
+}
+
+async function loadSavedQueries(): Promise<void> {
+  try {
+    savedQueries.value = await docQueryApi.list()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载保存的查询失败')
+  }
+}
+
+function runAdvanced(): void {
+  search()
+  advancedVisible.value = false
+}
+
+function resetQuery(): void {
+  query.q = ''
+  query.docType = ''
+  query.lifecycleState = ''
+  query.classId = ''
+  query.page = 1
+  load()
+}
+
+function currentCondition(): Record<string, string> {
+  const condition: Record<string, string> = {}
+  if (query.q) {
+    condition.q = query.q
+  }
+  if (query.docType) {
+    condition.docType = query.docType
+  }
+  if (query.lifecycleState) {
+    condition.lifecycleState = query.lifecycleState
+  }
+  if (query.classId) {
+    condition.classId = query.classId
+  }
+  return condition
+}
+
+async function saveQuery(): Promise<void> {
+  if (!saveForm.name.trim()) {
+    ElMessage.warning('请输入查询名称')
+    return
+  }
+  const condition = currentCondition()
+  if (Object.keys(condition).length === 0) {
+    ElMessage.warning('当前没有查询条件可保存')
+    return
+  }
+  saving.value = true
+  try {
+    await docQueryApi.create({
+      name: saveForm.name.trim(),
+      conditionJson: JSON.stringify(condition),
+      shared: saveForm.shared
+    })
+    ElMessage.success('已保存')
+    saveForm.name = ''
+    await loadSavedQueries()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+function applyQuery(row: DocSavedQuery): void {
+  try {
+    const condition = JSON.parse(row.conditionJson) as Record<string, string>
+    query.q = condition.q ?? ''
+    query.docType = condition.docType ?? ''
+    query.lifecycleState = condition.lifecycleState ?? ''
+    query.classId = condition.classId ?? ''
+    query.page = 1
+    load()
+    advancedVisible.value = false
+    ElMessage.success(`已应用「${row.name}」`)
+  } catch {
+    ElMessage.error('查询条件格式不合法')
+  }
+}
+
+async function removeQuery(row: DocSavedQuery): Promise<void> {
+  try {
+    await docQueryApi.remove(row.id)
+    ElMessage.success('已删除')
+    await loadSavedQueries()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除失败')
+  }
 }
 
 async function loadClassTree(): Promise<void> {
@@ -413,6 +597,28 @@ onMounted(() => {
 .pager {
   margin-top: 12px;
   justify-content: flex-end;
+}
+
+.highlight {
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.highlight :deep(mark) {
+  background: #fff3c4;
+  color: #d46b08;
+  padding: 0 2px;
+}
+
+.save-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.save-name {
+  width: 240px;
 }
 
 :deep(.el-table__row) {

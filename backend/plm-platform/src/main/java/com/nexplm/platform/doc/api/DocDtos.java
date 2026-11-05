@@ -35,7 +35,7 @@ public final class DocDtos {
                              String lifecycleState, Integer revision, Integer iteration,
                              String revisionLabel, Integer fileCount, String fileExt,
                              Long ownerId, OffsetDateTime updatedAt,
-                             Long classId, String className) {
+                             Long classId, String className, String highlight) {
     }
 
     public record CheckoutInfo(Long userId, String userLabel, OffsetDateTime checkedOutAt,

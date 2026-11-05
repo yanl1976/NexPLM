@@ -64,6 +64,8 @@ export interface DocSummary {
   updatedAt: string
   classId?: string | null
   className?: string | null
+  /** 全文检索命中片段（含 <mark> 标记，前端需转义后渲染）。 */
+  highlight?: string | null
 }
 
 export interface DocDetail {
@@ -236,6 +238,8 @@ export const docApi = {
     docType?: string
     lifecycleState?: string
     classId?: string
+    /** 全文检索关键字（编码/名称/关键词/描述）。 */
+    q?: string
   }): Promise<PageResult<DocSummary>> {
     return http.get<PageResult<DocSummary>>('/docs', params)
   },
@@ -291,6 +295,40 @@ export const DOC_STATE_LABEL: Record<string, string> = {
   InWorkflow: '审批中',
   Released: '已发布',
   Obsolete: '已作废'
+}
+
+/** 保存的高级查询条件。 */
+export interface DocSavedQuery {
+  id: string
+  name: string
+  entityCode: string
+  ownerId: string
+  ownerName?: string | null
+  conditionJson: string
+  shared: boolean
+  mine: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DocSavedQueryReq {
+  name: string
+  conditionJson: string
+  shared?: boolean
+}
+
+/** 高级查询条件接口：保存/复用/共享。 */
+export const docQueryApi = {
+  list: (): Promise<DocSavedQuery[]> => http.get<DocSavedQuery[]>('/doc-queries'),
+  create(req: DocSavedQueryReq): Promise<DocSavedQuery> {
+    return http.post<DocSavedQuery>('/doc-queries', req)
+  },
+  update(id: string, req: DocSavedQueryReq): Promise<DocSavedQuery> {
+    return http.put<DocSavedQuery>(`/doc-queries/${id}`, req)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/doc-queries/${id}`)
+  }
 }
 
 /** 文档分类接口：分类树、增删改、分类属性（含继承）。 */

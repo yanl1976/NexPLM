@@ -44,6 +44,11 @@ import java.util.Set;
 public class DocService {
 
     public static final String OBJECT_TYPE = "PdmDoc";
+
+    /** 全文检索文本表达式，需与 Flyway V9 的表达式索引完全一致才能命中索引。 */
+    private static final String SEARCH_TEXT =
+            "coalesce(code, '') || ' ' || coalesce(name, '') || ' ' || "
+                    + "coalesce(ext_json ->> 'keyword', '') || ' ' || coalesce(ext_json ->> 'description', '')";
     private static final String ENUM_DOC_TYPE = "DocType";
     private static final String ENUM_DOC_SOURCE = "DocSource";
     private static final String SOURCE_NORMAL = "NORMAL";
@@ -194,7 +199,8 @@ public class DocService {
     }
 
     public PageResult<DocDtos.DocSummary> page(int page, int size, String keyword,
-                                               String docType, String lifecycleState, Long classId) {
+                                               String docType, String lifecycleState, Long classId,
+                                               String fullText) {
         int pageNo = Math.max(1, page);
         int pageSize = Math.min(Math.max(1, size), 200);
         LambdaQueryWrapper<PlmObject> wrapper = new LambdaQueryWrapper<PlmObject>()
@@ -204,6 +210,13 @@ public class DocService {
         if (keyword != null && !keyword.isBlank()) {
             String kw = keyword.trim();
             wrapper.and(w -> w.like(PlmObject::getCode, kw).or().like(PlmObject::getName, kw));
+        }
+        if (fullText != null && !fullText.isBlank()) {
+            String term = fullText.trim();
+            wrapper.and(w -> w
+                    .apply("to_tsvector('simple', " + SEARCH_TEXT + ") @@ plainto_tsquery('simple', {0})", term)
+                    .or()
+                    .apply(SEARCH_TEXT + " ILIKE {0}", "%" + term + "%"));
         }
         if (docType != null && !docType.isBlank()) {
             wrapper.apply("ext_json ->> 'docType' = {0}", docType);
@@ -243,12 +256,16 @@ public class DocService {
                         classNames.put(rs.getLong(1), rs.getString(2));
                     });
         }
+        Map<Long, String> highlights = fullText == null || fullText.isBlank() || ids.isEmpty()
+                ? Map.of()
+                : queryHighlights(ids, fullText.trim());
         List<DocDtos.DocSummary> items = result.getRecords().stream()
                 .map(object -> {
                     DocMaster master = masters.get(object.getId());
                     Long itemClassId = master == null ? null : master.getClassId();
                     return toSummary(object, master,
-                            itemClassId == null ? null : classNames.get(itemClassId));
+                            itemClassId == null ? null : classNames.get(itemClassId),
+                            highlights.get(object.getId()));
                 })
                 .toList();
         return PageResult.of(items, result.getTotal(), pageNo, pageSize);
@@ -558,7 +575,8 @@ public class DocService {
         return value instanceof String text && !text.isBlank() ? text : fallback;
     }
 
-    private DocDtos.DocSummary toSummary(PlmObject object, DocMaster master, String className) {
+    private DocDtos.DocSummary toSummary(PlmObject object, DocMaster master, String className,
+                                         String highlight) {
         Map<String, Object> ext = readExt(object.getExtJson());
         return new DocDtos.DocSummary(object.getId(), object.getCode(), object.getName(),
                 asText(ext.get("docType"), master == null ? null : master.getDocType()),
@@ -568,7 +586,23 @@ public class DocService {
                 master == null ? 0 : master.getFileCount(),
                 master == null ? null : master.getFileExt(),
                 object.getOwnerId(), object.getUpdatedAt(),
-                master == null ? null : master.getClassId(), className);
+                master == null ? null : master.getClassId(), className, highlight);
+    }
+
+    /** 命中片段：用 ts_headline 生成带 &lt;mark&gt; 标记的摘要，中文无词元时回退为原文截断。 */
+    private Map<Long, String> queryHighlights(List<Long> ids, String term) {
+        Map<Long, String> highlights = new HashMap<>();
+        String sql = "SELECT id, ts_headline('simple', " + SEARCH_TEXT
+                + ", plainto_tsquery('simple', ?), "
+                + "'StartSel=<mark>,StopSel=</mark>,MaxFragments=2,MaxWords=40,MinWords=5') "
+                + "FROM plm_object WHERE id IN (" + joinIds(ids) + ")";
+        jdbcTemplate.query(sql, rs -> {
+            String headline = rs.getString(2);
+            if (headline != null && !headline.isBlank()) {
+                highlights.put(rs.getLong(1), headline);
+            }
+        }, term);
+        return highlights;
     }
 
     private DocDtos.CheckoutInfo toCheckoutInfo(CheckoutService.Lock lock) {

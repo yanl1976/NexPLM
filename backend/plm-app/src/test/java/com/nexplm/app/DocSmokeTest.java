@@ -238,6 +238,31 @@ class DocSmokeTest {
         mockMvc.perform(delete("/api/v1/doc-classes/{id}", assyId)
                         .header("Authorization", "Bearer " + admin))
                 .andExpect(status().isConflict());
+
+        // 23. 全文检索：中文由 ILIKE 兜底，两个「装配图」文档命中并返回高亮片段
+        JsonNode searched = call(get("/api/v1/docs?page=1&size=20&q=装配"), admin, null);
+        assertThat(searched.path("total").asLong()).isEqualTo(2);
+        assertThat(searched.path("items").get(0).path("name").asText()).contains("装配");
+        assertThat(searched.path("items").get(0).path("highlight").asText()).isNotBlank();
+
+        // 24. 保存高级查询：可保存、可共享、他人可见但不可删
+        JsonNode saved = call(post("/api/v1/doc-queries"), admin, json(Map.of(
+                "name", "我的装配图查询",
+                "conditionJson", "{\"q\":\"装配\",\"docType\":\"DESIGN\"}",
+                "shared", true)));
+        long queryId = saved.path("id").asLong();
+        assertThat(queryId).isPositive();
+        JsonNode queries = call(get("/api/v1/doc-queries"), admin, null);
+        assertThat(queries.size()).isEqualTo(1);
+        assertThat(queries.get(0).path("shared").asBoolean()).isTrue();
+        assertThat(queries.get(0).path("mine").asBoolean()).isTrue();
+
+        JsonNode otherQueries = call(get("/api/v1/doc-queries"), other, null);
+        assertThat(otherQueries.size()).isEqualTo(1);
+        assertThat(otherQueries.get(0).path("mine").asBoolean()).isFalse();
+        mockMvc.perform(delete("/api/v1/doc-queries/{id}", queryId)
+                        .header("Authorization", "Bearer " + other))
+                .andExpect(status().isForbidden());
     }
 
     // ---------------------------------------------------------------- 工具
