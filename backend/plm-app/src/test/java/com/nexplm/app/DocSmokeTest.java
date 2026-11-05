@@ -14,11 +14,14 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -263,6 +266,38 @@ class DocSmokeTest {
         mockMvc.perform(delete("/api/v1/doc-queries/{id}", queryId)
                         .header("Authorization", "Bearer " + other))
                 .andExpect(status().isForbidden());
+
+        // 25. 批量下载：两个版本各取主文件打包，重名自动加序号
+        MvcResult zipResult = mockMvc.perform(post("/api/v1/docs/batch/download")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("ids", new long[]{docId, newId}))))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertThat(zipResult.getResponse().getContentType()).contains("zip");
+        byte[] zipBytes = zipResult.getResponse().getContentAsByteArray();
+        assertThat(zipBytes.length).isPositive();
+        int entries = 0;
+        try (ZipInputStream zipIn = new ZipInputStream(new ByteArrayInputStream(zipBytes),
+                StandardCharsets.UTF_8)) {
+            ZipEntry entry = zipIn.getNextEntry();
+            while (entry != null) {
+                assertThat(entry.getName()).startsWith("DOC-000001_");
+                entries++;
+                entry = zipIn.getNextEntry();
+            }
+        }
+        assertThat(entries).isEqualTo(2);
+
+        // 26. 批量授权：逐条返回结果，ACL 可查到
+        JsonNode grantResults = call(post("/api/v1/docs/batch/grant"), admin, json(Map.of(
+                "ids", new long[]{docId, newId}, "actorType", "ALL", "actions", "READ")));
+        assertThat(grantResults.size()).isEqualTo(2);
+        assertThat(grantResults.get(0).path("ok").asBoolean()).isTrue();
+        JsonNode aclAfter = call(get("/api/v1/docs/{id}/acl", newId), admin, null);
+        assertThat(aclAfter.size()).isEqualTo(1);
+        assertThat(aclAfter.get(0).path("actorType").asText()).isEqualTo("ALL");
+        assertThat(aclAfter.get(0).path("actions").asText()).isEqualTo("READ");
     }
 
     // ---------------------------------------------------------------- 工具

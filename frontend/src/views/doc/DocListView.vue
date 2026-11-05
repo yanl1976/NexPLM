@@ -37,9 +37,20 @@
           class="filter-tree"
         />
         <el-button type="primary" @click="search">查询</el-button>
+        <el-button :disabled="selectedIds.length === 0" :loading="downloading" @click="batchDownload">
+          批量下载{{ selectedIds.length ? `(${selectedIds.length})` : '' }}
+        </el-button>
+        <el-button :disabled="selectedIds.length === 0" @click="openGrant">批量授权</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="rows" border @row-click="openDetail">
+      <el-table
+        v-loading="loading"
+        :data="rows"
+        border
+        @row-click="openDetail"
+        @selection-change="onSelectionChange"
+      >
+        <el-table-column type="selection" width="46" />
         <el-table-column prop="code" label="编码" width="150" />
         <el-table-column label="名称" min-width="240">
           <template #default="{ row }">
@@ -87,6 +98,43 @@
         @size-change="search"
       />
     </el-card>
+
+    <el-dialog v-model="grantVisible" title="批量授权" width="540px">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        :title="`将对选中的 ${selectedIds.length} 个文档下发同一条授权`"
+        class="grant-tip"
+      />
+      <el-form label-width="100px">
+        <el-form-item label="被授权者类型">
+          <el-select v-model="grantForm.actorType" style="width: 100%">
+            <el-option v-for="item in ACL_ACTOR_TYPES" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="needActorId" label="被授权者 ID">
+          <el-input v-model="grantForm.actorId" placeholder="用户 / 角色 / 用户组的 ID" />
+        </el-form-item>
+        <el-form-item label="操作">
+          <el-checkbox-group v-model="grantForm.actions">
+            <el-checkbox v-for="item in ACL_ACTIONS" :key="item.value" :value="item.value">
+              {{ item.label }}
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="效果">
+          <el-radio-group v-model="grantForm.effect">
+            <el-radio value="ALLOW">允许</el-radio>
+            <el-radio value="DENY">拒绝</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="grantVisible = false">取消</el-button>
+        <el-button type="primary" :loading="granting" @click="submitGrant">确定授权</el-button>
+      </template>
+    </el-dialog>
 
     <el-drawer v-model="advancedVisible" title="高级查询" size="620px">
       <el-form label-width="90px">
@@ -231,14 +279,17 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import {
+  ACL_ACTIONS,
+  ACL_ACTOR_TYPES,
   DOC_SOURCE_LABEL,
   DOC_STATE_LABEL,
   DOC_TYPE_LABEL,
   docApi,
+  docBatchApi,
   docClassApi,
   docQueryApi,
   type DocClassAttrDef,
@@ -274,6 +325,19 @@ const query = reactive({
 const advancedVisible = ref(false)
 const savedQueries = ref<DocSavedQuery[]>([])
 const saveForm = reactive({ name: '', shared: false })
+
+const selectedIds = ref<string[]>([])
+const downloading = ref(false)
+const grantVisible = ref(false)
+const granting = ref(false)
+const grantForm = reactive({
+  actorType: 'USER',
+  actorId: '',
+  actions: ['READ'] as string[],
+  effect: 'ALLOW'
+})
+
+const needActorId = computed(() => !['ALL', 'CREATOR', 'OWNER'].includes(grantForm.actorType))
 
 const form = reactive<DocSaveReq>({
   code: '',
@@ -553,8 +617,76 @@ async function onCreate(): Promise<void> {
   }
 }
 
-function openDetail(row: DocSummary): void {
+function openDetail(row: DocSummary, column?: { type?: string }): void {
+  if (column?.type === 'selection') {
+    return
+  }
   router.push({ name: 'doc-detail', params: { id: row.id } })
+}
+
+function onSelectionChange(selection: DocSummary[]): void {
+  selectedIds.value = selection.map((row) => row.id)
+}
+
+async function batchDownload(): Promise<void> {
+  if (selectedIds.value.length === 0) {
+    return
+  }
+  downloading.value = true
+  try {
+    await docBatchApi.download(selectedIds.value)
+    ElMessage.success(`已打包下载 ${selectedIds.value.length} 个文档`)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量下载失败')
+  } finally {
+    downloading.value = false
+  }
+}
+
+function openGrant(): void {
+  if (selectedIds.value.length === 0) {
+    ElMessage.warning('请先勾选文档')
+    return
+  }
+  grantForm.actorType = 'USER'
+  grantForm.actorId = ''
+  grantForm.actions = ['READ']
+  grantForm.effect = 'ALLOW'
+  grantVisible.value = true
+}
+
+async function submitGrant(): Promise<void> {
+  if (grantForm.actions.length === 0) {
+    ElMessage.warning('请选择授权操作')
+    return
+  }
+  if (needActorId.value && !grantForm.actorId.trim()) {
+    ElMessage.warning('请填写被授权者 ID')
+    return
+  }
+  granting.value = true
+  try {
+    const results = await docBatchApi.grant({
+      ids: selectedIds.value,
+      actorType: grantForm.actorType,
+      actorId: needActorId.value ? grantForm.actorId.trim() : null,
+      actions: grantForm.actions.join(','),
+      effect: grantForm.effect
+    })
+    const failed = results.filter((item) => !item.ok)
+    if (failed.length === 0) {
+      ElMessage.success(`已为 ${results.length} 个文档授权`)
+    } else {
+      ElMessage.warning(
+        `${results.length - failed.length} 个成功，${failed.length} 个失败：${failed[0]?.message ?? ''}`
+      )
+    }
+    grantVisible.value = false
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量授权失败')
+  } finally {
+    granting.value = false
+  }
 }
 
 onMounted(() => {
@@ -619,6 +751,10 @@ onMounted(() => {
 
 .save-name {
   width: 240px;
+}
+
+.grant-tip {
+  margin-bottom: 12px;
 }
 
 :deep(.el-table__row) {

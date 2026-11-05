@@ -1,4 +1,4 @@
-import { downloadFile, http, saveBlob, uploadFile } from './http'
+import { downloadFile, downloadFileByPost, http, saveBlob, uploadFile } from './http'
 
 /** 文档类型（与后端 DocType 枚举一致）。 */
 export type DocType = 'DESIGN' | 'TECH' | 'PROCESS' | 'STANDARD' | 'OTHER'
@@ -295,6 +295,52 @@ export const DOC_STATE_LABEL: Record<string, string> = {
   InWorkflow: '审批中',
   Released: '已发布',
   Obsolete: '已作废'
+}
+
+/** 实例授权可选类型与动作（与后端 AclService / PermissionRuleService 一致）。 */
+export const ACL_ACTOR_TYPES = [
+  { value: 'USER', label: '用户' },
+  { value: 'ROLE', label: '角色' },
+  { value: 'GROUP', label: '用户组' },
+  { value: 'GROUP_ROLE', label: '组内角色' },
+  { value: 'CREATOR', label: '创建人' },
+  { value: 'OWNER', label: '属主' },
+  { value: 'ALL', label: '所有人' }
+]
+
+export const ACL_ACTIONS = [
+  { value: 'READ', label: '读取' },
+  { value: 'WRITE', label: '修改' },
+  { value: 'DELETE', label: '删除' },
+  { value: 'GRANT', label: '授权' },
+  { value: 'CHECKOUT', label: '检出' },
+  { value: 'RELEASE', label: '发布/解锁' },
+  { value: 'APPROVE', label: '审批' }
+]
+
+export interface BatchGrantReq {
+  ids: string[]
+  actorType: string
+  actorId?: string | null
+  actions: string
+  effect?: string
+}
+
+export interface BatchGrantResult {
+  id: string
+  ok: boolean
+  message?: string | null
+}
+
+/** 批量操作：打包下载、批量授权。 */
+export const docBatchApi = {
+  async download(ids: string[]): Promise<void> {
+    const { blob, fileName } = await downloadFileByPost('/docs/batch/download', { ids })
+    saveBlob(blob, fileName)
+  },
+  grant(req: BatchGrantReq): Promise<BatchGrantResult[]> {
+    return http.post<BatchGrantResult[]>('/docs/batch/grant', req)
+  }
 }
 
 /** 保存的高级查询条件。 */

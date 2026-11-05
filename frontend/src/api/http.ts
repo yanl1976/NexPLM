@@ -170,6 +170,40 @@ export async function downloadFile(
   return { blob: await response.blob(), fileName }
 }
 
+/** 以 POST 提交条件并下载二进制（如批量打包下载）。 */
+export async function downloadFileByPost(
+  path: string,
+  body: unknown
+): Promise<{ blob: Blob; fileName: string }> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const token = getAccessToken()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  let response = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
+  if (response.status === 401 && (await doRefresh())) {
+    const newToken = getAccessToken()
+    if (newToken) {
+      headers.Authorization = `Bearer ${newToken}`
+    }
+    response = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
+  }
+  if (!response.ok) {
+    let message = `下载失败（${response.status}）`
+    try {
+      const payload = (await response.json()) as ApiResult<unknown>
+      message = payload?.message ?? message
+    } catch {
+      // 二进制错误体忽略，使用默认提示
+    }
+    throw new ApiError(`HTTP.${response.status}`, message)
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = /filename\*=UTF-8''([^;]+)/i.exec(disposition) ?? /filename="?([^";]+)"?/i.exec(disposition)
+  const fileName = match ? decodeURIComponent(match[1]) : 'download'
+  return { blob: await response.blob(), fileName }
+}
+
 /** 触发浏览器保存。 */
 export function saveBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob)
