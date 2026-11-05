@@ -62,6 +62,9 @@ class DocSmokeTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @Test
     void documentLifecycleWithFilesAndCheckin() throws Exception {
         String admin = login("admin", "Admin@12345");
@@ -160,6 +163,36 @@ class DocSmokeTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("name", "已发布后改名", "docType", "DESIGN"))))
                 .andExpect(status().isConflict());
+
+        // 13. 对象查看器页签：元数据驱动，PdmDoc 默认 7 个页签
+        JsonNode tabs = call(get("/api/v1/meta/entities/PdmDoc/tabs"), admin, null);
+        assertThat(tabs.size()).isEqualTo(7);
+        assertThat(tabs.get(0).path("tabType").asText()).isEqualTo("PROPS");
+        assertThat(tabs.get(6).path("tabType").asText()).isEqualTo("LOGS");
+
+        // 14. 操作日志：审计事件可见（检出/检入/强制解锁）
+        JsonNode logs = call(get("/api/v1/docs/{id}/logs?limit=50", newId), admin, null);
+        assertThat(logs.size()).isPositive();
+        assertThat(logs.findValuesAsText("logType")).contains("AUDIT");
+        assertThat(logs.get(0).path("createdAt").asText()).isNotBlank();
+
+        // 15. 关联对象：插入一条引用关系，源/目标两侧都可见
+        jdbcTemplate.update("""
+                        INSERT INTO plm_relation (id, relation_type, src_id, dst_id, seq, company_id, deleted)
+                        SELECT ?, 'REFERENCE', ?, ?, 0, company_id, false FROM plm_object WHERE id = ?
+                        """, 990001L, newId, docId, newId);
+        JsonNode outgoing = call(get("/api/v1/docs/{id}/relations", newId), admin, null);
+        assertThat(outgoing.size()).isEqualTo(1);
+        assertThat(outgoing.get(0).path("direction").asText()).isEqualTo("OUT");
+        assertThat(outgoing.get(0).path("code").asText()).isEqualTo("DOC-000001");
+        assertThat(outgoing.get(0).path("revisionLabel").asText()).isEqualTo("A.1");
+        JsonNode incoming = call(get("/api/v1/docs/{id}/relations", docId), admin, null);
+        assertThat(incoming.size()).isEqualTo(1);
+        assertThat(incoming.get(0).path("direction").asText()).isEqualTo("IN");
+
+        // 16. 实例权限：默认无显式授权
+        JsonNode aclRows = call(get("/api/v1/docs/{id}/acl", newId), admin, null);
+        assertThat(aclRows.size()).isZero();
     }
 
     // ---------------------------------------------------------------- 工具

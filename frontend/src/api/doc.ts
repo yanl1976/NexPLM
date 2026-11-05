@@ -104,6 +104,47 @@ export interface DocVersion {
   updatedAt: string
 }
 
+/** 关联对象（关系双向合并，direction = OUT 本对象为源 / IN 本对象为目标）。 */
+export interface DocRelation {
+  id: string
+  code: string
+  name: string
+  objectType: string
+  lifecycleState: string
+  revisionLabel: string
+  relationType: string
+  direction: 'OUT' | 'IN'
+  seq: number
+  qty?: number | null
+}
+
+/** 操作日志：STATE 状态流转 / AUDIT 审计事件。 */
+export interface DocLog {
+  logType: 'STATE' | 'AUDIT'
+  action: string
+  fromState?: string | null
+  toState?: string | null
+  detail?: string | null
+  result?: string | null
+  operatorId?: string | null
+  operatorLabel?: string | null
+  ip?: string | null
+  createdAt: string
+}
+
+/** 实例权限行（只读展示）。 */
+export interface DocAclRow {
+  id: string
+  objectId: string
+  actorType: string
+  actorId?: string | null
+  actorName?: string | null
+  actions: string
+  effect: string
+  expireAt?: string | null
+  source?: string | null
+}
+
 export interface DocSaveReq {
   code?: string
   name: string
@@ -143,6 +184,15 @@ export const docApi = {
   },
   versions(id: string): Promise<DocVersion[]> {
     return http.get<DocVersion[]>(`/docs/${id}/versions`)
+  },
+  relations(id: string): Promise<DocRelation[]> {
+    return http.get<DocRelation[]>(`/docs/${id}/relations`)
+  },
+  logs(id: string, limit = 100): Promise<DocLog[]> {
+    return http.get<DocLog[]>(`/docs/${id}/logs`, { limit })
+  },
+  acl(id: string): Promise<DocAclRow[]> {
+    return http.get<DocAclRow[]>(`/docs/${id}/acl`)
   },
   upload(id: string, file: File, fileRole: FileRole = 'ATTACHMENT'): Promise<{ fileId: string }> {
     return uploadFile<{ fileId: string }>(`/docs/${id}/files`, file, { fileRole })

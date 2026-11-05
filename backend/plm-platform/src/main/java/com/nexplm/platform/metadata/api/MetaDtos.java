@@ -66,4 +66,9 @@ public final class MetaDtos {
 
     public record EnumItemsReq(List<EnumItemDef> items) {
     }
+
+    /** 对象查看器页签定义。 */
+    public record TabDef(String code, String name, String tabType, String permissionCode,
+                         Integer sort, String configJson) {
+    }
 }

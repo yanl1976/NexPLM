@@ -9,9 +9,11 @@ import com.nexplm.platform.metadata.api.MetaDtos;
 import com.nexplm.platform.metadata.domain.MetaEntity;
 import com.nexplm.platform.metadata.domain.MetaEnum;
 import com.nexplm.platform.metadata.domain.MetaField;
+import com.nexplm.platform.metadata.domain.MetaTab;
 import com.nexplm.platform.metadata.mapper.MetaEntityMapper;
 import com.nexplm.platform.metadata.mapper.MetaEnumMapper;
 import com.nexplm.platform.metadata.mapper.MetaFieldMapper;
+import com.nexplm.platform.metadata.mapper.MetaTabMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,20 +52,53 @@ public class MetaService {
 
     private static final Set<String> VERSION_POLICIES = Set.of("LETTER", "NUMBER", "NONE");
 
+    /** 未配置页签的对象类型使用的内置默认页签（与 P2 方案一致）。 */
+    private static final List<MetaDtos.TabDef> DEFAULT_TABS = List.of(
+            new MetaDtos.TabDef("props", "属性", "PROPS", "pdm.doc.read", 10, "{}"),
+            new MetaDtos.TabDef("files", "文件", "FILES", "pdm.doc.read", 20, "{}"),
+            new MetaDtos.TabDef("versions", "历史版本", "VERSIONS", "pdm.doc.read", 30, "{}"),
+            new MetaDtos.TabDef("relations", "关联对象", "RELATIONS", "pdm.doc.read", 40, "{}"),
+            new MetaDtos.TabDef("workflow", "流程", "WORKFLOW", "pdm.doc.read", 50, "{}"),
+            new MetaDtos.TabDef("acl", "权限", "ACL", "pdm.doc.read", 60, "{}"),
+            new MetaDtos.TabDef("logs", "日志", "LOGS", "pdm.doc.read", 70, "{}"));
+
     private final MetaEntityMapper entityMapper;
     private final MetaFieldMapper fieldMapper;
     private final MetaEnumMapper enumMapper;
+    private final MetaTabMapper tabMapper;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final Map<String, MetaDtos.EntityDetail> detailCache = new ConcurrentHashMap<>();
 
     public MetaService(MetaEntityMapper entityMapper, MetaFieldMapper fieldMapper, MetaEnumMapper enumMapper,
-                       JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+                       MetaTabMapper tabMapper, JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.entityMapper = entityMapper;
         this.fieldMapper = fieldMapper;
         this.enumMapper = enumMapper;
+        this.tabMapper = tabMapper;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+    }
+
+    /**
+     * 对象查看器页签：按对象类型读取配置，未配置时回退到内置默认页签。
+     */
+    public List<MetaDtos.TabDef> listTabs(String entityCode) {
+        if (entityCode == null || entityCode.isBlank()) {
+            return DEFAULT_TABS;
+        }
+        List<MetaTab> tabs = tabMapper.selectList(new LambdaQueryWrapper<MetaTab>()
+                .eq(MetaTab::getEntityCode, entityCode.trim())
+                .eq(MetaTab::getEnabled, true)
+                .orderByAsc(MetaTab::getSort)
+                .orderByAsc(MetaTab::getId));
+        if (tabs.isEmpty()) {
+            return DEFAULT_TABS;
+        }
+        return tabs.stream()
+                .map(tab -> new MetaDtos.TabDef(tab.getCode(), tab.getName(), tab.getTabType(),
+                        tab.getPermissionCode(), tab.getSort(), tab.getConfigJson()))
+                .toList();
     }
 
     public List<MetaDtos.EntitySummary> listEntities(String keyword) {

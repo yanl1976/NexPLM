@@ -6,6 +6,8 @@ import com.nexplm.common.audit.Audit;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.doc.service.DocService;
+import com.nexplm.platform.doc.service.DocViewService;
+import com.nexplm.platform.iam.api.SecurityDtos;
 import com.nexplm.platform.file.service.FileService;
 import com.nexplm.platform.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
@@ -39,9 +41,11 @@ import java.util.List;
 public class DocController {
 
     private final DocService docService;
+    private final DocViewService docViewService;
 
-    public DocController(DocService docService) {
+    public DocController(DocService docService, DocViewService docViewService) {
         this.docService = docService;
+        this.docViewService = docViewService;
     }
 
     @Operation(summary = "新建文档")
@@ -85,6 +89,28 @@ public class DocController {
     @PreAuthorize("hasAuthority('pdm.doc.read')")
     public Result<List<DocDtos.DocVersion>> versions(@PathVariable Long id) {
         return Result.ok(docService.versions(id));
+    }
+
+    @Operation(summary = "关联对象（关系双向合并）")
+    @GetMapping("/{id}/relations")
+    @PreAuthorize("hasAuthority('pdm.doc.read')")
+    public Result<List<DocDtos.RelationView>> relations(@PathVariable Long id) {
+        return Result.ok(docViewService.relations(id));
+    }
+
+    @Operation(summary = "操作日志（状态流转 + 审计事件）")
+    @GetMapping("/{id}/logs")
+    @PreAuthorize("hasAuthority('pdm.doc.read')")
+    public Result<List<DocDtos.LogView>> logs(@PathVariable Long id,
+                                              @RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return Result.ok(docViewService.logs(id, limit));
+    }
+
+    @Operation(summary = "实例权限（只读，授予撤销走 /security/acl）")
+    @GetMapping("/{id}/acl")
+    @PreAuthorize("hasAuthority('pdm.doc.read')")
+    public Result<List<SecurityDtos.AclRow>> acl(@PathVariable Long id) {
+        return Result.ok(docViewService.acl(id));
     }
 
     @Operation(summary = "上传文档文件（主文件/附件）")

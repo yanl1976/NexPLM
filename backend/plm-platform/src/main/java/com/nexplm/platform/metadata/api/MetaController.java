@@ -81,6 +81,12 @@ public class MetaController {
         return Result.ok();
     }
 
+    @Operation(summary = "对象查看器页签（未配置时返回内置默认页签）")
+    @GetMapping("/entities/{code}/tabs")
+    public Result<List<MetaDtos.TabDef>> listTabs(@PathVariable String code) {
+        return Result.ok(metaService.listTabs(code));
+    }
+
     @Operation(summary = "枚举列表")
     @GetMapping("/enums")
     public Result<List<MetaDtos.EnumDetail>> listEnums() {

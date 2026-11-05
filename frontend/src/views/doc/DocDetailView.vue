@@ -32,15 +32,16 @@
         :title="`已由 ${detail.checkout.userLabel || detail.checkout.userId} 检出，到期时间 ${formatTime(detail.checkout.expireAt)}`"
       />
 
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="属性" name="props">
-          <el-descriptions :column="2" border>
+      <el-tabs v-model="activeTab" @tab-change="onTabChange">
+        <el-tab-pane v-for="tab in tabs" :key="tab.code" :label="tab.name" :name="tab.code">
+          <el-descriptions v-if="tab.tabType === 'PROPS'" :column="2" border>
             <el-descriptions-item label="编码">{{ detail?.code }}</el-descriptions-item>
             <el-descriptions-item label="名称">{{ detail?.name }}</el-descriptions-item>
             <el-descriptions-item label="文档类型">{{ typeLabel(detail?.docType) }}</el-descriptions-item>
             <el-descriptions-item label="来源">{{ sourceLabel(detail?.source) }}</el-descriptions-item>
             <el-descriptions-item label="版本">{{ detail?.revisionLabel }}</el-descriptions-item>
             <el-descriptions-item label="生命周期">{{ stateLabel(detail?.lifecycleState) }}</el-descriptions-item>
+            <el-descriptions-item label="工作流">{{ detail?.workflowState || 'NONE' }}</el-descriptions-item>
             <el-descriptions-item label="关键词">{{ detail?.keyword || '-' }}</el-descriptions-item>
             <el-descriptions-item label="页数">{{ detail?.pageCount ?? '-' }}</el-descriptions-item>
             <el-descriptions-item label="文件数">{{ detail?.fileCount ?? 0 }}</el-descriptions-item>
@@ -49,45 +50,43 @@
             <el-descriptions-item label="更新时间">{{ formatTime(detail?.updatedAt) }}</el-descriptions-item>
             <el-descriptions-item label="描述" :span="2">{{ detail?.description || '-' }}</el-descriptions-item>
           </el-descriptions>
-        </el-tab-pane>
 
-        <el-tab-pane label="文件" name="files">
-          <div class="toolbar">
-            <el-select v-model="uploadRole" class="role-select">
-              <el-option v-for="(label, value) in FILE_ROLE_LABEL" :key="value" :label="label" :value="value" />
-            </el-select>
-            <el-upload :show-file-list="false" :http-request="onUpload" :disabled="!canWrite || !canEdit">
-              <el-button type="primary" :disabled="!canWrite || !canEdit">上传文件</el-button>
-            </el-upload>
-            <span class="hint">同一角色重复上传会生成新版本，旧版本保留可追溯</span>
-          </div>
+          <template v-else-if="tab.tabType === 'FILES'">
+            <div class="toolbar">
+              <el-select v-model="uploadRole" class="role-select">
+                <el-option v-for="(label, value) in FILE_ROLE_LABEL" :key="value" :label="label" :value="value" />
+              </el-select>
+              <el-upload :show-file-list="false" :http-request="onUpload" :disabled="!canWrite || !canEdit">
+                <el-button type="primary" :disabled="!canWrite || !canEdit">上传文件</el-button>
+              </el-upload>
+              <span class="hint">同一角色重复上传会生成新版本，旧版本保留可追溯</span>
+            </div>
 
-          <el-table :data="detail?.files ?? []" border>
-            <el-table-column prop="fileName" label="文件名" min-width="220" show-overflow-tooltip />
-            <el-table-column label="角色" width="110">
-              <template #default="{ row }">{{ FILE_ROLE_LABEL[row.fileRole] ?? row.fileRole }}</template>
-            </el-table-column>
-            <el-table-column label="大小" width="110">
-              <template #default="{ row }">{{ formatSize(row.size) }}</template>
-            </el-table-column>
-            <el-table-column prop="versionNo" label="版本" width="80" />
-            <el-table-column label="上传时间" width="170">
-              <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="150" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="onDownload(row)">下载</el-button>
-                <el-button link type="danger" :disabled="!canEdit" @click="onRemoveFile(row)">移除</el-button>
+            <el-table :data="detail?.files ?? []" border>
+              <el-table-column prop="fileName" label="文件名" min-width="220" show-overflow-tooltip />
+              <el-table-column label="角色" width="110">
+                <template #default="{ row }">{{ FILE_ROLE_LABEL[row.fileRole] ?? row.fileRole }}</template>
+              </el-table-column>
+              <el-table-column label="大小" width="110">
+                <template #default="{ row }">{{ formatSize(row.size) }}</template>
+              </el-table-column>
+              <el-table-column prop="versionNo" label="版本" width="80" />
+              <el-table-column label="上传时间" width="170">
+                <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="150" fixed="right">
+                <template #default="{ row }">
+                  <el-button link type="primary" @click="onDownload(row)">下载</el-button>
+                  <el-button link type="danger" :disabled="!canEdit" @click="onRemoveFile(row)">移除</el-button>
+                </template>
+              </el-table-column>
+              <template #empty>
+                <el-empty description="暂无文件，点击「上传文件」添加主文件或附件" />
               </template>
-            </el-table-column>
-            <template #empty>
-              <el-empty description="暂无文件，点击「上传文件」添加主文件或附件" />
-            </template>
-          </el-table>
-        </el-tab-pane>
+            </el-table>
+          </template>
 
-        <el-tab-pane label="版本历史" name="versions">
-          <el-table :data="versions" border @row-click="switchVersion">
+          <el-table v-else-if="tab.tabType === 'VERSIONS'" :data="versions" border @row-click="switchVersion">
             <el-table-column prop="revisionLabel" label="版本" width="100" />
             <el-table-column label="状态" width="120">
               <template #default="{ row }">
@@ -109,6 +108,109 @@
               </template>
             </el-table-column>
           </el-table>
+
+          <el-table v-else-if="tab.tabType === 'RELATIONS'" v-loading="subLoading" :data="relations" border>
+            <el-table-column prop="relationType" label="关系类型" width="150" />
+            <el-table-column label="方向" width="100">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.direction === 'OUT' ? 'primary' : 'info'">
+                  {{ row.direction === 'OUT' ? '指向' : '被指向' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="code" label="编码" width="160" />
+            <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="objectType" label="对象类型" width="130" />
+            <el-table-column prop="revisionLabel" label="版本" width="90" />
+            <el-table-column label="状态" width="110">
+              <template #default="{ row }">
+                <el-tag size="small" :type="stateTag(row.lifecycleState)">{{ stateLabel(row.lifecycleState) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" :disabled="row.objectType !== 'PdmDoc'" @click="openDoc(row.id)">
+                  打开
+                </el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="暂无关联对象（引用/被引用关系为空）" />
+            </template>
+          </el-table>
+
+          <div v-else-if="tab.tabType === 'WORKFLOW'" class="placeholder">
+            <el-empty description="审批流程将在 P4 阶段接入，当前文档尚未进入流程">
+              <el-descriptions :column="1" border>
+                <el-descriptions-item label="流程状态">{{ detail?.workflowState || 'NONE' }}</el-descriptions-item>
+                <el-descriptions-item label="生命周期">{{ stateLabel(detail?.lifecycleState) }}</el-descriptions-item>
+              </el-descriptions>
+            </el-empty>
+          </div>
+
+          <el-table v-else-if="tab.tabType === 'ACL'" v-loading="subLoading" :data="aclRows" border>
+            <el-table-column label="被授权者类型" width="130">
+              <template #default="{ row }">{{ actorTypeLabel(row.actorType) }}</template>
+            </el-table-column>
+            <el-table-column label="被授权者" min-width="160">
+              <template #default="{ row }">{{ row.actorName || row.actorId || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="actions" label="操作" min-width="160" />
+            <el-table-column label="效果" width="100">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.effect === 'DENY' ? 'danger' : 'success'">
+                  {{ row.effect === 'DENY' ? '拒绝' : '允许' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="来源" width="110">
+              <template #default="{ row }">{{ row.source || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="到期时间" width="170">
+              <template #default="{ row }">{{ row.expireAt ? formatTime(row.expireAt) : '长期' }}</template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="当前对象无显式授权，按属主与默认策略判定（属性页可查看属主）" />
+            </template>
+          </el-table>
+
+          <el-table v-else-if="tab.tabType === 'LOGS'" v-loading="subLoading" :data="logs" border>
+            <el-table-column label="时间" width="170">
+              <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column label="类型" width="100">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.logType === 'STATE' ? 'warning' : 'info'">
+                  {{ row.logType === 'STATE' ? '状态流转' : '操作审计' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="action" label="动作" min-width="150" show-overflow-tooltip />
+            <el-table-column label="状态变化" width="180">
+              <template #default="{ row }">
+                <span v-if="row.fromState || row.toState">
+                  {{ row.fromState || '-' }} → {{ row.toState || '-' }}
+                </span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作人" width="140">
+              <template #default="{ row }">{{ row.operatorLabel || row.operatorId || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="结果" width="90">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.result === 'SUCCESS' ? 'success' : 'danger'">
+                  {{ row.result === 'SUCCESS' ? '成功' : row.result || '-' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="detail" label="详情" min-width="220" show-overflow-tooltip />
+            <template #empty>
+              <el-empty description="暂无操作记录" />
+            </template>
+          </el-table>
+
+          <el-empty v-else :description="`未知页签类型：${tab.tabType}`" />
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -157,12 +259,16 @@ import {
   DOC_TYPE_LABEL,
   FILE_ROLE_LABEL,
   docApi,
+  type DocAclRow,
   type DocDetail,
   type DocFile,
+  type DocLog,
+  type DocRelation,
   type DocSaveReq,
   type DocVersion,
   type FileRole
 } from '@/api/doc'
+import { metaApi, type MetaTabDef } from '@/api/system'
 import { workspaceApi } from '@/api/workspace'
 import { useUserStore } from '@/stores/user'
 
@@ -171,9 +277,26 @@ const userStore = useUserStore()
 const route = useRoute()
 const router = useRouter()
 
+/** 后端不可用时的页签兜底，与后端 MetaService.DEFAULT_TABS 保持一致。 */
+const DEFAULT_TABS: MetaTabDef[] = [
+  { code: 'props', name: '属性', tabType: 'PROPS', sort: 10 },
+  { code: 'files', name: '文件', tabType: 'FILES', sort: 20 },
+  { code: 'versions', name: '历史版本', tabType: 'VERSIONS', sort: 30 },
+  { code: 'relations', name: '关联对象', tabType: 'RELATIONS', sort: 40 },
+  { code: 'workflow', name: '流程', tabType: 'WORKFLOW', sort: 50 },
+  { code: 'acl', name: '权限', tabType: 'ACL', sort: 60 },
+  { code: 'logs', name: '日志', tabType: 'LOGS', sort: 70 }
+]
+
 const docId = computed(() => String(route.params.id ?? ''))
 const detail = ref<DocDetail | null>(null)
 const versions = ref<DocVersion[]>([])
+const tabs = ref<MetaTabDef[]>(DEFAULT_TABS)
+const relations = ref<DocRelation[]>([])
+const logs = ref<DocLog[]>([])
+const aclRows = ref<DocAclRow[]>([])
+const subLoading = ref(false)
+const loadedTabs = new Set<string>()
 const activeTab = ref('props')
 const loading = ref(false)
 const saving = ref(false)
@@ -260,12 +383,69 @@ async function load(): Promise<void> {
   try {
     detail.value = await docApi.detail(docId.value)
     versions.value = await docApi.versions(docId.value)
+    tabs.value = await metaApi.entityTabs('PdmDoc').catch(() => DEFAULT_TABS)
+    loadedTabs.clear()
+    relations.value = []
+    logs.value = []
+    aclRows.value = []
+    if (!tabs.value.some((tab) => tab.code === activeTab.value)) {
+      activeTab.value = tabs.value[0]?.code ?? 'props'
+    }
     workspaceApi.touchRecent(docId.value).catch(() => undefined)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载失败')
   } finally {
     loading.value = false
   }
+  await loadTabData(activeTab.value)
+}
+
+/** 页签数据懒加载：关联对象 / 权限 / 日志各取一次，切换版本后由 load 清空。 */
+async function loadTabData(code: string): Promise<void> {
+  const tab = tabs.value.find((item) => item.code === code)
+  if (!tab || !docId.value || loadedTabs.has(code)) {
+    return
+  }
+  if (tab.tabType !== 'RELATIONS' && tab.tabType !== 'ACL' && tab.tabType !== 'LOGS') {
+    return
+  }
+  subLoading.value = true
+  try {
+    if (tab.tabType === 'RELATIONS') {
+      relations.value = await docApi.relations(docId.value)
+    } else if (tab.tabType === 'ACL') {
+      aclRows.value = await docApi.acl(docId.value)
+    } else {
+      logs.value = await docApi.logs(docId.value)
+    }
+    loadedTabs.add(code)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载页签数据失败')
+  } finally {
+    subLoading.value = false
+  }
+}
+
+function onTabChange(name: string): void {
+  loadTabData(name)
+}
+
+const ACTOR_TYPE_LABEL: Record<string, string> = {
+  USER: '用户',
+  ROLE: '角色',
+  GROUP: '用户组',
+  GROUP_ROLE: '组角色',
+  CREATOR: '创建人',
+  OWNER: '属主',
+  ALL: '所有人'
+}
+
+function actorTypeLabel(value?: string): string {
+  return value ? ACTOR_TYPE_LABEL[value] ?? value : '-'
+}
+
+function openDoc(id: string): void {
+  router.push({ name: 'doc-detail', params: { id } })
 }
 
 function goBack(): void {
@@ -462,5 +642,9 @@ onMounted(load)
 .hint {
   color: #909399;
   font-size: 12px;
+}
+
+.placeholder {
+  padding: 8px 0;
 }
 </style>

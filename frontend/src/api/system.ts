@@ -177,6 +177,16 @@ export const lifecycleApi = {
     http.put<void>(`/meta/lifecycles/${code}`, { definitionJson })
 }
 
+/** 对象查看器页签定义（元数据驱动）。 */
+export interface MetaTabDef {
+  code: string
+  name: string
+  tabType: string
+  permissionCode?: string | null
+  sort: number
+  configJson?: string | null
+}
+
 export const metaApi = {
   listEntities: (keyword?: string) => http.get<MetaEntitySummary[]>('/meta/entities', { keyword }),
   getEntity: (code: string) => http.get<MetaEntityDetail>(`/meta/entities/${code}`),
@@ -184,6 +194,7 @@ export const metaApi = {
   updateEntity: (code: string, body: unknown) => http.put<void>(`/meta/entities/${code}`, body),
   publish: (code: string) => http.post<void>(`/meta/entities/${code}/publish`),
   remove: (code: string) => http.delete<void>(`/meta/entities/${code}`),
+  entityTabs: (code: string) => http.get<MetaTabDef[]>(`/meta/entities/${code}/tabs`),
   listEnums: () => http.get<MetaEnumDetail[]>('/meta/enums'),
   getEnum: (code: string) => http.get<MetaEnumDetail>(`/meta/enums/${code}`),
   saveEnumItems: (code: string, items: MetaEnumItem[]) =>
