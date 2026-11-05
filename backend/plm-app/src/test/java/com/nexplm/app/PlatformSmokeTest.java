@@ -53,6 +53,9 @@ class PlatformSmokeTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @Test
     void loginAndCoreApisWork() throws Exception {
         String token = login();
@@ -136,6 +139,105 @@ class PlatformSmokeTest {
 
         JsonNode published = call(get("/api/v1/meta/entities/DemoItem"), token);
         assertThat(published.path("status").asText()).isEqualTo("PUBLISHED");
+    }
+
+    @Test
+    void securityRulesAclAndLifecycleWork() throws Exception {
+        String token = login();
+        MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("username", "admin", "password", "Admin@12345"))))
+                .andExpect(status().isOk())
+                .andReturn();
+        long adminId = body(loginResult).path("data").path("user").path("id").asLong();
+
+        // 1. 规则权限试算：内置变量 ${currentUserId} + 嵌套 AND/OR
+        JsonNode ruleTest = call2(post("/api/v1/security/rules/test"),
+                token,
+                json(Map.of(
+                        "currentUserId", String.valueOf(adminId),
+                        "exprJson", """
+                                {"op":"AND","children":[
+                                  {"op":"EQ","field":"ownerId","value":"${currentUserId}"},
+                                  {"op":"OR","children":[
+                                     {"op":"EQ","field":"lifecycleState","value":"Released"},
+                                     {"op":"GT","field":"ext_json.level","value":2}
+                                  ]}
+                                ]}
+                                """,
+                        "attributes", Map.of("ownerId", String.valueOf(adminId),
+                                "lifecycleState", "Draft", "ext_json", Map.of("level", 3)))));
+        assertThat(ruleTest.path("matched").asBoolean()).isTrue();
+
+        // 2. 对象 ACL：显式授权 → 命中；DENY 优先；未授权默认拒绝
+        jdbcTemplate.update("""
+                        INSERT INTO plm_object (id, object_type, master_id, code, name, company_id, owner_id,
+                                                lifecycle_state, revision, iteration, is_latest, version, deleted, ext_json)
+                        VALUES (900001, 'PdmDoc', 900001, 'DOC-0001', '冒烟测试文档', 1, ?, 'Draft',
+                                1, 1, true, 0, false, '{}'::jsonb)
+                        ON CONFLICT DO NOTHING
+                        """, adminId);
+
+        mockMvc.perform(post("/api/v1/security/acl")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("objectId", 900001, "actorType", "USER",
+                                "actorId", adminId, "actions", "READ,WRITE"))))
+                .andExpect(status().isOk());
+
+        JsonNode allowed = call2(post("/api/v1/security/acl/check"), token,
+                json(Map.of("objectId", 900001, "action", "READ", "userId", adminId)));
+        assertThat(allowed.path("allowed").asBoolean()).isTrue();
+
+        // 属主可删自己的对象，但审批权限不在属主隐式权限内（防自审）
+        JsonNode notGranted = call2(post("/api/v1/security/acl/check"), token,
+                json(Map.of("objectId", 900001, "action", "APPROVE", "userId", adminId)));
+        assertThat(notGranted.path("allowed").asBoolean()).isFalse();
+
+        // 无关用户默认拒绝
+        JsonNode stranger = call2(post("/api/v1/security/acl/check"), token,
+                json(Map.of("objectId", 900001, "action", "READ", "userId", 999999L)));
+        assertThat(stranger.path("allowed").asBoolean()).isFalse();
+
+        mockMvc.perform(post("/api/v1/security/acl")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("objectId", 900001, "actorType", "ALL",
+                                "actions", "READ", "effect", "DENY"))))
+                .andExpect(status().isOk());
+        JsonNode denied = call2(post("/api/v1/security/acl/check"), token,
+                json(Map.of("objectId", 900001, "action", "READ", "userId", adminId)));
+        assertThat(denied.path("allowed").asBoolean()).isFalse();
+
+        // 3. 生命周期：Draft --submit--> InWorkflow --approve--> Released；非法迁移 409
+        JsonNode afterSubmit = call2(post("/api/v1/objects/900001/transitions"), token,
+                json(Map.of("action", "submit", "reason", "提交审批")));
+        assertThat(afterSubmit.path("lifecycleState").asText()).isEqualTo("InWorkflow");
+
+        JsonNode afterApprove = call2(post("/api/v1/objects/900001/transitions"), token,
+                json(Map.of("action", "approve")));
+        assertThat(afterApprove.path("lifecycleState").asText()).isEqualTo("Released");
+
+        mockMvc.perform(post("/api/v1/objects/900001/transitions")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("action", "submit"))))
+                .andExpect(status().isConflict());
+
+        Integer logCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM plm_state_log WHERE object_id = 900001", Integer.class);
+        assertThat(logCount).isEqualTo(2);
+    }
+
+    private JsonNode call2(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder builder,
+                           String token, String bodyJson) throws Exception {
+        MvcResult result = mockMvc.perform(builder
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bodyJson))
+                .andExpect(status().isOk())
+                .andReturn();
+        return body(result).path("data");
     }
 
     @Test
