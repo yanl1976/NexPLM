@@ -1,0 +1,143 @@
+<template>
+  <el-container class="layout">
+    <el-aside width="220px" class="aside">
+      <div class="brand">NexPLM</div>
+      <el-menu :default-active="activeMenu" router class="menu">
+        <el-menu-item index="/">
+          <el-icon><HomeFilled /></el-icon>
+          <span>概览</span>
+        </el-menu-item>
+        <el-menu-item index="/system" disabled>
+          <el-icon><Setting /></el-icon>
+          <span>系统管理（P1）</span>
+        </el-menu-item>
+        <el-menu-item index="/doc" disabled>
+          <el-icon><Document /></el-icon>
+          <span>图文档（P2）</span>
+        </el-menu-item>
+        <el-menu-item index="/pse" disabled>
+          <el-icon><Share /></el-icon>
+          <span>零部件/BOM（P3）</span>
+        </el-menu-item>
+        <el-menu-item index="/change" disabled>
+          <el-icon><Refresh /></el-icon>
+          <span>变更管理（P5）</span>
+        </el-menu-item>
+        <el-menu-item index="/capp" disabled>
+          <el-icon><Operation /></el-icon>
+          <span>工艺管理（P6）</span>
+        </el-menu-item>
+        <el-menu-item index="/project" disabled>
+          <el-icon><Calendar /></el-icon>
+          <span>项目管理（P7）</span>
+        </el-menu-item>
+      </el-menu>
+    </el-aside>
+
+    <el-container>
+      <el-header class="header">
+        <div class="header-left">元数据驱动 · API 优先 · 可私有化部署</div>
+        <div class="header-right">
+          <span class="user">{{ userStore.displayName }}</span>
+          <el-button link type="primary" @click="onLogout">退出</el-button>
+        </div>
+      </el-header>
+      <el-main class="main">
+        <router-view />
+      </el-main>
+    </el-container>
+  </el-container>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import {
+  Calendar,
+  Document,
+  HomeFilled,
+  Operation,
+  Refresh,
+  Setting,
+  Share
+} from '@element-plus/icons-vue'
+import { useUserStore } from '@/stores/user'
+
+const route = useRoute()
+const router = useRouter()
+const userStore = useUserStore()
+
+const activeMenu = computed(() => route.path)
+
+function onLogout(): void {
+  userStore.logout()
+  ElMessage.success('已退出登录')
+  router.push({ name: 'login' })
+}
+</script>
+
+<style scoped>
+.layout {
+  height: 100vh;
+}
+
+.aside {
+  background: #1f2d3d;
+  color: #fff;
+}
+
+.brand {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.menu {
+  border-right: none;
+  background: transparent;
+}
+
+.menu :deep(.el-menu-item) {
+  color: #c8d3e0;
+}
+
+.menu :deep(.el-menu-item.is-active) {
+  color: #fff;
+  background: #2b4a6f;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border-bottom: 1px solid #e5e8ef;
+}
+
+.header-left {
+  color: #6b7a90;
+  font-size: 13px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user {
+  color: #303133;
+  font-weight: 500;
+}
+
+.main {
+  background: #f4f6fa;
+}
+</style>
