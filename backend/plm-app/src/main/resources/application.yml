@@ -58,6 +58,23 @@ nexplm:
     bootstrap:
       admin-username: ${NEXPLM_ADMIN_USERNAME:admin}
       admin-password: ${NEXPLM_ADMIN_PASSWORD:Admin@12345}
+  file:
+    # 存储实现：local（本地磁盘，默认）| minio（对象存储，S3 协议）
+    storage: ${NEXPLM_FILE_STORAGE:local}
+    # 本地存储根目录；内容寻址布局 {root}/{sha[0:2]}/{sha[2:4]}/{sha}
+    root: ${NEXPLM_FILE_ROOT:./data/files}
+    # storage=minio 时生效；启动时自动创建存储桶
+    minio:
+      endpoint: ${NEXPLM_MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${NEXPLM_MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${NEXPLM_MINIO_SECRET_KEY:minioadmin}
+      bucket: ${NEXPLM_MINIO_BUCKET:nexplm}
+    # 维护任务：回收孤儿物理文件、中断超时分片会话（默认每小时一轮）
+    maintenance:
+      enabled: ${NEXPLM_FILE_MAINTENANCE:true}
+      retain-hours: ${NEXPLM_FILE_RETAIN_HOURS:24}
+    # 安全扫描实现：noop（默认不扫描）| 接入杀毒引擎时改为自定义实现名
+    scan: ${NEXPLM_FILE_SCAN:noop}
 
 springdoc:
   api-docs:
