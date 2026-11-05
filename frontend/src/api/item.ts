@@ -60,6 +60,94 @@ export interface ItemSaveReq {
   securityLevel?: number
 }
 
+/** BOM 视图（设计/工艺/制造）。 */
+export const BOM_VIEW_LABEL: Record<string, string> = {
+  DESIGN: '设计',
+  PROCESS: '工艺',
+  MANUFACTURE: '制造'
+}
+
+export interface BomNode {
+  lineId: string
+  childId: string
+  code: string
+  name: string
+  itemType: string
+  specification?: string | null
+  unit?: string | null
+  qty: number
+  lossRate?: number | null
+  lineNo: number
+  refDesignator?: string | null
+  remark?: string | null
+  version: number
+  hasChildren: boolean
+  children: BomNode[]
+}
+
+export interface BomLineReq {
+  childId?: string
+  qty: number
+  unit?: string | null
+  lossRate?: number | null
+  refDesignator?: string | null
+  remark?: string | null
+}
+
+export interface WhereUsedRow {
+  lineId: string
+  parentId: string
+  parentCode: string
+  parentName: string
+  viewType: string
+  qty: number
+  lineNo: number
+}
+
+export interface BomIssue {
+  type: string
+  lineId?: string | null
+  parentId?: string | null
+  childId?: string | null
+  message: string
+}
+
+export interface BomValidateResult {
+  total: number
+  issues: BomIssue[]
+}
+
+export const BOM_ISSUE_LABEL: Record<string, string> = {
+  QTY_INVALID: '用量异常',
+  UNIT_MISSING: '单位缺失',
+  ORPHAN: '孤儿件',
+  CYCLE: '循环引用'
+}
+
+export const bomApi = {
+  tree(itemId: string, viewType: string, depth = 5): Promise<BomNode[]> {
+    return http.get<BomNode[]>(`/items/${itemId}/bom`, { viewType, depth })
+  },
+  add(itemId: string, viewType: string, req: BomLineReq): Promise<BomNode> {
+    return http.post<BomNode>(`/items/${itemId}/bom?viewType=${encodeURIComponent(viewType)}`, req)
+  },
+  update(itemId: string, lineId: string, req: BomLineReq): Promise<BomNode> {
+    return http.put<BomNode>(`/items/${itemId}/bom/lines/${lineId}`, req)
+  },
+  remove(itemId: string, lineId: string): Promise<void> {
+    return http.delete<void>(`/items/${itemId}/bom/lines/${lineId}`)
+  },
+  move(itemId: string, lineId: string, req: { newParentId?: string | null; newLineNo?: number | null; viewType?: string }): Promise<BomNode> {
+    return http.post<BomNode>(`/items/${itemId}/bom/lines/${lineId}/move`, req)
+  },
+  whereUsed(itemId: string): Promise<WhereUsedRow[]> {
+    return http.get<WhereUsedRow[]>(`/items/${itemId}/bom/where-used`)
+  },
+  validate(itemId: string, viewType: string): Promise<BomValidateResult> {
+    return http.get<BomValidateResult>(`/items/${itemId}/bom/validate`, { viewType })
+  }
+}
+
 export const itemApi = {
   list(params: {
     page?: number

@@ -63,7 +63,9 @@ class ItemSmokeTest {
         JsonNode product = call(post("/api/v1/items"), admin, json(Map.of(
                 "name", "主传动总成", "itemType", "PRODUCT", "specification", "ZD-100")));
         long productId = product.path("id").asLong();
-        assertThat(product.path("code").asText()).isEqualTo("PN-000001");
+        String productCode = product.path("code").asText();
+        assertThat(productCode).matches("PN-\\d{6}");
+        int productSeq = Integer.parseInt(productCode.substring(3));
         assertThat(product.path("lifecycleState").asText()).isEqualTo("Draft");
         assertThat(product.path("revisionLabel").asText()).isEqualTo("A.1");
         assertThat(product.path("unit").asText()).isEqualTo("EA");
@@ -79,7 +81,7 @@ class ItemSmokeTest {
         partReq.put("weight", 1.25);
         JsonNode part = call(post("/api/v1/items"), admin, json(partReq));
         long partId = part.path("id").asLong();
-        assertThat(part.path("code").asText()).isEqualTo("PN-000002");
+        assertThat(part.path("code").asText()).isEqualTo(String.format("PN-%06d", productSeq + 1));
         assertThat(part.path("material").asText()).isEqualTo("40Cr");
         assertThat(part.path("unit").asText()).isEqualTo("PCS");
         assertThat(part.path("weight").asDouble()).isEqualTo(1.25);
@@ -89,7 +91,7 @@ class ItemSmokeTest {
                 "name", "六角螺栓 M8×30", "itemType", "STANDARD", "sourceType", "BUY",
                 "stdCode", "GB/T 5783")));
         long standardId = standard.path("id").asLong();
-        assertThat(standard.path("code").asText()).isEqualTo("PN-000003");
+        assertThat(standard.path("code").asText()).isEqualTo(String.format("PN-%06d", productSeq + 2));
         assertThat(standard.path("sourceType").asText()).isEqualTo("BUY");
         assertThat(standard.path("stdCode").asText()).isEqualTo("GB/T 5783");
 
@@ -105,16 +107,15 @@ class ItemSmokeTest {
                         .content(json(Map.of("name", "非法供应方式", "itemType", "PART", "sourceType", "RENT"))))
                 .andExpect(status().isBadRequest());
 
-        // 5. 列表与筛选
-        JsonNode all = call(get("/api/v1/items?page=1&size=20"), admin, null);
-        assertThat(all.path("total").asLong()).isEqualTo(3);
-        JsonNode parts = call(get("/api/v1/items?page=1&size=20&itemType=PART"), admin, null);
-        assertThat(parts.path("total").asLong()).isEqualTo(1);
-        assertThat(parts.path("items").get(0).path("code").asText()).isEqualTo("PN-000002");
-        JsonNode bought = call(get("/api/v1/items?page=1&size=20&sourceType=BUY"), admin, null);
-        assertThat(bought.path("total").asLong()).isEqualTo(1);
-        JsonNode bySpec = call(get("/api/v1/items?page=1&size=20&keyword=M3"), admin, null);
-        assertThat(bySpec.path("total").asLong()).isEqualTo(1);
+        // 5. 列表与筛选（同一测试类内多个用例共享库，按相对数量与包含关系断言）
+        JsonNode all = call(get("/api/v1/items?page=1&size=200"), admin, null);
+        assertThat(all.path("total").asLong()).isGreaterThanOrEqualTo(3);
+        JsonNode parts = call(get("/api/v1/items?page=1&size=200&itemType=PART"), admin, null);
+        assertThat(parts.path("items").findValuesAsText("code")).contains(part.path("code").asText());
+        JsonNode bought = call(get("/api/v1/items?page=1&size=200&sourceType=BUY"), admin, null);
+        assertThat(bought.path("items").findValuesAsText("code")).contains(standard.path("code").asText());
+        JsonNode bySpec = call(get("/api/v1/items?page=1&size=200&keyword=M3"), admin, null);
+        assertThat(bySpec.path("items").findValuesAsText("code")).contains(part.path("code").asText());
 
         // 6. 更新：名称与重量变化，版本不变
         JsonNode updated = call(put("/api/v1/items/{id}", partId), admin, json(Map.of(
@@ -128,8 +129,9 @@ class ItemSmokeTest {
         mockMvc.perform(delete("/api/v1/items/{id}", standardId)
                         .header("Authorization", "Bearer " + admin))
                 .andExpect(status().isOk());
-        JsonNode afterDelete = call(get("/api/v1/items?page=1&size=20"), admin, null);
-        assertThat(afterDelete.path("total").asLong()).isEqualTo(2);
+        JsonNode afterDelete = call(get("/api/v1/items?page=1&size=200"), admin, null);
+        assertThat(afterDelete.path("items").findValuesAsText("code"))
+                .doesNotContain(standard.path("code").asText());
         mockMvc.perform(get("/api/v1/items/{id}", standardId)
                         .header("Authorization", "Bearer " + admin))
                 .andExpect(status().isNotFound());
@@ -141,7 +143,107 @@ class ItemSmokeTest {
         assertThat(productDetail.path("isLatest").asBoolean()).isTrue();
     }
 
+    @Test
+    void bomTreeWithValidationAndDeleteGuard() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long productId = createItem(admin, "BOM 总成", "PRODUCT", "MAKE");
+        long assemblyId = createItem(admin, "BOM 部件", "ASSEMBLY", "MAKE");
+        long partId = createItem(admin, "BOM 零件", "PART", "MAKE");
+        long boltId = createItem(admin, "BOM 螺栓", "STANDARD", "BUY");
+
+        // 1. 搭 3 层级 BOM：总成 → 部件 → (零件 4 件/损耗 2%、螺栓 8 件)
+        call(post("/api/v1/items/{id}/bom?viewType=DESIGN", productId), admin,
+                json(Map.of("childId", assemblyId, "qty", 1)));
+        call(post("/api/v1/items/{id}/bom?viewType=DESIGN", assemblyId), admin,
+                json(Map.of("childId", partId, "qty", 4, "lossRate", 2, "refDesignator", "P1")));
+        call(post("/api/v1/items/{id}/bom?viewType=DESIGN", assemblyId), admin,
+                json(Map.of("childId", boltId, "qty", 8)));
+
+        // 2. 树结构：层级、用量、损耗率、位号、hasChildren
+        JsonNode tree = call(get("/api/v1/items/{id}/bom?viewType=DESIGN&depth=3", productId), admin, null);
+        assertThat(tree.size()).isEqualTo(1);
+        JsonNode assembly = tree.get(0);
+        assertThat(assembly.path("childId").asLong()).isEqualTo(assemblyId);
+        assertThat(assembly.path("qty").asDouble()).isEqualTo(1.0);
+        assertThat(assembly.path("hasChildren").asBoolean()).isTrue();
+        assertThat(assembly.path("children").size()).isEqualTo(2);
+        JsonNode partNode = assembly.path("children").get(0);
+        assertThat(partNode.path("childId").asLong()).isEqualTo(partId);
+        assertThat(partNode.path("qty").asDouble()).isEqualTo(4.0);
+        assertThat(partNode.path("lossRate").asDouble()).isEqualTo(2.0);
+        assertThat(partNode.path("refDesignator").asText()).isEqualTo("P1");
+        assertThat(partNode.path("hasChildren").asBoolean()).isFalse();
+        long partLineId = partNode.path("lineId").asLong();
+
+        // 3. 重复子件 → 409
+        mockMvc.perform(post("/api/v1/items/{id}/bom", productId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("childId", assemblyId, "qty", 2))))
+                .andExpect(status().isConflict());
+
+        // 4. 自引用与循环引用 → 400
+        mockMvc.perform(post("/api/v1/items/{id}/bom", productId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("childId", productId, "qty", 1))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/items/{id}/bom", partId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("childId", productId, "qty", 1))))
+                .andExpect(status().isBadRequest());
+
+        // 5. 用量为 0 → 400（Bean Validation）
+        mockMvc.perform(post("/api/v1/items/{id}/bom", assemblyId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("childId", boltId, "qty", 0))))
+                .andExpect(status().isBadRequest());
+
+        // 6. 被引用查询
+        JsonNode whereUsed = call(get("/api/v1/items/{id}/bom/where-used", partId), admin, null);
+        assertThat(whereUsed.size()).isEqualTo(1);
+        assertThat(whereUsed.get(0).path("parentId").asLong()).isEqualTo(assemblyId);
+
+        // 7. 结构校验：无问题
+        JsonNode validate = call(get("/api/v1/items/{id}/bom/validate?viewType=DESIGN", productId), admin, null);
+        assertThat(validate.path("issues").size()).isZero();
+
+        // 8. 修改用量
+        JsonNode updated = call(put("/api/v1/items/{id}/bom/lines/{lineId}", assemblyId, partLineId), admin,
+                json(Map.of("qty", 5, "unit", "PCS", "lossRate", 3, "refDesignator", "P1,P2")));
+        assertThat(updated.path("qty").asDouble()).isEqualTo(5.0);
+        assertThat(updated.path("unit").asText()).isEqualTo("PCS");
+
+        // 9. 被 BOM 引用时不能删除零部件
+        mockMvc.perform(delete("/api/v1/items/{id}", partId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isConflict());
+
+        // 10. 删除 BOM 行后可删除零部件
+        mockMvc.perform(delete("/api/v1/items/{id}/bom/lines/{lineId}", assemblyId, partLineId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk());
+        JsonNode afterRemove = call(get("/api/v1/items/{id}/bom?viewType=DESIGN", assemblyId), admin, null);
+        assertThat(afterRemove.size()).isEqualTo(1);
+        mockMvc.perform(delete("/api/v1/items/{id}", partId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk());
+
+        // 11. 非法视图 400
+        mockMvc.perform(get("/api/v1/items/{id}/bom?viewType=NOT_EXIST", productId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isBadRequest());
+    }
+
     // ------------------------------------------------------------ 工具
+
+    private long createItem(String token, String name, String itemType, String sourceType) throws Exception {
+        JsonNode created = call(post("/api/v1/items"), token, json(Map.of(
+                "name", name, "itemType", itemType, "sourceType", sourceType, "unit", "EA")));
+        return created.path("id").asLong();
+    }
 
     private String login(String username, String password) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
