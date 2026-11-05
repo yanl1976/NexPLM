@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -193,6 +194,50 @@ class DocSmokeTest {
         // 16. 实例权限：默认无显式授权
         JsonNode aclRows = call(get("/api/v1/docs/{id}/acl", newId), admin, null);
         assertThat(aclRows.size()).isZero();
+
+        // 17. 文档分类：分类树 + 属性（含继承）
+        JsonNode classTree = call(get("/api/v1/doc-classes"), admin, null);
+        assertThat(classTree.size()).isEqualTo(4);
+        long mechId = 910001L;
+        long assyId = 910002L;
+        JsonNode assyAttrs = call(get("/api/v1/doc-classes/{id}/attributes", assyId), admin, null);
+        assertThat(assyAttrs.size()).isEqualTo(2);
+        assertThat(assyAttrs.get(0).path("code").asText()).isEqualTo("sheetSize");
+        assertThat(assyAttrs.get(0).path("required").asBoolean()).isTrue();
+
+        // 18. 按分类建文档：必填属性缺失 → 400
+        mockMvc.perform(post("/api/v1/docs")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("name", "装配图-未填属性", "docType", "DESIGN", "classId", assyId))))
+                .andExpect(status().isBadRequest());
+
+        // 19. 枚举值越界 → 400
+        mockMvc.perform(post("/api/v1/docs")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("name", "装配图-图幅越界", "docType", "DESIGN", "classId", assyId,
+                                "classAttrs", Map.of("sheetSize", "A9")))))
+                .andExpect(status().isBadRequest());
+
+        // 20. 填齐属性 → 建文档成功，详情回带分类与属性值
+        JsonNode classified = call(post("/api/v1/docs"), admin, json(Map.of(
+                "name", "主传动装配图 V2", "docType", "DESIGN", "classId", assyId,
+                "classAttrs", Map.of("sheetSize", "A1", "material", "40Cr"))));
+        assertThat(classified.path("classId").asLong()).isEqualTo(assyId);
+        assertThat(classified.path("className").asText()).isEqualTo("装配图");
+        assertThat(classified.path("classAttrs").path("sheetSize").asText()).isEqualTo("A1");
+        assertThat(classified.path("classAttrs").path("material").asText()).isEqualTo("40Cr");
+
+        // 21. 按分类检索（含子分类）：MECH 子树命中新建的 1 个文档
+        JsonNode filtered = call(get("/api/v1/docs?page=1&size=20&classId=" + mechId), admin, null);
+        assertThat(filtered.path("total").asLong()).isEqualTo(1);
+        assertThat(filtered.path("items").get(0).path("className").asText()).isEqualTo("装配图");
+
+        // 22. 分类下仍有文档时不允许删除
+        mockMvc.perform(delete("/api/v1/doc-classes/{id}", assyId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isConflict());
     }
 
     // ---------------------------------------------------------------- 工具

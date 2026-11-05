@@ -25,6 +25,16 @@
         <el-select v-model="query.lifecycleState" placeholder="状态" clearable class="filter-select">
           <el-option v-for="(label, value) in DOC_STATE_LABEL" :key="value" :label="label" :value="value" />
         </el-select>
+        <el-tree-select
+          v-model="query.classId"
+          :data="classTree"
+          :props="{ label: 'name', children: 'children' }"
+          node-key="id"
+          check-strictly
+          clearable
+          placeholder="分类（含子分类）"
+          class="filter-tree"
+        />
         <el-button type="primary" @click="search">查询</el-button>
       </div>
 
@@ -36,6 +46,9 @@
         </el-table-column>
         <el-table-column label="来源" width="110">
           <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
+        </el-table-column>
+        <el-table-column label="分类" width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.className || '-' }}</template>
         </el-table-column>
         <el-table-column prop="revisionLabel" label="版本" width="80" />
         <el-table-column label="状态" width="100">
@@ -88,6 +101,52 @@
             <el-radio value="CAD">CAD 文档</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="分类">
+          <el-tree-select
+            v-model="form.classId"
+            :data="classTree"
+            :props="{ label: 'name', children: 'children' }"
+            node-key="id"
+            check-strictly
+            clearable
+            placeholder="可不选；选择后需填必填属性"
+            style="width: 100%"
+            @change="onClassChange"
+          />
+        </el-form-item>
+        <el-form-item v-for="attr in classAttrs" :key="attr.code" :label="attr.name" :required="attr.required">
+          <el-select
+            v-if="attr.valueType === 'ENUM'"
+            v-model="form.classAttrs![attr.code]"
+            clearable
+            placeholder="请选择"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in enumItems(attr.enumCode)"
+              :key="item.code"
+              :label="item.name"
+              :value="item.code"
+            />
+          </el-select>
+          <el-date-picker
+            v-else-if="attr.valueType === 'DATE'"
+            v-model="form.classAttrs![attr.code]"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="yyyy-MM-dd"
+            style="width: 100%"
+          />
+          <el-radio-group v-else-if="attr.valueType === 'BOOL'" v-model="form.classAttrs![attr.code]">
+            <el-radio value="true">是</el-radio>
+            <el-radio value="false">否</el-radio>
+          </el-radio-group>
+          <el-input
+            v-else
+            v-model="form.classAttrs![attr.code]"
+            :placeholder="attr.inherited ? `继承自 ${attr.ownerClassName}` : '可留空'"
+          />
+        </el-form-item>
         <el-form-item label="关键词">
           <el-input v-model="form.keyword" placeholder="便于检索，可留空" />
         </el-form-item>
@@ -112,9 +171,13 @@ import {
   DOC_STATE_LABEL,
   DOC_TYPE_LABEL,
   docApi,
+  docClassApi,
+  type DocClassAttrDef,
+  type DocClassNode,
   type DocSaveReq,
   type DocSummary
 } from '@/api/doc'
+import { metaApi } from '@/api/system'
 
 const router = useRouter()
 
@@ -125,12 +188,17 @@ const saving = ref(false)
 const dialogVisible = ref(false)
 const formRef = ref<FormInstance>()
 
+const classTree = ref<DocClassNode[]>([])
+const classAttrs = ref<DocClassAttrDef[]>([])
+const enumCache = ref<Record<string, { code: string; name: string }[]>>({})
+
 const query = reactive({
   page: 1,
   size: 20,
   keyword: '',
   docType: '',
-  lifecycleState: ''
+  lifecycleState: '',
+  classId: '' as string
 })
 
 const form = reactive<DocSaveReq>({
@@ -139,7 +207,9 @@ const form = reactive<DocSaveReq>({
   docType: 'DESIGN',
   source: 'NORMAL',
   keyword: '',
-  description: ''
+  description: '',
+  classId: null,
+  classAttrs: {}
 })
 
 const rules: FormRules = {
@@ -187,7 +257,8 @@ async function load(): Promise<void> {
       size: query.size,
       keyword: query.keyword || undefined,
       docType: query.docType || undefined,
-      lifecycleState: query.lifecycleState || undefined
+      lifecycleState: query.lifecycleState || undefined,
+      classId: query.classId || undefined
     })
     rows.value = page.items
     total.value = page.total
@@ -203,6 +274,63 @@ function search(): void {
   load()
 }
 
+async function loadClassTree(): Promise<void> {
+  try {
+    classTree.value = await docClassApi.tree()
+  } catch {
+    classTree.value = []
+  }
+}
+
+async function ensureEnums(codes: string[]): Promise<void> {
+  for (const code of codes) {
+    if (enumCache.value[code]) {
+      continue
+    }
+    try {
+      const detail = await metaApi.getEnum(code)
+      enumCache.value[code] = detail.items.map((item) => ({ code: item.code, name: item.name }))
+    } catch {
+      enumCache.value[code] = []
+    }
+  }
+}
+
+function enumItems(code?: string | null): { code: string; name: string }[] {
+  return code ? enumCache.value[code] ?? [] : []
+}
+
+async function onClassChange(value: string | null): Promise<void> {
+  form.classAttrs = {}
+  classAttrs.value = []
+  if (!value) {
+    return
+  }
+  try {
+    const attrs = await docClassApi.attrs(value)
+    classAttrs.value = attrs
+    const initial: Record<string, string> = {}
+    attrs.forEach((attr) => {
+      initial[attr.code] = attr.defaultValue ?? ''
+    })
+    form.classAttrs = initial
+    await ensureEnums(attrs.map((attr) => attr.enumCode).filter((code): code is string => Boolean(code)))
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载分类属性失败')
+  }
+}
+
+function cleanClassAttrs(): Record<string, string> {
+  const result: Record<string, string> = {}
+  Object.entries(form.classAttrs ?? {}).forEach(([key, value]) => {
+    const text = value === null || value === undefined ? '' : String(value).trim()
+    if (text) {
+      result[key] = text
+    }
+  })
+  return result
+}
+
 function openCreate(): void {
   form.code = ''
   form.name = ''
@@ -210,6 +338,9 @@ function openCreate(): void {
   form.source = 'NORMAL'
   form.keyword = ''
   form.description = ''
+  form.classId = null
+  form.classAttrs = {}
+  classAttrs.value = []
   dialogVisible.value = true
 }
 
@@ -223,7 +354,11 @@ async function onCreate(): Promise<void> {
   }
   saving.value = true
   try {
-    const created = await docApi.create({ ...form })
+    const created = await docApi.create({
+      ...form,
+      classId: form.classId || null,
+      classAttrs: cleanClassAttrs()
+    })
     ElMessage.success(`已创建 ${created.code}`)
     dialogVisible.value = false
     router.push({ name: 'doc-detail', params: { id: created.id } })
@@ -238,7 +373,10 @@ function openDetail(row: DocSummary): void {
   router.push({ name: 'doc-detail', params: { id: row.id } })
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadClassTree()
+})
 </script>
 
 <style scoped>
@@ -266,6 +404,10 @@ onMounted(load)
 
 .filter-select {
   width: 160px;
+}
+
+.filter-tree {
+  width: 200px;
 }
 
 .pager {

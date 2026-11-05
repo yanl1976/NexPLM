@@ -80,8 +80,9 @@ public class DocController {
             @RequestParam(value = "size", defaultValue = "20") int size,
             @RequestParam(value = "keyword", required = false) String keyword,
             @RequestParam(value = "docType", required = false) String docType,
-            @RequestParam(value = "lifecycleState", required = false) String lifecycleState) {
-        return Result.ok(docService.page(page, size, keyword, docType, lifecycleState));
+            @RequestParam(value = "lifecycleState", required = false) String lifecycleState,
+            @RequestParam(value = "classId", required = false) Long classId) {
+        return Result.ok(docService.page(page, size, keyword, docType, lifecycleState, classId));
     }
 
     @Operation(summary = "版本历史")

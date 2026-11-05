@@ -62,6 +62,8 @@ export interface DocSummary {
   fileExt?: string
   ownerId: string
   updatedAt: string
+  classId?: string | null
+  className?: string | null
 }
 
 export interface DocDetail {
@@ -91,6 +93,9 @@ export interface DocDetail {
   files: DocFile[]
   createdAt: string
   updatedAt: string
+  classId?: string | null
+  className?: string | null
+  classAttrs: Record<string, string>
 }
 
 export interface DocVersion {
@@ -154,6 +159,66 @@ export interface DocSaveReq {
   description?: string
   orgId?: string | null
   securityLevel?: number
+  classId?: string | null
+  classAttrs?: Record<string, string>
+}
+
+/** 文档分类树节点。 */
+export interface DocClassNode {
+  id: string
+  parentId?: string | null
+  code: string
+  name: string
+  path: string
+  sort: number
+  status: string
+  remark?: string | null
+  docCount: number
+  children: DocClassNode[]
+}
+
+export interface DocClassSaveReq {
+  code?: string
+  name: string
+  parentId?: string | null
+  sort?: number
+  status?: string
+  remark?: string | null
+}
+
+/** 分类属性（inherited=true 表示继承自祖先分类，仅展示不可改）。 */
+export interface DocClassAttrDef {
+  id: string
+  code: string
+  name: string
+  valueType: 'STRING' | 'NUMBER' | 'DATE' | 'ENUM' | 'BOOL'
+  enumCode?: string | null
+  required: boolean
+  inheritable: boolean
+  defaultValue?: string | null
+  sort: number
+  ownerClassId: string
+  ownerClassName: string
+  inherited: boolean
+}
+
+export interface DocClassAttrItem {
+  code: string
+  name: string
+  valueType: string
+  enumCode?: string | null
+  required?: boolean
+  inheritable?: boolean
+  defaultValue?: string | null
+  sort?: number | null
+}
+
+export const DOC_CLASS_ATTR_TYPE_LABEL: Record<string, string> = {
+  STRING: '文本',
+  NUMBER: '数值',
+  DATE: '日期',
+  ENUM: '枚举',
+  BOOL: '布尔'
 }
 
 export interface PageResult<T> {
@@ -170,6 +235,7 @@ export const docApi = {
     keyword?: string
     docType?: string
     lifecycleState?: string
+    classId?: string
   }): Promise<PageResult<DocSummary>> {
     return http.get<PageResult<DocSummary>>('/docs', params)
   },
@@ -225,4 +291,24 @@ export const DOC_STATE_LABEL: Record<string, string> = {
   InWorkflow: '审批中',
   Released: '已发布',
   Obsolete: '已作废'
+}
+
+/** 文档分类接口：分类树、增删改、分类属性（含继承）。 */
+export const docClassApi = {
+  tree: (): Promise<DocClassNode[]> => http.get<DocClassNode[]>('/doc-classes'),
+  create(req: DocClassSaveReq): Promise<DocClassNode> {
+    return http.post<DocClassNode>('/doc-classes', req)
+  },
+  update(id: string, req: DocClassSaveReq): Promise<DocClassNode> {
+    return http.put<DocClassNode>(`/doc-classes/${id}`, req)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/doc-classes/${id}`)
+  },
+  attrs(id: string): Promise<DocClassAttrDef[]> {
+    return http.get<DocClassAttrDef[]>(`/doc-classes/${id}/attributes`)
+  },
+  saveAttrs(id: string, items: DocClassAttrItem[]): Promise<DocClassAttrDef[]> {
+    return http.put<DocClassAttrDef[]>(`/doc-classes/${id}/attributes`, { items })
+  }
 }

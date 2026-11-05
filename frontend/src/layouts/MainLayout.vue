@@ -25,6 +25,7 @@
             <span>图文档</span>
           </template>
           <el-menu-item index="/doc">文档库</el-menu-item>
+          <el-menu-item index="/doc/class">文档分类</el-menu-item>
           <el-menu-item index="/workspace">工作空间</el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/pse" disabled>
@@ -80,7 +81,12 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
-const activeMenu = computed(() => (route.path.startsWith('/doc') ? '/doc' : route.path))
+const activeMenu = computed(() => {
+  if (route.path === '/doc/class') {
+    return '/doc/class'
+  }
+  return route.path.startsWith('/doc') ? '/doc' : route.path
+})
 
 function onLogout(): void {
   userStore.logout()

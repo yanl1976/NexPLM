@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -54,20 +55,22 @@ public class DocService {
     private final CheckoutService checkoutService;
     private final MetaService metaService;
     private final LifecycleService lifecycleService;
+    private final DocClassService docClassService;
     private final ScopeApplier scopeApplier;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper jsonMapper;
 
     public DocService(PlmObjectMapper objectMapper, DocMasterMapper docMapper, FileService fileService,
                       CheckoutService checkoutService, MetaService metaService,
-                      LifecycleService lifecycleService, ScopeApplier scopeApplier,
-                      JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper) {
+                      LifecycleService lifecycleService, DocClassService docClassService,
+                      ScopeApplier scopeApplier, JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper) {
         this.objectMapper = objectMapper;
         this.docMapper = docMapper;
         this.fileService = fileService;
         this.checkoutService = checkoutService;
         this.metaService = metaService;
         this.lifecycleService = lifecycleService;
+        this.docClassService = docClassService;
         this.scopeApplier = scopeApplier;
         this.jdbcTemplate = jdbcTemplate;
         this.jsonMapper = jsonMapper;
@@ -82,6 +85,7 @@ public class DocService {
                 req.source() == null || req.source().isBlank() ? SOURCE_NORMAL : req.source(), "文档来源");
         OffsetDateTime now = OffsetDateTime.now();
         long id = IdWorker.getId();
+        Map<String, String> classAttrs = resolveClassAttrs(req.classId(), req.classAttrs());
 
         PlmObject object = new PlmObject();
         object.setId(id);
@@ -98,7 +102,8 @@ public class DocService {
         object.setRevision(1);
         object.setIteration(1);
         object.setIsLatest(true);
-        object.setExtJson(buildExt(docType, source, req.keyword(), req.description()));
+        object.setExtJson(buildExt(docType, source, req.keyword(), req.description(),
+                req.classId(), classAttrs));
         object.setVersion(0);
         object.setDeleted(false);
         object.setCreatedBy(userId);
@@ -110,6 +115,7 @@ public class DocService {
         DocMaster master = new DocMaster();
         master.setObjectId(id);
         master.setDocType(docType);
+        master.setClassId(req.classId());
         master.setSource(source);
         master.setFileCount(0);
         master.setIsDerived(false);
@@ -126,13 +132,16 @@ public class DocService {
         String source = requireEnum(ENUM_DOC_SOURCE,
                 req.source() == null || req.source().isBlank() ? SOURCE_NORMAL : req.source(), "文档来源");
 
+        Map<String, String> classAttrs = resolveClassAttrs(req.classId(), req.classAttrs());
+
         PlmObject update = new PlmObject();
         update.setId(id);
         update.setVersion(object.getVersion());
         update.setName(req.name().trim());
         update.setOrgId(req.orgId());
         update.setSecurityLevel(req.securityLevel() == null ? 0 : req.securityLevel());
-        update.setExtJson(buildExt(docType, source, req.keyword(), req.description()));
+        update.setExtJson(buildExt(docType, source, req.keyword(), req.description(),
+                req.classId(), classAttrs));
         update.setUpdatedBy(userId);
         update.setUpdatedAt(OffsetDateTime.now());
         if (objectMapper.updateById(update) == 0) {
@@ -147,6 +156,7 @@ public class DocService {
             master.setUpdatedAt(OffsetDateTime.now());
         }
         master.setDocType(docType);
+        master.setClassId(req.classId());
         master.setSource(source);
         if (docMapper.selectById(id) == null) {
             docMapper.insert(master);
@@ -165,6 +175,7 @@ public class DocService {
         List<FileService.FileView> files = fileService.listByOwner(id, true);
         DocDtos.CheckoutInfo checkout = checkoutService.active(id)
                 .map(this::toCheckoutInfo).orElse(null);
+        Long classId = master == null ? null : master.getClassId();
         return new DocDtos.DocDetail(id, object.getCode(), object.getName(),
                 asText(ext.get("docType"), master == null ? null : master.getDocType()),
                 asText(ext.get("source"), master == null ? null : master.getSource()),
@@ -178,11 +189,12 @@ public class DocService {
                 master == null ? null : master.getFileExt(),
                 master == null ? null : master.getFileCount(),
                 master == null ? null : master.getPageCount(),
-                checkout, files, object.getCreatedAt(), object.getUpdatedAt());
+                checkout, files, object.getCreatedAt(), object.getUpdatedAt(),
+                classId, className(classId), readClassAttrs(ext.get("classAttrs")));
     }
 
     public PageResult<DocDtos.DocSummary> page(int page, int size, String keyword,
-                                               String docType, String lifecycleState) {
+                                               String docType, String lifecycleState, Long classId) {
         int pageNo = Math.max(1, page);
         int pageSize = Math.min(Math.max(1, size), 200);
         LambdaQueryWrapper<PlmObject> wrapper = new LambdaQueryWrapper<PlmObject>()
@@ -199,6 +211,15 @@ public class DocService {
         if (lifecycleState != null && !lifecycleState.isBlank()) {
             wrapper.eq(PlmObject::getLifecycleState, lifecycleState);
         }
+        if (classId != null) {
+            List<Long> classIds = docClassService.subtreeIds(classId);
+            if (classIds.isEmpty()) {
+                wrapper.apply("1 = 0");
+            } else {
+                wrapper.apply("id IN (SELECT object_id FROM doc_master WHERE class_id IN ("
+                        + joinIds(classIds) + "))");
+            }
+        }
         scopeApplier.apply(wrapper, PlmObject::getCompanyId, PlmObject::getOrgId, PlmObject::getOwnerId);
 
         Page<PlmObject> result = objectMapper.selectPage(new Page<>(pageNo, pageSize), wrapper);
@@ -210,8 +231,25 @@ public class DocService {
                 masters.put(master.getObjectId(), master);
             }
         }
+        Map<Long, String> classNames = new HashMap<>();
+        List<Long> classIds = masters.values().stream()
+                .map(DocMaster::getClassId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (!classIds.isEmpty()) {
+            jdbcTemplate.query("SELECT id, name FROM doc_class WHERE id IN (" + joinIds(classIds) + ")",
+                    rs -> {
+                        classNames.put(rs.getLong(1), rs.getString(2));
+                    });
+        }
         List<DocDtos.DocSummary> items = result.getRecords().stream()
-                .map(object -> toSummary(object, masters.get(object.getId())))
+                .map(object -> {
+                    DocMaster master = masters.get(object.getId());
+                    Long itemClassId = master == null ? null : master.getClassId();
+                    return toSummary(object, master,
+                            itemClassId == null ? null : classNames.get(itemClassId));
+                })
                 .toList();
         return PageResult.of(items, result.getTotal(), pageNo, pageSize);
     }
@@ -325,6 +363,7 @@ public class DocService {
         DocMaster master = new DocMaster();
         master.setObjectId(newId);
         master.setDocType(source == null ? null : source.getDocType());
+        master.setClassId(source == null ? null : source.getClassId());
         master.setVaultId(source == null ? null : source.getVaultId());
         master.setFileExt(source == null ? null : source.getFileExt());
         master.setFileCount(source == null ? 0 : source.getFileCount());
@@ -439,7 +478,48 @@ public class DocService {
                 rs -> rs.next() ? rs.getLong(1) : null, userId);
     }
 
-    private String buildExt(String docType, String source, String keyword, String description) {
+    private Map<String, String> resolveClassAttrs(Long classId, Map<String, String> attrs) {
+        if (classId == null) {
+            return Map.of();
+        }
+        return docClassService.normalizeDocAttrs(classId, attrs);
+    }
+
+    /** 从 ext_json 读取分类属性值（只保留字符串值）。 */
+    private Map<String, String> readClassAttrs(Object value) {
+        if (!(value instanceof Map<?, ?> raw)) {
+            return Map.of();
+        }
+        Map<String, String> attrs = new LinkedHashMap<>();
+        raw.forEach((key, item) -> {
+            if (key != null && item != null) {
+                attrs.put(String.valueOf(key), String.valueOf(item));
+            }
+        });
+        return attrs;
+    }
+
+    private String className(Long classId) {
+        if (classId == null) {
+            return null;
+        }
+        return jdbcTemplate.query("SELECT name FROM doc_class WHERE id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, classId);
+    }
+
+    private String joinIds(List<Long> ids) {
+        StringBuilder sb = new StringBuilder();
+        for (Long id : ids) {
+            if (sb.length() > 0) {
+                sb.append(',');
+            }
+            sb.append(id);
+        }
+        return sb.toString();
+    }
+
+    private String buildExt(String docType, String source, String keyword, String description,
+                            Long classId, Map<String, String> classAttrs) {
         Map<String, Object> ext = new LinkedHashMap<>();
         ext.put("docType", docType);
         ext.put("source", source);
@@ -448,6 +528,12 @@ public class DocService {
         }
         if (description != null && !description.isBlank()) {
             ext.put("description", description);
+        }
+        if (classId != null) {
+            ext.put("classId", classId);
+        }
+        if (classAttrs != null && !classAttrs.isEmpty()) {
+            ext.put("classAttrs", classAttrs);
         }
         try {
             return jsonMapper.writeValueAsString(ext);
@@ -472,7 +558,7 @@ public class DocService {
         return value instanceof String text && !text.isBlank() ? text : fallback;
     }
 
-    private DocDtos.DocSummary toSummary(PlmObject object, DocMaster master) {
+    private DocDtos.DocSummary toSummary(PlmObject object, DocMaster master, String className) {
         Map<String, Object> ext = readExt(object.getExtJson());
         return new DocDtos.DocSummary(object.getId(), object.getCode(), object.getName(),
                 asText(ext.get("docType"), master == null ? null : master.getDocType()),
@@ -481,7 +567,8 @@ public class DocService {
                 VersionFormatter.label(object.getRevision(), object.getIteration()),
                 master == null ? 0 : master.getFileCount(),
                 master == null ? null : master.getFileExt(),
-                object.getOwnerId(), object.getUpdatedAt());
+                object.getOwnerId(), object.getUpdatedAt(),
+                master == null ? null : master.getClassId(), className);
     }
 
     private DocDtos.CheckoutInfo toCheckoutInfo(CheckoutService.Lock lock) {

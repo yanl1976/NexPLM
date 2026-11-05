@@ -1,0 +1,434 @@
+package com.nexplm.platform.doc.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.nexplm.common.exception.BizException;
+import com.nexplm.common.exception.ErrorCode;
+import com.nexplm.platform.doc.api.DocClassDtos;
+import com.nexplm.platform.doc.domain.DocClass;
+import com.nexplm.platform.doc.domain.DocClassAttr;
+import com.nexplm.platform.doc.mapper.DocClassAttrMapper;
+import com.nexplm.platform.doc.mapper.DocClassMapper;
+import com.nexplm.platform.metadata.service.MetaService;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
+
+/**
+ * 文档分类服务：分类树维护、分类属性（含继承）定义、文档分类属性校验。
+ * <p>规则：</p>
+ * <ul>
+ *   <li>分类编码在同一对象类型内唯一，形如 {@code MECH-ASSY}；</li>
+ *   <li>{@code path} 为「/父编码/子编码」，调整编码或父级时整棵子树的 path 前缀同步替换；</li>
+ *   <li>属性继承：子分类读取自身全部属性 + 祖先 {@code inheritable=true} 的属性，同编码以最近者为准；</li>
+ *   <li>文档保存时按「生效属性」校验必填与值类型，属性值只保留已定义属性。</li>
+ * </ul>
+ */
+@Service
+public class DocClassService {
+
+    public static final String ENTITY_CODE = "PdmDoc";
+
+    private static final Pattern CODE_PATTERN = Pattern.compile("^[A-Za-z][A-Za-z0-9_-]{0,63}$");
+    private static final Set<String> VALUE_TYPES = Set.of("STRING", "NUMBER", "DATE", "ENUM", "BOOL");
+    private static final Set<String> STATUSES = Set.of("ACTIVE", "DISABLED");
+    private static final int MAX_DEPTH = 20;
+
+    private final DocClassMapper classMapper;
+    private final DocClassAttrMapper attrMapper;
+    private final MetaService metaService;
+    private final JdbcTemplate jdbcTemplate;
+
+    public DocClassService(DocClassMapper classMapper, DocClassAttrMapper attrMapper,
+                           MetaService metaService, JdbcTemplate jdbcTemplate) {
+        this.classMapper = classMapper;
+        this.attrMapper = attrMapper;
+        this.metaService = metaService;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    // ------------------------------------------------------------ 分类树
+
+    public List<DocClassDtos.ClassNode> tree(String entityCode) {
+        String entity = normalizeEntity(entityCode);
+        List<DocClass> all = classMapper.selectList(new LambdaQueryWrapper<DocClass>()
+                .eq(DocClass::getEntityCode, entity)
+                .orderByAsc(DocClass::getSort)
+                .orderByAsc(DocClass::getCode));
+        Map<Long, Long> counts = docCounts();
+        Map<Long, DocClassDtos.ClassNode> nodes = new LinkedHashMap<>();
+        for (DocClass item : all) {
+            nodes.put(item.getId(), new DocClassDtos.ClassNode(item.getId(), item.getParentId(),
+                    item.getCode(), item.getName(), item.getPath(), item.getSort(), item.getStatus(),
+                    item.getRemark(), counts.getOrDefault(item.getId(), 0L), new ArrayList<>()));
+        }
+        List<DocClassDtos.ClassNode> roots = new ArrayList<>();
+        for (DocClass item : all) {
+            DocClassDtos.ClassNode node = nodes.get(item.getId());
+            DocClassDtos.ClassNode parent = item.getParentId() == null ? null : nodes.get(item.getParentId());
+            if (parent == null) {
+                roots.add(node);
+            } else {
+                parent.children().add(node);
+            }
+        }
+        return roots;
+    }
+
+    public DocClass requireClass(Long id) {
+        if (id == null) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "分类标识不能为空");
+        }
+        DocClass clazz = classMapper.selectById(id);
+        if (clazz == null) {
+            throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "分类不存在：" + id);
+        }
+        return clazz;
+    }
+
+    /** 子树分类 ID（含自身），用于「按分类检索文档」时包含子分类。 */
+    public List<Long> subtreeIds(Long classId) {
+        DocClass root = requireClass(classId);
+        return jdbcTemplate.queryForList("""
+                        SELECT id FROM doc_class
+                         WHERE entity_code = ? AND deleted = false
+                           AND (id = ? OR path LIKE ? ESCAPE '\\')
+                        """, Long.class, root.getEntityCode(), classId, escapeLike(root.getPath()) + "/%");
+    }
+
+    @Transactional
+    public DocClassDtos.ClassNode create(DocClassDtos.ClassSaveReq req, Long userId) {
+        String code = requireCode(req.code());
+        DocClass parent = req.parentId() == null ? null : requireClass(req.parentId());
+        ensureCodeUnique(ENTITY_CODE, code, null);
+        OffsetDateTime now = OffsetDateTime.now();
+        DocClass clazz = new DocClass();
+        clazz.setId(IdWorker.getId());
+        clazz.setParentId(parent == null ? null : parent.getId());
+        clazz.setEntityCode(ENTITY_CODE);
+        clazz.setCode(code);
+        clazz.setName(req.name().trim());
+        clazz.setPath(parent == null ? "/" + code : parent.getPath() + "/" + code);
+        clazz.setSort(req.sort() == null ? 0 : req.sort());
+        clazz.setStatus(normalizeStatus(req.status()));
+        clazz.setRemark(req.remark());
+        clazz.setVersion(0);
+        clazz.setDeleted(false);
+        clazz.setCreatedBy(userId);
+        clazz.setCreatedAt(now);
+        clazz.setUpdatedBy(userId);
+        clazz.setUpdatedAt(now);
+        classMapper.insert(clazz);
+        return toNode(clazz, 0L, List.of());
+    }
+
+    /**
+     * 修改分类：支持改名/排序/停用/改编码/换父级，编码或父级变化时整棵子树 path 前缀同步替换。
+     */
+    @Transactional
+    public DocClassDtos.ClassNode update(Long id, DocClassDtos.ClassSaveReq req, Long userId) {
+        DocClass existing = requireClass(id);
+        String code = req.code() == null || req.code().isBlank() ? existing.getCode() : requireCode(req.code());
+        ensureCodeUnique(existing.getEntityCode(), code, id);
+
+        Long parentId = req.parentId();
+        if (parentId != null && parentId.equals(id)) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "分类不能作为自己的父级");
+        }
+        DocClass parent = parentId == null ? null : requireClass(parentId);
+        if (parent != null && parent.getPath().startsWith(existing.getPath() + "/")) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "不能把分类移动到自己的子分类下");
+        }
+
+        String oldPath = existing.getPath();
+        String newPath = parent == null ? "/" + code : parent.getPath() + "/" + code;
+        boolean pathChanged = !newPath.equals(oldPath);
+
+        existing.setParentId(parent == null ? null : parent.getId());
+        existing.setCode(code);
+        existing.setName(req.name().trim());
+        existing.setPath(newPath);
+        existing.setSort(req.sort() == null ? existing.getSort() : req.sort());
+        existing.setStatus(normalizeStatus(req.status() == null ? existing.getStatus() : req.status()));
+        existing.setRemark(req.remark());
+        existing.setUpdatedBy(userId);
+        existing.setUpdatedAt(OffsetDateTime.now());
+        classMapper.updateById(existing);
+
+        if (pathChanged) {
+            jdbcTemplate.update("""
+                            UPDATE doc_class
+                               SET path = ? || substring(path from ?), updated_by = ?, updated_at = now()
+                             WHERE entity_code = ? AND id <> ? AND deleted = false
+                               AND path LIKE ? ESCAPE '\\'
+                            """,
+                    newPath, oldPath.length() + 1, userId, existing.getEntityCode(), id,
+                    escapeLike(oldPath) + "/%");
+        }
+        return toNode(existing, 0L, List.of());
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        DocClass existing = requireClass(id);
+        Long children = classMapper.selectCount(new LambdaQueryWrapper<DocClass>()
+                .eq(DocClass::getParentId, id));
+        if (children != null && children > 0) {
+            throw BizException.of(ErrorCode.COMMON_CONFLICT, "该分类下仍有子分类，请先删除子分类");
+        }
+        Long used = jdbcTemplate.query("SELECT COUNT(1) FROM doc_master WHERE class_id = ?",
+                rs -> rs.next() ? rs.getLong(1) : 0L, id);
+        if (used != null && used > 0) {
+            throw BizException.of(ErrorCode.COMMON_CONFLICT, "该分类下仍有 " + used + " 个文档，不能删除");
+        }
+        for (DocClassAttr attr : attrMapper.selectList(new LambdaQueryWrapper<DocClassAttr>()
+                .eq(DocClassAttr::getClassId, existing.getId()))) {
+            attrMapper.deleteById(attr.getId());
+        }
+        classMapper.deleteById(id);
+    }
+
+    // ------------------------------------------------------------ 分类属性
+
+    /** 生效属性：自身全部属性在前，祖先可继承属性在后，同编码以最近者为准。 */
+    public List<DocClassDtos.AttrDef> attrs(Long classId) {
+        DocClass current = requireClass(classId);
+        Map<String, DocClassDtos.AttrDef> result = new LinkedHashMap<>();
+        Set<Long> visited = new HashSet<>();
+        DocClass cursor = current;
+        int depth = 0;
+        while (cursor != null && visited.add(cursor.getId()) && depth++ < MAX_DEPTH) {
+            boolean inherited = !cursor.getId().equals(classId);
+            for (DocClassAttr attr : attrMapper.selectList(new LambdaQueryWrapper<DocClassAttr>()
+                    .eq(DocClassAttr::getClassId, cursor.getId())
+                    .orderByAsc(DocClassAttr::getSort))) {
+                if (inherited && !Boolean.TRUE.equals(attr.getInheritable())) {
+                    continue;
+                }
+                result.putIfAbsent(attr.getCode(), new DocClassDtos.AttrDef(attr.getId(), attr.getCode(),
+                        attr.getName(), attr.getValueType(), attr.getEnumCode(),
+                        attr.getRequired(), attr.getInheritable(), attr.getDefaultValue(),
+                        attr.getSort(), cursor.getId(), cursor.getName(), inherited));
+            }
+            cursor = cursor.getParentId() == null ? null : classMapper.selectById(cursor.getParentId());
+        }
+        return new ArrayList<>(result.values());
+    }
+
+    /** 全量替换分类自身属性（未出现在入参中的属性做逻辑删除）。 */
+    @Transactional
+    public List<DocClassDtos.AttrDef> saveAttrs(Long classId, List<DocClassDtos.AttrItem> items, Long userId) {
+        requireClass(classId);
+        Map<String, DocClassAttr> existing = new HashMap<>();
+        for (DocClassAttr attr : attrMapper.selectList(new LambdaQueryWrapper<DocClassAttr>()
+                .eq(DocClassAttr::getClassId, classId))) {
+            existing.put(attr.getCode(), attr);
+        }
+        Set<String> keep = new HashSet<>();
+        OffsetDateTime now = OffsetDateTime.now();
+        for (DocClassDtos.AttrItem item : items) {
+            String type = requireValueType(item.valueType());
+            String enumCode = item.enumCode() == null || item.enumCode().isBlank() ? null : item.enumCode().trim();
+            if ("ENUM".equals(type)) {
+                if (enumCode == null) {
+                    throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                            "属性「" + item.name() + "」为枚举类型，必须指定枚举编码");
+                }
+                metaService.getEnum(enumCode);
+            } else {
+                enumCode = null;
+            }
+            keep.add(item.code());
+            DocClassAttr attr = existing.get(item.code());
+            boolean insert = attr == null;
+            if (insert) {
+                attr = new DocClassAttr();
+                attr.setId(IdWorker.getId());
+                attr.setClassId(classId);
+                attr.setCode(item.code());
+                attr.setDeleted(false);
+                attr.setCreatedBy(userId);
+                attr.setCreatedAt(now);
+            }
+            attr.setName(item.name().trim());
+            attr.setValueType(type);
+            attr.setEnumCode(enumCode);
+            attr.setRequired(Boolean.TRUE.equals(item.required()));
+            attr.setInheritable(item.inheritable() == null || item.inheritable());
+            attr.setDefaultValue(item.defaultValue());
+            attr.setSort(item.sort() == null ? 0 : item.sort());
+            attr.setUpdatedBy(userId);
+            attr.setUpdatedAt(now);
+            if (insert) {
+                attrMapper.insert(attr);
+            } else {
+                attrMapper.updateById(attr);
+            }
+        }
+        for (DocClassAttr old : existing.values()) {
+            if (!keep.contains(old.getCode())) {
+                attrMapper.deleteById(old.getId());
+            }
+        }
+        return attrs(classId);
+    }
+
+    /**
+     * 校验并归一化文档的分类属性值：按生效属性做必填与值类型校验，未定义属性丢弃。
+     */
+    public Map<String, String> normalizeDocAttrs(Long classId, Map<String, String> values) {
+        if (classId == null) {
+            return Map.of();
+        }
+        List<DocClassDtos.AttrDef> defs = attrs(classId);
+        Map<String, String> input = values == null ? Map.of() : values;
+        Map<String, String> normalized = new LinkedHashMap<>();
+        List<String> missing = new ArrayList<>();
+        for (DocClassDtos.AttrDef def : defs) {
+            String raw = input.get(def.code());
+            String value = raw == null ? "" : raw.trim();
+            if (value.isEmpty()) {
+                if (Boolean.TRUE.equals(def.required())) {
+                    missing.add(def.name());
+                }
+                continue;
+            }
+            checkValue(def, value);
+            normalized.put(def.code(), value);
+        }
+        if (!missing.isEmpty()) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "分类必填属性未填写：" + String.join("、", missing));
+        }
+        return normalized;
+    }
+
+    // ------------------------------------------------------------ 内部
+
+    private void checkValue(DocClassDtos.AttrDef def, String value) {
+        String type = def.valueType() == null ? "STRING" : def.valueType();
+        switch (type) {
+            case "NUMBER" -> {
+                try {
+                    new BigDecimal(value);
+                } catch (NumberFormatException ex) {
+                    throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                            "属性「" + def.name() + "」必须是数值：" + value);
+                }
+            }
+            case "DATE" -> {
+                try {
+                    LocalDate.parse(value);
+                } catch (Exception ex) {
+                    throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                            "属性「" + def.name() + "」必须是日期（yyyy-MM-dd）：" + value);
+                }
+            }
+            case "BOOL" -> {
+                if (!"true".equalsIgnoreCase(value) && !"false".equalsIgnoreCase(value)) {
+                    throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                            "属性「" + def.name() + "」必须是 true/false：" + value);
+                }
+            }
+            case "ENUM" -> {
+                if (def.enumCode() == null) {
+                    return;
+                }
+                boolean matched = metaService.getEnum(def.enumCode()).items().stream()
+                        .anyMatch(item -> item.code().equals(value));
+                if (!matched) {
+                    throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                            "属性「" + def.name() + "」取值不在枚举范围内：" + value);
+                }
+            }
+            default -> {
+                if (value.length() > 500) {
+                    throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                            "属性「" + def.name() + "」长度不能超过 500");
+                }
+            }
+        }
+    }
+
+    private Map<Long, Long> docCounts() {
+        Map<Long, Long> counts = new HashMap<>();
+        jdbcTemplate.query("""
+                        SELECT class_id, COUNT(1) AS doc_count FROM doc_master
+                         WHERE class_id IS NOT NULL GROUP BY class_id
+                        """,
+                rs -> {
+                    counts.put(rs.getLong("class_id"), rs.getLong("doc_count"));
+                });
+        return counts;
+    }
+
+    private void ensureCodeUnique(String entityCode, String code, Long excludeId) {
+        LambdaQueryWrapper<DocClass> wrapper = new LambdaQueryWrapper<DocClass>()
+                .eq(DocClass::getEntityCode, entityCode)
+                .eq(DocClass::getCode, code);
+        if (excludeId != null) {
+            wrapper.ne(DocClass::getId, excludeId);
+        }
+        Long count = classMapper.selectCount(wrapper);
+        if (count != null && count > 0) {
+            throw BizException.of(ErrorCode.COMMON_CONFLICT, "分类编码已存在：" + code);
+        }
+    }
+
+    private String requireCode(String code) {
+        if (code == null || code.isBlank()) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "分类编码不能为空");
+        }
+        String trimmed = code.trim();
+        if (!CODE_PATTERN.matcher(trimmed).matches()) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "分类编码需以字母开头，仅含字母数字下划线或短横线：" + trimmed);
+        }
+        return trimmed;
+    }
+
+    private String requireValueType(String valueType) {
+        String type = valueType == null ? "" : valueType.trim().toUpperCase();
+        if (!VALUE_TYPES.contains(type)) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "不支持的值类型：" + valueType + "，可选：" + String.join("/", VALUE_TYPES));
+        }
+        return type;
+    }
+
+    private String normalizeStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return "ACTIVE";
+        }
+        String normalized = status.trim().toUpperCase();
+        if (!STATUSES.contains(normalized)) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "状态仅支持 ACTIVE / DISABLED");
+        }
+        return normalized;
+    }
+
+    private String normalizeEntity(String entityCode) {
+        return entityCode == null || entityCode.isBlank() ? ENTITY_CODE : entityCode.trim();
+    }
+
+    private String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    private DocClassDtos.ClassNode toNode(DocClass clazz, Long docCount, List<DocClassDtos.ClassNode> children) {
+        return new DocClassDtos.ClassNode(clazz.getId(), clazz.getParentId(), clazz.getCode(), clazz.getName(),
+                clazz.getPath(), clazz.getSort(), clazz.getStatus(), clazz.getRemark(), docCount, children);
+    }
+}

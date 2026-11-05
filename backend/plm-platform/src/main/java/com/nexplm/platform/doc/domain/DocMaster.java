@@ -17,6 +17,7 @@ public class DocMaster {
     @TableId(type = IdType.INPUT)
     private Long objectId;
     private String docType;
+    private Long classId;
     private Long vaultId;
     private String fileExt;
     private Integer fileCount;

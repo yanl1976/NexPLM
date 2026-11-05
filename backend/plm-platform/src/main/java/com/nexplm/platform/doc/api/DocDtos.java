@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 图文档 DTO。
@@ -25,13 +26,16 @@ public final class DocDtos {
             @Size(max = 500) String keyword,
             @Size(max = 4000) String description,
             Long orgId,
-            Integer securityLevel) {
+            Integer securityLevel,
+            Long classId,
+            Map<String, String> classAttrs) {
     }
 
     public record DocSummary(Long id, String code, String name, String docType, String source,
                              String lifecycleState, Integer revision, Integer iteration,
                              String revisionLabel, Integer fileCount, String fileExt,
-                             Long ownerId, OffsetDateTime updatedAt) {
+                             Long ownerId, OffsetDateTime updatedAt,
+                             Long classId, String className) {
     }
 
     public record CheckoutInfo(Long userId, String userLabel, OffsetDateTime checkedOutAt,
@@ -46,7 +50,8 @@ public final class DocDtos {
                             Integer securityLevel, Long mainFileId, String fileExt,
                             Integer fileCount, Integer pageCount,
                             CheckoutInfo checkout, List<FileService.FileView> files,
-                            OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+                            OffsetDateTime createdAt, OffsetDateTime updatedAt,
+                            Long classId, String className, Map<String, String> classAttrs) {
     }
 
     /** 版本历史条目。 */

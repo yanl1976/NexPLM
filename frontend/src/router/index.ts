@@ -26,6 +26,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '图文档' }
       },
       {
+        path: 'doc/class',
+        name: 'doc-class',
+        component: () => import('@/views/doc/DocClassView.vue'),
+        meta: { title: '文档分类' }
+      },
+      {
         path: 'doc/:id',
         name: 'doc-detail',
         component: () => import('@/views/doc/DocDetailView.vue'),
