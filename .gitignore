@@ -1,0 +1,32 @@
+# Java
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Node
+node_modules/
+dist/
+.pnpm-store/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 环境与密钥
+.env
+.env.local
+*.pem
+*.p12
+*.pfx
+
+# 日志
+logs/
+*.log
