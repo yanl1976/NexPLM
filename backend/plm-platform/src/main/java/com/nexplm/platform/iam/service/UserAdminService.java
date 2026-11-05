@@ -10,6 +10,8 @@ import com.nexplm.platform.iam.domain.SysRole;
 import com.nexplm.platform.iam.domain.SysUser;
 import com.nexplm.platform.iam.mapper.SysRoleMapper;
 import com.nexplm.platform.iam.mapper.SysUserMapper;
+import com.nexplm.platform.security.scope.DataScopeContext;
+import com.nexplm.platform.security.scope.DataScopeType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -54,6 +56,7 @@ public class UserAdminService {
         if (status != null && !status.isBlank()) {
             query.eq(SysUser::getStatus, status);
         }
+        applyOrgScope(query);
         Page<SysUser> result = userMapper.selectPage(new Page<>(page, Math.min(size, 200)), query);
         List<SysUser> users = result.getRecords();
         Map<Long, List<SysRole>> rolesByUser = loadRoles(users.stream().map(SysUser::getId).toList());
@@ -66,6 +69,21 @@ public class UserAdminService {
                     roles.stream().map(SysRole::getName).toList());
         }).toList();
         return PageResult.of(rows, result.getTotal(), page, size);
+    }
+
+    /** 非集团范围的用户只能看到自己所在组织（及其下级）的用户。 */
+    private void applyOrgScope(LambdaQueryWrapper<SysUser> query) {
+        DataScopeContext.Scope scope = DataScopeContext.get();
+        if (scope == null || (scope.type() != DataScopeType.ORG && scope.type() != DataScopeType.SELF)) {
+            return;
+        }
+        if (scope.orgIds().isEmpty()) {
+            query.apply("1 = 0");
+            return;
+        }
+        String marks = scope.orgIds().stream().map(id -> "?").collect(Collectors.joining(","));
+        query.exists("SELECT 1 FROM sys_user_org uo WHERE uo.user_id = sys_user.id AND uo.org_id IN ("
+                + marks + ")", scope.orgIds().toArray());
     }
 
     private Map<Long, List<SysRole>> loadRoles(List<Long> userIds) {

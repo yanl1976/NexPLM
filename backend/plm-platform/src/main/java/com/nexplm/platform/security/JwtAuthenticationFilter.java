@@ -5,6 +5,8 @@ import com.nexplm.common.api.Result;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.platform.iam.domain.SysUser;
 import com.nexplm.platform.iam.mapper.SysUserMapper;
+import com.nexplm.platform.security.scope.DataScopeContext;
+import com.nexplm.platform.security.scope.DataScopeResolver;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -35,11 +37,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final SysUserMapper userMapper;
     private final ObjectMapper objectMapper;
+    private final DataScopeResolver dataScopeResolver;
 
-    public JwtAuthenticationFilter(JwtService jwtService, SysUserMapper userMapper, ObjectMapper objectMapper) {
+    public JwtAuthenticationFilter(JwtService jwtService, SysUserMapper userMapper, ObjectMapper objectMapper,
+                                   DataScopeResolver dataScopeResolver) {
         this.jwtService = jwtService;
         this.userMapper = userMapper;
         this.objectMapper = objectMapper;
+        this.dataScopeResolver = dataScopeResolver;
     }
 
     @Override
@@ -69,7 +74,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(principal, null, authorities);
             SecurityContextHolder.getContext().setAuthentication(authentication);
-            chain.doFilter(request, response);
+            DataScopeContext.set(dataScopeResolver.resolve(userId, user.getCompanyId()));
+            try {
+                chain.doFilter(request, response);
+            } finally {
+                DataScopeContext.clear();
+            }
         } catch (BizException ex) {
             SecurityContextHolder.clearContext();
             writeUnauthorized(response, ex);

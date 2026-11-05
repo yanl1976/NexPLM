@@ -6,6 +6,8 @@ import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.iam.api.IamDtos;
 import com.nexplm.platform.iam.domain.SysOrg;
 import com.nexplm.platform.iam.mapper.SysOrgMapper;
+import com.nexplm.platform.security.scope.DataScopeContext;
+import com.nexplm.platform.security.scope.DataScopeType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,8 +35,16 @@ public class OrgService {
     }
 
     public List<IamDtos.OrgNode> tree(Long companyId) {
-        List<SysOrg> all = orgMapper.selectList(new LambdaQueryWrapper<SysOrg>()
-                .eq(SysOrg::getCompanyId, companyId)
+        LambdaQueryWrapper<SysOrg> query = new LambdaQueryWrapper<SysOrg>()
+                .eq(SysOrg::getCompanyId, companyId);
+        DataScopeContext.Scope scope = DataScopeContext.get();
+        if (scope != null && (scope.type() == DataScopeType.ORG || scope.type() == DataScopeType.SELF)) {
+            if (scope.orgIds().isEmpty()) {
+                return List.of();
+            }
+            query.in(SysOrg::getId, scope.orgIds());
+        }
+        List<SysOrg> all = orgMapper.selectList(query
                 .orderByAsc(SysOrg::getSort)
                 .orderByAsc(SysOrg::getId));
         Map<Long, List<SysOrg>> childrenIndex = new LinkedHashMap<>();
