@@ -1,0 +1,84 @@
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+
+spring:
+  application:
+    name: nexplm
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  datasource:
+    url: ${NEXPLM_DB_URL:jdbc:postgresql://localhost:5432/nexplm}
+    username: ${NEXPLM_DB_USER:nexplm}
+    password: ${NEXPLM_DB_PASSWORD:nexplm}
+    hikari:
+      maximum-pool-size: ${NEXPLM_DB_POOL_MAX:20}
+      minimum-idle: 2
+      connection-timeout: 5000
+      max-lifetime: 1800000
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+    time-zone: Asia/Shanghai
+  mvc:
+    problemdetails:
+      enabled: false
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 500MB
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    call-setters-on-nulls: true
+  global-config:
+    banner: false
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: true
+      logic-not-delete-value: false
+
+nexplm:
+  security:
+    jwt:
+      # 生产必须通过环境变量覆盖，长度 >= 32 字节
+      secret: ${NEXPLM_JWT_SECRET:nexplm-dev-only-secret-key-change-in-production-32b}
+      access-ttl: PT30M
+      refresh-ttl: P7D
+    bootstrap:
+      admin-username: ${NEXPLM_ADMIN_USERNAME:admin}
+      admin-password: ${NEXPLM_ADMIN_PASSWORD:Admin@12345}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,loggers
+  endpoint:
+    health:
+      show-details: when_authorized
+
+logging:
+  level:
+    root: INFO
+    com.nexplm: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{traceId:-}] %logger{36} - %msg%n"
