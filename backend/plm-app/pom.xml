@@ -61,6 +61,20 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- 本机无 Docker 时用嵌入式 PostgreSQL 做真实链路验证（CI 可切换为 Testcontainers） -->
+        <dependency>
+            <groupId>io.zonky.test</groupId>
+            <artifactId>embedded-postgres</artifactId>
+            <version>2.2.0</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- embedded-postgres 解压需新版 commons-compress，其传递的 commons-lang3 过旧会 NoSuchMethodError -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.17.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
