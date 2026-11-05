@@ -48,6 +48,12 @@ const routes: RouteRecordRaw[] = [
         name: 'system-security',
         component: () => import('@/views/system/SecurityView.vue'),
         meta: { title: '安全策略' }
+      },
+      {
+        path: 'system/lifecycle',
+        name: 'system-lifecycle',
+        component: () => import('@/views/system/LifecycleView.vue'),
+        meta: { title: '生命周期设计器' }
       }
     ]
   },

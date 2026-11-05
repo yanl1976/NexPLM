@@ -118,6 +118,65 @@ public class LifecycleService {
         return definition(code);
     }
 
+    /**
+     * 保存生命周期定义（可视化设计器调用）。校验状态唯一、初始态存在、迁移端点合法。
+     */
+    @Transactional
+    public void updateDefinition(String code, String definitionJson) {
+        MetaLifecycle lifecycle = lifecycleMapper.selectOne(new LambdaQueryWrapper<MetaLifecycle>()
+                .eq(MetaLifecycle::getCode, code).last("limit 1"));
+        if (lifecycle == null) {
+            throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "生命周期不存在：" + code);
+        }
+        List<String> errors = new ArrayList<>();
+        try {
+            JsonNode root = jsonMapper.readTree(definitionJson);
+            JsonNode states = root.path("states");
+            if (!states.isArray() || states.isEmpty()) {
+                errors.add("至少需要定义一个状态");
+            }
+            List<String> codes = new ArrayList<>();
+            for (JsonNode state : states) {
+                String stateCode = state.path("code").asText();
+                if (stateCode.isBlank()) {
+                    errors.add("状态编码不能为空");
+                } else if (codes.contains(stateCode)) {
+                    errors.add("状态编码重复：" + stateCode);
+                } else {
+                    codes.add(stateCode);
+                }
+            }
+            String initial = root.path("initial").asText();
+            if (!initial.isBlank() && !codes.contains(initial)) {
+                errors.add("初始状态不在状态列表中：" + initial);
+            }
+            for (JsonNode transition : root.path("transitions")) {
+                String from = transition.path("from").asText();
+                String to = transition.path("to").asText();
+                String action = transition.path("action").asText();
+                if (!codes.contains(from)) {
+                    errors.add("迁移起点不存在：" + from);
+                }
+                if (!codes.contains(to)) {
+                    errors.add("迁移终点不存在：" + to);
+                }
+                if (action.isBlank()) {
+                    errors.add("迁移操作不能为空");
+                }
+            }
+        } catch (Exception ex) {
+            errors.add("定义不是合法 JSON：" + ex.getMessage());
+        }
+        if (!errors.isEmpty()) {
+            throw BizException.of(ErrorCode.META_PUBLISH_BLOCKED, String.join("；", errors));
+        }
+        lifecycle.setDefinitionJson(definitionJson);
+        lifecycle.setVersionNo(lifecycle.getVersionNo() == null ? 1 : lifecycle.getVersionNo() + 1);
+        lifecycle.setUpdatedAt(OffsetDateTime.now());
+        lifecycleMapper.updateById(lifecycle);
+        invalidate(code);
+    }
+
     @Transactional
     public PlmObject transition(Long objectId, String action, String reason, Long operatorId) {
         PlmObject object = objectMapper.selectById(objectId);

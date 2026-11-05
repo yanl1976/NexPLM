@@ -149,6 +149,34 @@ export const roleApi = {
   remove: (id: string) => http.delete<void>(`/system/roles/${id}`)
 }
 
+export interface LifecycleState {
+  code: string
+  name: string
+  allFlow: boolean
+}
+
+export interface LifecycleTransition {
+  from: string
+  to: string
+  action: string
+  label: string
+}
+
+export interface LifecycleDefinition {
+  code: string
+  name: string
+  initial: string
+  states: LifecycleState[]
+  transitions: LifecycleTransition[]
+}
+
+export const lifecycleApi = {
+  list: () => http.get<LifecycleDefinition[]>('/meta/lifecycles'),
+  detail: (code: string) => http.get<LifecycleDefinition>(`/meta/lifecycles/${code}`),
+  save: (code: string, definitionJson: string) =>
+    http.put<void>(`/meta/lifecycles/${code}`, { definitionJson })
+}
+
 export const metaApi = {
   listEntities: (keyword?: string) => http.get<MetaEntitySummary[]>('/meta/entities', { keyword }),
   getEntity: (code: string) => http.get<MetaEntityDetail>(`/meta/entities/${code}`),

@@ -34,6 +34,9 @@ public class LifecycleController {
                                 @Size(max = 500) String reason) {
     }
 
+    public record DefinitionReq(@NotBlank(message = "定义不能为空") String definitionJson) {
+    }
+
     public record TransitionResp(Long objectId, String lifecycleState) {
     }
 
@@ -49,6 +52,15 @@ public class LifecycleController {
     @PreAuthorize("hasAuthority('system.lifecycle.manage')")
     public Result<LifecycleService.Definition> detail(@PathVariable String code) {
         return Result.ok(lifecycleService.definition(code));
+    }
+
+    @Operation(summary = "保存生命周期定义（设计器）")
+    @org.springframework.web.bind.annotation.PutMapping("/meta/lifecycles/{code}")
+    @PreAuthorize("hasAuthority('system.lifecycle.manage')")
+    @Audit(module = "META", action = "LIFECYCLE_SAVE", objectType = "MetaLifecycle")
+    public Result<Void> saveDefinition(@PathVariable String code, @Valid @RequestBody DefinitionReq req) {
+        lifecycleService.updateDefinition(code, req.definitionJson());
+        return Result.ok();
     }
 
     @Operation(summary = "对象状态迁移（生命周期唯一写入口）")
