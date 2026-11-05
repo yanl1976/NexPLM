@@ -42,6 +42,12 @@ const routes: RouteRecordRaw[] = [
         name: 'system-meta',
         component: () => import('@/views/system/MetaView.vue'),
         meta: { title: '元数据建模' }
+      },
+      {
+        path: 'system/security',
+        name: 'system-security',
+        component: () => import('@/views/system/SecurityView.vue'),
+        meta: { title: '安全策略' }
       }
     ]
   },

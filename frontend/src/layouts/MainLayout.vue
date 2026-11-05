@@ -16,6 +16,7 @@
           <el-menu-item index="/system/user">用户管理</el-menu-item>
           <el-menu-item index="/system/role">角色与授权</el-menu-item>
           <el-menu-item index="/system/meta">元数据建模</el-menu-item>
+          <el-menu-item index="/system/security">安全策略</el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/doc" disabled>
           <el-icon><Document /></el-icon>
