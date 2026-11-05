@@ -270,6 +270,21 @@ export const docApi = {
   removeFile(id: string, linkId: string): Promise<void> {
     return http.delete<void>(`/docs/${id}/files/${linkId}`)
   },
+  preview(id: string): Promise<DocPreviewStatus> {
+    return http.get<DocPreviewStatus>(`/docs/${id}/preview`)
+  },
+  generatePreview(id: string, fileId?: string): Promise<DocPreviewStatus> {
+    const suffix = fileId ? `?fileId=${encodeURIComponent(fileId)}` : ''
+    return http.post<DocPreviewStatus>(`/docs/${id}/preview${suffix}`)
+  },
+  async downloadPreview(fileId: string, fileName: string): Promise<void> {
+    const { blob } = await downloadFile(`/files/${fileId}/content`, { name: fileName })
+    saveBlob(blob, fileName)
+  },
+  async downloadFileBlob(fileId: string): Promise<Blob> {
+    const { blob } = await downloadFile(`/files/${fileId}/content`)
+    return blob
+  },
   async download(file: DocFile): Promise<void> {
     const { blob, fileName } = await downloadFile(`/files/${file.fileId}/content`, {
       name: file.fileName
@@ -295,6 +310,30 @@ export const DOC_STATE_LABEL: Record<string, string> = {
   InWorkflow: '审批中',
   Released: '已发布',
   Obsolete: '已作废'
+}
+
+/** 文档预览状态。 */
+export interface DocPreviewStatus {
+  id?: string | null
+  objectId: string
+  sourceFileId?: string | null
+  previewFileId?: string | null
+  format?: string | null
+  /** NONE 未生成、PENDING 处理中、READY 就绪、FAILED 失败可重试、SKIPPED 环境不支持 */
+  status: 'NONE' | 'PENDING' | 'READY' | 'FAILED' | 'SKIPPED'
+  message?: string | null
+  pageCount?: number | null
+  fileName?: string | null
+  converter?: string | null
+  updatedAt?: string | null
+}
+
+export const PREVIEW_STATUS_LABEL: Record<string, string> = {
+  NONE: '未生成',
+  PENDING: '生成中',
+  READY: '已就绪',
+  FAILED: '生成失败',
+  SKIPPED: '暂不支持'
 }
 
 /** 实例授权可选类型与动作（与后端 AclService / PermissionRuleService 一致）。 */
@@ -332,6 +371,20 @@ export interface BatchGrantResult {
   message?: string | null
 }
 
+export interface BatchImportError {
+  line: number
+  code?: string | null
+  message: string
+}
+
+export interface BatchImportResult {
+  total: number
+  success: number
+  failed: number
+  errors: BatchImportError[]
+  createdIds: string[]
+}
+
 /** 批量操作：打包下载、批量授权。 */
 export const docBatchApi = {
   async download(ids: string[]): Promise<void> {
@@ -340,6 +393,13 @@ export const docBatchApi = {
   },
   grant(req: BatchGrantReq): Promise<BatchGrantResult[]> {
     return http.post<BatchGrantResult[]>('/docs/batch/grant', req)
+  },
+  importCsv(file: File): Promise<BatchImportResult> {
+    return uploadFile<BatchImportResult>('/docs/batch/import', file)
+  },
+  async downloadTemplate(): Promise<void> {
+    const { blob, fileName } = await downloadFile('/docs/batch/import/template')
+    saveBlob(blob, fileName || 'doc-import-template.csv')
   }
 }
 

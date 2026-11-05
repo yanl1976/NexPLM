@@ -98,6 +98,18 @@ public class DocClassService {
         return clazz;
     }
 
+    /** 按编码查分类（批量导入等按编码引用的场景）。 */
+    public java.util.Optional<DocClass> findByCode(String code) {
+        if (code == null || code.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        return classMapper.selectList(new LambdaQueryWrapper<DocClass>()
+                        .eq(DocClass::getEntityCode, ENTITY_CODE)
+                        .eq(DocClass::getCode, code.trim())
+                        .last("limit 1"))
+                .stream().findFirst();
+    }
+
     /** 子树分类 ID（含自身），用于「按分类检索文档」时包含子分类。 */
     public List<Long> subtreeIds(Long classId) {
         DocClass root = requireClass(classId);

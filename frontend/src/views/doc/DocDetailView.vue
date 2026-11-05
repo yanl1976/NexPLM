@@ -12,6 +12,7 @@
             <el-tag v-if="!detail?.isLatest" size="small" type="warning">历史版本</el-tag>
           </div>
           <div>
+            <el-button @click="openPreview()">预览</el-button>
             <el-button v-if="canWrite" @click="openEdit">编辑属性</el-button>
             <el-button v-if="canWrite && canEdit && !detail?.checkout" type="primary" @click="onCheckout">
               检出
@@ -84,8 +85,9 @@
               <el-table-column label="上传时间" width="170">
                 <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="150" fixed="right">
+              <el-table-column label="操作" width="220" fixed="right">
                 <template #default="{ row }">
+                  <el-button link type="primary" @click="openPreview(row.fileId)">预览</el-button>
                   <el-button link type="primary" @click="onDownload(row)">下载</el-button>
                   <el-button link type="danger" :disabled="!canEdit" @click="onRemoveFile(row)">移除</el-button>
                 </template>
@@ -302,6 +304,47 @@
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="previewVisible" title="文档预览" width="860px" @closed="clearPreviewUrl">
+      <div v-if="previewLoading" v-loading="true" class="preview-loading" />
+      <template v-else>
+        <el-alert
+          v-if="previewInfo?.status === 'SKIPPED'"
+          type="info"
+          show-icon
+          :closable="false"
+          :title="previewInfo?.message ?? '该格式暂不支持在线预览'"
+          class="preview-alert"
+        />
+        <el-alert
+          v-else-if="previewInfo?.status === 'FAILED'"
+          type="error"
+          show-icon
+          :closable="false"
+          :title="`预览生成失败：${previewInfo?.message ?? '未知原因'}`"
+          class="preview-alert"
+        />
+        <el-alert
+          v-else-if="previewInfo?.status === 'NONE'"
+          type="info"
+          show-icon
+          :closable="false"
+          title="尚未生成预览，点击「生成预览」开始"
+          class="preview-alert"
+        />
+        <div v-if="previewInfo?.status === 'READY' && previewUrl" class="preview-box">
+          <img v-if="isImagePreview" :src="previewUrl" class="preview-image" alt="文档预览" />
+          <iframe v-else :src="previewUrl" class="preview-frame" title="文档预览" />
+        </div>
+      </template>
+      <template #footer>
+        <el-button v-if="previewInfo?.status === 'READY'" @click="downloadPreview">下载预览</el-button>
+        <el-button @click="previewVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="previewLoading" @click="generatePreview(previewTargetFileId ?? undefined)">
+          {{ previewInfo?.status === 'READY' ? '重新生成' : '生成预览' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -322,6 +365,7 @@ import {
   type DocDetail,
   type DocFile,
   type DocLog,
+  type DocPreviewStatus,
   type DocRelation,
   type DocSaveReq,
   type DocVersion,
@@ -376,6 +420,17 @@ const form = reactive<DocSaveReq>({
 const classTree = ref<DocClassNode[]>([])
 const classAttrs = ref<DocClassAttrDef[]>([])
 const enumCache = ref<Record<string, { code: string; name: string }[]>>({})
+
+const previewVisible = ref(false)
+const previewLoading = ref(false)
+const previewInfo = ref<DocPreviewStatus | null>(null)
+const previewUrl = ref('')
+const previewTargetFileId = ref<string | null>(null)
+
+const IMAGE_FORMATS = ['PNG', 'JPG', 'JPEG', 'GIF', 'BMP', 'WEBP']
+const isImagePreview = computed(() =>
+  IMAGE_FORMATS.includes((previewInfo.value?.format ?? '').toUpperCase())
+)
 
 const classAttrEntries = computed(() => {
   const values = detail.value?.classAttrs ?? {}
@@ -530,6 +585,81 @@ function openDoc(id: string): void {
 
 function goBack(): void {
   router.push({ name: 'doc-list' })
+}
+
+function clearPreviewUrl(): void {
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = ''
+  }
+}
+
+async function openPreview(fileId?: string): Promise<void> {
+  previewVisible.value = true
+  previewInfo.value = null
+  previewTargetFileId.value = fileId ?? null
+  clearPreviewUrl()
+  previewLoading.value = true
+  try {
+    const current = await docApi.preview(docId.value)
+    previewInfo.value = current
+    if (fileId) {
+      if (current.sourceFileId !== fileId || current.status !== 'READY') {
+        await generatePreview(fileId)
+      } else {
+        await loadPreviewBlob()
+      }
+    } else if (current.status === 'READY') {
+      await loadPreviewBlob()
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '查询预览状态失败')
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+async function generatePreview(fileId?: string): Promise<void> {
+  previewLoading.value = true
+  try {
+    const result = await docApi.generatePreview(docId.value, fileId ?? previewTargetFileId.value ?? undefined)
+    previewInfo.value = result
+    if (result.status === 'READY') {
+      await loadPreviewBlob()
+    } else {
+      clearPreviewUrl()
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '生成预览失败')
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+async function loadPreviewBlob(): Promise<void> {
+  const fileId = previewInfo.value?.previewFileId
+  if (!fileId) {
+    return
+  }
+  try {
+    const blob = await docApi.downloadFileBlob(fileId)
+    clearPreviewUrl()
+    previewUrl.value = URL.createObjectURL(blob)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载预览内容失败')
+  }
+}
+
+async function downloadPreview(): Promise<void> {
+  const fileId = previewInfo.value?.previewFileId
+  if (!fileId) {
+    return
+  }
+  try {
+    await docApi.downloadPreview(fileId, previewInfo.value?.fileName ?? 'preview.pdf')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '下载预览失败')
+  }
 }
 
 function openEdit(): void {
@@ -777,6 +907,36 @@ onMounted(load)
 .hint {
   color: #909399;
   font-size: 12px;
+}
+
+.preview-alert {
+  margin-bottom: 12px;
+}
+
+.preview-loading {
+  height: 360px;
+}
+
+.preview-box {
+  height: 520px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f7fa;
+  border: 1px solid #eef1f6;
+  overflow: auto;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
 }
 
 .placeholder {

@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -298,6 +299,58 @@ class DocSmokeTest {
         assertThat(aclAfter.size()).isEqualTo(1);
         assertThat(aclAfter.get(0).path("actorType").asText()).isEqualTo("ALL");
         assertThat(aclAfter.get(0).path("actions").asText()).isEqualTo("READ");
+
+        // 27. 预览：DWG 无可用转换器 → SKIPPED 并给出原因（不当作失败）
+        JsonNode previewNone = call(get("/api/v1/docs/{id}/preview", docId), admin, null);
+        assertThat(previewNone.path("status").asText()).isEqualTo("NONE");
+        JsonNode previewSkipped = call(post("/api/v1/docs/{id}/preview", docId), admin, null);
+        assertThat(previewSkipped.path("status").asText()).isEqualTo("SKIPPED");
+        assertThat(previewSkipped.path("message").asText()).contains("暂不支持");
+
+        // 28. 预览：图片直通 → READY，产物可从文件仓下载且内容一致
+        JsonNode pngDoc = call(post("/api/v1/docs"), admin, json(Map.of(
+                "name", "示意图文档", "docType", "DESIGN")));
+        long pngDocId = pngDoc.path("id").asLong();
+        byte[] png = Base64.getDecoder().decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+        MvcResult pngUpload = mockMvc.perform(multipart("/api/v1/docs/{id}/files", pngDocId)
+                        .file(new MockMultipartFile("file", "示意图.png", "image/png", png))
+                        .param("fileRole", "MAIN")
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk())
+                .andReturn();
+        long pngFileId = body(pngUpload).path("data").path("fileId").asLong();
+        JsonNode previewReady = call(
+                post("/api/v1/docs/{id}/preview?fileId=" + pngFileId, pngDocId), admin, null);
+        assertThat(previewReady.path("status").asText()).isEqualTo("READY");
+        assertThat(previewReady.path("format").asText()).isEqualTo("PNG");
+        assertThat(previewReady.path("previewFileId").asLong()).isPositive();
+        long previewFileId = previewReady.path("previewFileId").asLong();
+        MvcResult previewDownload = mockMvc.perform(get("/api/v1/files/{fileId}/content", previewFileId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertThat(previewDownload.getResponse().getContentAsByteArray()).isEqualTo(png);
+
+        // 29. 批量导入 CSV：2 行成功、2 行失败（缺名称 / 分类编码不存在），单行失败不影响其它行
+        String csv = "code,name,docType,source,classCode,keyword,description\n"
+                + ",导入-电气原理图甲,DESIGN,NORMAL,ELEC,导入,ok\n"
+                + ",导入-无分类文档,TECH,,,,\n"
+                + ",,OTHER,,,,缺名称应报错\n"
+                + ",导入-坏分类,OTHER,,MECH-NOTEXIST,,\n";
+        MvcResult importResult = mockMvc.perform(multipart("/api/v1/docs/batch/import")
+                        .file(new MockMultipartFile("file", "import.csv", "text/csv",
+                                csv.getBytes(StandardCharsets.UTF_8)))
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode imported = body(importResult).path("data");
+        assertThat(imported.path("total").asInt()).isEqualTo(4);
+        assertThat(imported.path("success").asInt()).isEqualTo(2);
+        assertThat(imported.path("failed").asInt()).isEqualTo(2);
+        assertThat(imported.path("errors").size()).isEqualTo(2);
+        assertThat(imported.path("errors").get(0).path("line").asInt()).isEqualTo(4);
+        assertThat(imported.path("createdIds").size()).isEqualTo(2);
     }
 
     // ---------------------------------------------------------------- 工具

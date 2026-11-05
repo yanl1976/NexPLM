@@ -41,6 +41,7 @@
           批量下载{{ selectedIds.length ? `(${selectedIds.length})` : '' }}
         </el-button>
         <el-button :disabled="selectedIds.length === 0" @click="openGrant">批量授权</el-button>
+        <el-button @click="openImport">批量导入</el-button>
       </div>
 
       <el-table
@@ -98,6 +99,37 @@
         @size-change="search"
       />
     </el-card>
+
+    <el-dialog v-model="importVisible" title="批量导入文档" width="600px">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="CSV 表头：code,name,docType,source,classCode,keyword,description（仅 name 必填，单次最多 500 行）"
+        class="grant-tip"
+      />
+      <div class="import-bar">
+        <el-button @click="downloadTemplate">下载模板</el-button>
+        <el-upload :show-file-list="false" accept=".csv,text/csv" :http-request="onImportCsv">
+          <el-button type="primary" :loading="importing">选择 CSV 并导入</el-button>
+        </el-upload>
+      </div>
+      <template v-if="importResult">
+        <el-descriptions :column="3" border size="small" class="import-summary">
+          <el-descriptions-item label="总行数">{{ importResult.total }}</el-descriptions-item>
+          <el-descriptions-item label="成功">{{ importResult.success }}</el-descriptions-item>
+          <el-descriptions-item label="失败">{{ importResult.failed }}</el-descriptions-item>
+        </el-descriptions>
+        <el-table v-if="importResult.errors.length" :data="importResult.errors" border size="small">
+          <el-table-column prop="line" label="行号" width="80" />
+          <el-table-column prop="code" label="编码" width="150" />
+          <el-table-column prop="message" label="失败原因" min-width="260" show-overflow-tooltip />
+        </el-table>
+      </template>
+      <template #footer>
+        <el-button @click="importVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="grantVisible" title="批量授权" width="540px">
       <el-alert
@@ -281,7 +313,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import {
+  ElMessage,
+  type FormInstance,
+  type FormRules,
+  type UploadRequestOptions
+} from 'element-plus'
 import {
   ACL_ACTIONS,
   ACL_ACTOR_TYPES,
@@ -292,6 +329,7 @@ import {
   docBatchApi,
   docClassApi,
   docQueryApi,
+  type BatchImportResult,
   type DocClassAttrDef,
   type DocClassNode,
   type DocSavedQuery,
@@ -338,6 +376,10 @@ const grantForm = reactive({
 })
 
 const needActorId = computed(() => !['ALL', 'CREATOR', 'OWNER'].includes(grantForm.actorType))
+
+const importVisible = ref(false)
+const importing = ref(false)
+const importResult = ref<BatchImportResult | null>(null)
 
 const form = reactive<DocSaveReq>({
   code: '',
@@ -655,6 +697,32 @@ function openGrant(): void {
   grantVisible.value = true
 }
 
+function openImport(): void {
+  importResult.value = null
+  importVisible.value = true
+}
+
+async function downloadTemplate(): Promise<void> {
+  try {
+    await docBatchApi.downloadTemplate()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '下载模板失败')
+  }
+}
+
+async function onImportCsv(options: UploadRequestOptions): Promise<void> {
+  importing.value = true
+  try {
+    importResult.value = await docBatchApi.importCsv(options.file as File)
+    ElMessage.success(`导入完成：成功 ${importResult.value.success} 条`)
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导入失败')
+  } finally {
+    importing.value = false
+  }
+}
+
 async function submitGrant(): Promise<void> {
   if (grantForm.actions.length === 0) {
     ElMessage.warning('请选择授权操作')
@@ -754,6 +822,17 @@ onMounted(() => {
 }
 
 .grant-tip {
+  margin-bottom: 12px;
+}
+
+.import-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.import-summary {
   margin-bottom: 12px;
 }
 
