@@ -199,6 +199,36 @@ public class FileService {
         return link;
     }
 
+    /**
+     * 版本迭代时把某个对象的最新文件链接复制到新版本对象。
+     * <p>物理文件不复制，只递增引用计数，新旧版本共享同一份内容。</p>
+     */
+    @Transactional
+    public int copyLatestLinks(Long fromOwnerObjectId, Long toOwnerObjectId, Long userId) {
+        List<FileLink> links = fileLinkMapper.selectList(new LambdaQueryWrapper<FileLink>()
+                .eq(FileLink::getOwnerObjectId, fromOwnerObjectId)
+                .eq(FileLink::getIsLatest, Boolean.TRUE)
+                .orderByAsc(FileLink::getFileRole)
+                .orderByAsc(FileLink::getSort));
+        OffsetDateTime now = OffsetDateTime.now();
+        for (FileLink link : links) {
+            FileLink copy = new FileLink();
+            copy.setId(IdWorker.getId());
+            copy.setFileId(link.getFileId());
+            copy.setOwnerObjectId(toOwnerObjectId);
+            copy.setVersionNo(link.getVersionNo());
+            copy.setFileRole(link.getFileRole());
+            copy.setFileName(link.getFileName());
+            copy.setIsLatest(true);
+            copy.setSort(link.getSort());
+            copy.setCreatedBy(userId);
+            copy.setCreatedAt(now);
+            fileLinkMapper.insert(copy);
+            fileObjectMapper.addRefCount(link.getFileId(), 1);
+        }
+        return links.size();
+    }
+
     /** 解除关联；引用计数归零时回收物理文件。 */
     @Transactional
     public void detach(Long linkId) {

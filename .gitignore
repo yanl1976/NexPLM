@@ -30,3 +30,9 @@ Thumbs.db
 # 日志
 logs/
 *.log
+
+# 本地文件仓存储（nexplm.file.root 默认 ./data/files）
+data/files/
+
+# 临时提交说明
+.gitmsg
