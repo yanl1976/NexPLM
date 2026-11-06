@@ -140,6 +140,14 @@ public class WorkflowController {
         return Result.ok(workflowService.assigneeTypes());
     }
 
+    @Operation(summary = "超时催办（扫描超过 N 小时未办理的任务并留痕，同窗口内幂等）")
+    @PostMapping("/tasks/remind")
+    @PreAuthorize("hasAuthority('wf.process.manage')")
+    @Audit(module = "WF", action = "TASK_REMIND", objectType = "WfTask")
+    public Result<WfDtos.RemindResult> remind(@RequestParam(defaultValue = "24") int hours) {
+        return Result.ok(workflowService.remindOverdueTasks(hours, CurrentUser.userId()));
+    }
+
     @Operation(summary = "加签（给会签节点追加审批人）")
     @PostMapping("/tasks/{taskId}/add-signer")
     @PreAuthorize("hasAuthority('wf.task.audit')")

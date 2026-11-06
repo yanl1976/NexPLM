@@ -501,6 +501,40 @@ class WorkflowSmokeTest {
         assertThat(after.path("issues").findValuesAsText("processInstanceId")).doesNotContain(fakePid);
     }
 
+    @Test
+    void remindOverdueTasksIsIdempotent() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long itemId = createItem(admin, "催办零件");
+        JsonNode started = start(admin, itemId, adminId, List.of(adminId));
+        String taskId = started.path("activeTasks").get(0).path("taskId").asText();
+
+        // 把任务创建时间推到 48 小时前，模拟超期
+        jdbcTemplate.update("UPDATE act_ru_task SET create_time_ = now() - interval '48 hours' WHERE id_ = ?",
+                taskId);
+
+        JsonNode first = call(post("/api/v1/workflow/tasks/remind?hours=24"), admin, null);
+        assertThat(first.path("overdue").asInt()).isGreaterThanOrEqualTo(1);
+        assertThat(first.path("reminded").asInt()).isGreaterThanOrEqualTo(1);
+        assertThat(first.path("tasks").findValuesAsText("taskId")).contains(taskId);
+        assertThat(remindCount(taskId)).isEqualTo(1);
+
+        // 同窗口内重复调用 → 跳过，不重复催办
+        JsonNode second = call(post("/api/v1/workflow/tasks/remind?hours=24"), admin, null);
+        assertThat(second.path("skipped").asInt()).isGreaterThanOrEqualTo(1);
+        assertThat(remindCount(taskId)).isEqualTo(1);
+
+        // 提醒内容可在审批意见里看到
+        JsonNode detail = call(get("/api/v1/workflow/instances/{id}",
+                started.path("processInstanceId").asText()), admin, null);
+        assertThat(detail.path("comments").findValuesAsText("action")).contains("REMIND");
+    }
+
+    private Long remindCount(String taskId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM wf_comment WHERE task_id = ? AND action = 'REMIND'", Long.class, taskId);
+    }
+
     private String stateOf(long objectId) {
         return jdbcTemplate.queryForObject(
                 "SELECT lifecycle_state FROM plm_object WHERE id = ?", String.class, objectId);

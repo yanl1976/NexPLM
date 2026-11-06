@@ -100,6 +100,11 @@ public final class WfDtos {
                                     List<String> autoFixed, List<ConsistencyIssue> issues) {
     }
 
+    /** 超时催办结果：overdue=超期任务数，reminded=本次新提醒，skipped=窗口内已提醒过。 */
+    public record RemindResult(OffsetDateTime checkedAt, int overdue, int reminded, int skipped,
+                               List<TaskRow> tasks) {
+    }
+
     /** 加签：给当前会签节点再追加一名审批人（只对多实例节点有效）。 */
     public record AddSignerReq(@NotNull(message = "加签人不能为空") Long signerId,
                                @Size(max = 2000) String comment) {

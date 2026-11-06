@@ -28,8 +28,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -456,6 +458,39 @@ public class WorkflowService {
             }
         }
         return new WfDtos.BatchResult(taskIds.size(), succeeded, taskIds.size() - succeeded, messages);
+    }
+
+    /**
+     * 超时催办：扫描超过 {@code hours} 小时未办理的任务并写 {@code REMIND} 留痕。
+     * <p>幂等：同一任务在窗口内已有 REMIND 则跳过，可被外部定时任务反复调用。
+     * 真正的外部通知（站内信/企微）留待 P8 通知模块消费 wf_comment。</p>
+     */
+    @Transactional
+    public WfDtos.RemindResult remindOverdueTasks(int hours, Long operatorId) {
+        int window = Math.min(Math.max(hours, 1), 24 * 30);
+        Date before = Date.from(Instant.now().minus(window, ChronoUnit.HOURS));
+        List<Task> overdueTasks = taskService.createTaskQuery()
+                .taskCreatedBefore(before)
+                .orderByTaskCreateTime().asc()
+                .list();
+        int reminded = 0;
+        int skipped = 0;
+        for (Task task : overdueTasks) {
+            Long existing = jdbcTemplate.queryForObject("""
+                    SELECT COUNT(1) FROM wf_comment
+                     WHERE task_id = ? AND action = 'REMIND'
+                       AND created_at >= now() - make_interval(hours => ?)
+                    """, Long.class, task.getId(), window);
+            if (existing != null && existing > 0) {
+                skipped++;
+                continue;
+            }
+            saveComment(task.getProcessInstanceId(), task.getId(), task.getTaskDefinitionKey(), "REMIND",
+                    "任务已超过 " + window + " 小时未办理，请及时处理", operatorId);
+            reminded++;
+        }
+        return new WfDtos.RemindResult(OffsetDateTime.now(), overdueTasks.size(), reminded, skipped,
+                toRows(overdueTasks));
     }
 
     private Map<String, List<String>> loadActiveActivities(List<String> processInstanceIds) {
