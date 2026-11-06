@@ -30,14 +30,12 @@ import java.util.Set;
 @Service
 public class ChgExecService {
 
-    /** ECR 可创建 ECN / 可执行的状态。 */
-    private static final Set<String> EXECUTABLE_ECR = Set.of("APPROVED", "NOTICED", "EXECUTING");
-    private static final Set<String> ECN_CLOSABLE = Set.of("ISSUED", "EXECUTING");
-
     private final JdbcTemplate jdbcTemplate;
+    private final ChgStateMachine stateMachine;
 
-    public ChgExecService(JdbcTemplate jdbcTemplate) {
+    public ChgExecService(JdbcTemplate jdbcTemplate, ChgStateMachine stateMachine) {
         this.jdbcTemplate = jdbcTemplate;
+        this.stateMachine = stateMachine;
     }
 
     // ------------------------------------------------------------------ ECN
@@ -45,10 +43,9 @@ public class ChgExecService {
     @Transactional
     public ChgDtos.EcnRow createEcn(Long ecrId, ChgDtos.EcnSaveReq req, Long companyId, Long userId) {
         String ecrStatus = ecrStatus(ecrId, companyId);
-        if (!EXECUTABLE_ECR.contains(ecrStatus)) {
-            throw BizException.of(ErrorCode.CHG_STATE_INVALID,
-                    "只有已批准的变更才能下发通知（当前状态：" + ecrStatus + "）");
-        }
+        // 状态机允许 notice 迁移的状态才可下发（APPROVED→NOTICED；已通知/执行中为自迁移）
+        String notifiedStatus = stateMachine.require(ChgStateMachine.ECR, ecrStatus, "notice",
+                "只有已批准的变更才能下发通知");
         long id = IdWorker.getId();
         String code = nextCode("ChgEcn", "ECN");
         jdbcTemplate.update("""
@@ -58,11 +55,11 @@ public class ChgExecService {
                         """,
                 id, companyId, code, ecrId, req.title().trim(), req.executorId(), req.planDate(),
                 req.remark() == null || req.remark().isBlank() ? null : req.remark().trim(), userId);
-        if ("APPROVED".equals(ecrStatus)) {
+        if (!notifiedStatus.equals(ecrStatus)) {
             jdbcTemplate.update("""
-                    UPDATE chg_ecr SET status = 'NOTICED', updated_by = ?, updated_at = now()
+                    UPDATE chg_ecr SET status = ?, updated_by = ?, updated_at = now()
                      WHERE id = ? AND company_id = ?
-                    """, userId, ecrId, companyId);
+                    """, notifiedStatus, userId, ecrId, companyId);
         }
         return ecnRow(id, companyId);
     }
@@ -70,22 +67,20 @@ public class ChgExecService {
     @Transactional
     public ChgDtos.EcnRow issueEcn(Long ecnId, Long companyId, Long userId) {
         ChgDtos.EcnRow ecn = ecnRow(ecnId, companyId);
-        if (!"DRAFT".equals(ecn.status())) {
-            throw BizException.of(ErrorCode.CHG_STATE_INVALID, "只有草稿通知可以下发（当前：" + ecn.status() + "）");
-        }
+        String target = stateMachine.require(ChgStateMachine.ECN, ecn.status(), "issue",
+                "只有草稿通知可以下发");
         jdbcTemplate.update("""
-                UPDATE chg_ecn SET status = 'ISSUED', issued_at = now(), updated_at = now()
+                UPDATE chg_ecn SET status = ?, issued_at = now(), updated_at = now()
                  WHERE id = ? AND company_id = ?
-                """, ecnId, companyId);
+                """, target, ecnId, companyId);
         return ecnRow(ecnId, companyId);
     }
 
     @Transactional
     public ChgDtos.EcnRow closeEcn(Long ecnId, Long companyId, Long userId) {
         ChgDtos.EcnRow ecn = ecnRow(ecnId, companyId);
-        if (!ECN_CLOSABLE.contains(ecn.status())) {
-            throw BizException.of(ErrorCode.CHG_STATE_INVALID, "当前通知状态不允许关闭（" + ecn.status() + "）");
-        }
+        String target = stateMachine.require(ChgStateMachine.ECN, ecn.status(), "close",
+                "当前通知状态不允许关闭");
         Integer open = jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM chg_problem WHERE ecn_id = ? AND deleted = false AND status <> 'CLOSED'",
                 Integer.class, ecnId);
@@ -93,9 +88,9 @@ public class ChgExecService {
             throw BizException.of(ErrorCode.CHG_STATE_INVALID, "还有 " + open + " 个未关闭的变更问题");
         }
         jdbcTemplate.update("""
-                UPDATE chg_ecn SET status = 'CLOSED', closed_at = now(), updated_at = now()
+                UPDATE chg_ecn SET status = ?, closed_at = now(), updated_at = now()
                  WHERE id = ? AND company_id = ?
-                """, ecnId, companyId);
+                """, target, ecnId, companyId);
         return ecnRow(ecnId, companyId);
     }
 
@@ -162,13 +157,20 @@ public class ChgExecService {
 
     @Transactional
     public void closeProblem(Long problemId, Long companyId, Long userId) {
-        int updated = jdbcTemplate.update("""
-                UPDATE chg_problem SET status = 'CLOSED', closed_at = now(), updated_at = now()
-                 WHERE id = ? AND company_id = ? AND deleted = false AND status <> 'CLOSED'
-                """, problemId, companyId);
-        if (updated == 0) {
+        List<String> states = jdbcTemplate.query("""
+                        SELECT status FROM chg_problem
+                         WHERE id = ? AND company_id = ? AND deleted = false
+                        """,
+                (rs, rowNum) -> rs.getString(1), problemId, companyId);
+        // 不存在与「已关闭」对外保持同一提示（与改造前行为一致）
+        if (states.isEmpty() || !stateMachine.can(ChgStateMachine.PROBLEM, states.get(0), "close")) {
             throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "变更问题不存在或已关闭：" + problemId);
         }
+        String target = stateMachine.target(ChgStateMachine.PROBLEM, states.get(0), "close");
+        jdbcTemplate.update("""
+                UPDATE chg_problem SET status = ?, closed_at = now(), updated_at = now()
+                 WHERE id = ? AND company_id = ?
+                """, target, problemId, companyId);
     }
 
     // ------------------------------------------------------------------ 执行（升版 / 废弃 / 发布）
@@ -176,10 +178,8 @@ public class ChgExecService {
     @Transactional
     public ChgDtos.ExecuteResult execute(Long ecrId, Long companyId, Long userId) {
         String ecrStatus = ecrStatus(ecrId, companyId);
-        if (!EXECUTABLE_ECR.contains(ecrStatus)) {
-            throw BizException.of(ErrorCode.CHG_STATE_INVALID,
-                    "只有已批准的变更才能执行（当前状态：" + ecrStatus + "）");
-        }
+        String target = stateMachine.require(ChgStateMachine.ECR, ecrStatus, "execute",
+                "只有已批准的变更才能执行");
         List<Map<String, Object>> pending = jdbcTemplate.queryForList("""
                 SELECT id, object_type, object_id, action
                   FROM chg_object
@@ -216,11 +216,11 @@ public class ChgExecService {
                     """, newRevision, linkId);
             succeeded++;
         }
-        if (succeeded > 0) {
+        if (succeeded > 0 && !target.equals(ecrStatus)) {
             jdbcTemplate.update("""
-                    UPDATE chg_ecr SET status = 'EXECUTING', updated_by = ?, updated_at = now()
-                     WHERE id = ? AND company_id = ? AND status IN ('APPROVED', 'NOTICED')
-                    """, userId, ecrId, companyId);
+                    UPDATE chg_ecr SET status = ?, updated_by = ?, updated_at = now()
+                     WHERE id = ? AND company_id = ? AND status = ?
+                    """, target, userId, ecrId, companyId, ecrStatus);
         }
         return new ChgDtos.ExecuteResult(pending.size(), succeeded, skipped, messages);
     }

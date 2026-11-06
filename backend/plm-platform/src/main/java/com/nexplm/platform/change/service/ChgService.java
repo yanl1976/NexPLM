@@ -36,19 +36,15 @@ public class ChgService {
     private static final Set<String> RELATIONS = Set.of("AFFECTED", "IMPACT", "REFERENCE");
     private static final Set<String> ACTIONS = Set.of("REVISE", "OBSOLETE", "RELEASE");
 
-    /** 仅草稿可改主档字段。 */
-    private static final Set<String> MAIN_EDITABLE = Set.of("DRAFT");
-    /** 提交前的状态都允许调整受影响对象清单。 */
-    private static final Set<String> OBJECT_EDITABLE = Set.of("DRAFT", "SUBMITTED", "REVIEWING");
-    /** 可关闭的状态。 */
-    private static final Set<String> CLOSABLE = Set.of("APPROVED", "NOTICED", "EXECUTING");
-
     private final JdbcTemplate jdbcTemplate;
     private final WorkflowService workflowService;
+    private final ChgStateMachine stateMachine;
 
-    public ChgService(JdbcTemplate jdbcTemplate, WorkflowService workflowService) {
+    public ChgService(JdbcTemplate jdbcTemplate, WorkflowService workflowService,
+                      ChgStateMachine stateMachine) {
         this.jdbcTemplate = jdbcTemplate;
         this.workflowService = workflowService;
+        this.stateMachine = stateMachine;
     }
 
     // ------------------------------------------------------------------ 查询
@@ -170,14 +166,15 @@ public class ChgService {
         requireIn(priority, PRIORITIES, "优先级");
         long id = IdWorker.getId();
         String code = nextCode("ChgEcr", "ECR");
+        String initialStatus = stateMachine.initial(ChgStateMachine.ECR);
         jdbcTemplate.update("""
                         INSERT INTO chg_ecr (id, company_id, code, title, change_type, category, reason,
                                              feasibility, priority, status, requester_id, receiver_id,
                                              project_no, target_date, remark, created_by, updated_by)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 id, companyId, code, req.title().trim(), changeType, blankToNull(req.category()),
-                blankToNull(req.reason()), blankToNull(req.feasibility()), priority, userId,
+                blankToNull(req.reason()), blankToNull(req.feasibility()), priority, initialStatus, userId,
                 req.receiverId(), blankToNull(req.projectNo()), req.targetDate(),
                 blankToNull(req.remark()), userId, userId);
         return detail(id, companyId);
@@ -186,7 +183,7 @@ public class ChgService {
     @Transactional
     public ChgDtos.EcrDetail update(Long id, ChgDtos.EcrSaveReq req, Long companyId, Long userId) {
         ChgDtos.EcrDetail current = detail(id, companyId);
-        requireEditable(current.status(), MAIN_EDITABLE, "只有草稿状态可以修改变更申请");
+        requireMainEditable(current.status(), "只有草稿状态可以修改变更申请");
         String changeType = requireIn(req.changeType(), CHANGE_TYPES, "变更类型");
         String priority = req.priority() == null || req.priority().isBlank()
                 ? current.priority() : requireIn(req.priority().trim(), PRIORITIES, "优先级");
@@ -213,7 +210,7 @@ public class ChgService {
     @Transactional
     public ChgDtos.EcrDetail submit(Long id, Long companyId, Long userId) {
         ChgDtos.EcrDetail current = detail(id, companyId);
-        requireEditable(current.status(), MAIN_EDITABLE, "只有草稿状态可以提交");
+        String target = requireTransition(current.status(), "submit", "只有草稿状态可以提交");
         int affected = countObjects(id, "AFFECTED");
         if (affected == 0) {
             throw BizException.of(ErrorCode.CHG_OBJECT_INVALID, "请先添加至少一个「受影响」对象再提交");
@@ -223,9 +220,9 @@ public class ChgService {
             throw BizException.of(ErrorCode.CHG_STATE_INVALID, "请先指定接收人（变更专员）作为审批人再提交");
         }
         jdbcTemplate.update("""
-                        UPDATE chg_ecr SET status = 'SUBMITTED', updated_by = ?, updated_at = now()
+                        UPDATE chg_ecr SET status = ?, updated_by = ?, updated_at = now()
                          WHERE id = ? AND company_id = ?
-                        """, userId, id, companyId);
+                        """, target, userId, id, companyId);
         workflowService.start(new WfDtos.StartReq("ChgEcr", id, null, approverId, List.of(approverId),
                 null, null, null, "提交变更申请：" + current.code()), userId);
         return detail(id, companyId);
@@ -235,11 +232,11 @@ public class ChgService {
     @Transactional
     public ChgDtos.EcrDetail close(Long id, Long companyId, Long userId) {
         ChgDtos.EcrDetail current = detail(id, companyId);
-        requireEditable(current.status(), CLOSABLE, "当前状态不允许关闭");
+        String target = requireTransition(current.status(), "close", "当前状态不允许关闭");
         jdbcTemplate.update("""
-                        UPDATE chg_ecr SET status = 'CLOSED', closed_at = now(), updated_by = ?, updated_at = now()
+                        UPDATE chg_ecr SET status = ?, closed_at = now(), updated_by = ?, updated_at = now()
                          WHERE id = ? AND company_id = ?
-                        """, userId, id, companyId);
+                        """, target, userId, id, companyId);
         return detail(id, companyId);
     }
 
@@ -248,7 +245,7 @@ public class ChgService {
     @Transactional
     public ChgDtos.ObjectRow addObject(Long ecrId, ChgDtos.ObjectAddReq req, Long companyId, Long userId) {
         ChgDtos.EcrDetail current = detail(ecrId, companyId);
-        requireEditable(current.status(), OBJECT_EDITABLE, "当前状态不允许调整关联对象");
+        requireObjectEditable(current.status(), "当前状态不允许调整关联对象");
 
         String relation = req.relation() == null || req.relation().isBlank()
                 ? "AFFECTED" : requireIn(req.relation().trim(), RELATIONS, "关联关系");
@@ -291,7 +288,7 @@ public class ChgService {
     @Transactional
     public void removeObject(Long ecrId, Long linkId, Long companyId) {
         ChgDtos.EcrDetail current = detail(ecrId, companyId);
-        requireEditable(current.status(), OBJECT_EDITABLE, "当前状态不允许调整关联对象");
+        requireObjectEditable(current.status(), "当前状态不允许调整关联对象");
         int deleted = jdbcTemplate.update(
                 "DELETE FROM chg_object WHERE id = ? AND ecr_id = ? AND company_id = ?",
                 linkId, ecrId, companyId);
@@ -511,10 +508,23 @@ public class ChgService {
         return String.format("%s-%06d", prefix, no == null ? 1L : no);
     }
 
-    private static void requireEditable(String status, Set<String> allowed, String message) {
-        if (!allowed.contains(status)) {
+    /** 主档可改判定：由元数据状态机推导（= 初始草稿态）。 */
+    private void requireMainEditable(String status, String message) {
+        if (!stateMachine.mainEditable(ChgStateMachine.ECR, status)) {
             throw BizException.of(ErrorCode.CHG_STATE_INVALID, message + "（当前状态：" + status + "）");
         }
+    }
+
+    /** 关联对象可改判定：由元数据状态机推导（草稿 / 已提交 / 评审中）。 */
+    private void requireObjectEditable(String status, String message) {
+        if (!stateMachine.objectEditable(ChgStateMachine.ECR, status)) {
+            throw BizException.of(ErrorCode.CHG_STATE_INVALID, message + "（当前状态：" + status + "）");
+        }
+    }
+
+    /** 校验迁移合法并返回目标状态（目标状态来自元数据状态机，不写死）。 */
+    private String requireTransition(String from, String action, String message) {
+        return stateMachine.require(ChgStateMachine.ECR, from, action, message);
     }
 
     private static String requireIn(String value, Set<String> allowed, String label) {

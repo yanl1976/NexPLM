@@ -367,6 +367,43 @@ class ChangeSmokeTest {
         return ecrId;
     }
 
+    /** 三套阶段状态机来自元数据 meta_lifecycle（type=CHG），改定义即时生效。 */
+    @Test
+    void stateMachineComesFromMetadata() throws Exception {
+        String admin = login("admin", "Admin@12345");
+
+        JsonNode definitions = call(get("/api/v1/meta/lifecycles"), admin, null);
+        Set<String> codes = new HashSet<>();
+        definitions.forEach(node -> codes.add(node.path("code").asText()));
+        assertThat(codes).contains("CHG_ECR", "CHG_ECN", "CHG_PROBLEM");
+
+        String original = jdbcTemplate.queryForObject(
+                "SELECT definition_json::text FROM meta_lifecycle WHERE code = 'CHG_ECR'", String.class);
+        try {
+            // 清空 ECR 的迁移表 → 任何状态都不能提交（证明校验真的读元数据，不是代码常量）
+            jdbcTemplate.update("""
+                    UPDATE meta_lifecycle
+                       SET definition_json = jsonb_set(definition_json, '{transitions}', '[]'::jsonb)
+                     WHERE code = 'CHG_ECR'
+                    """);
+            long itemId = createItem(admin, "状态机零件");
+            long ecrId = createEcrWithAffected(admin, "元数据状态机验证", itemId);
+            mockMvc.perform(post("/api/v1/chg/ecrs/{id}/submit", ecrId)
+                            .header("Authorization", "Bearer " + admin))
+                    .andExpect(status().isConflict());
+        } finally {
+            jdbcTemplate.update(
+                    "UPDATE meta_lifecycle SET definition_json = CAST(? AS jsonb) WHERE code = 'CHG_ECR'",
+                    original);
+        }
+
+        // 恢复定义后新单据可正常提交并进入评审
+        long restoredEcr = createSubmittedEcr(admin, "恢复定义后提交",
+                createItem(admin, "状态机零件-恢复后"), currentUserId(admin));
+        assertThat(call(get("/api/v1/chg/ecrs/{id}", restoredEcr), admin, null).path("status").asText())
+                .isEqualTo("REVIEWING");
+    }
+
     /** 建一张带受影响对象、带接收人的 ECR 并提交（提交即发起审批流程）。 */
     private long createSubmittedEcr(String token, String title, long objectId, long receiverId) throws Exception {
         long ecrId = call(post("/api/v1/chg/ecrs"), token, json(Map.of(
