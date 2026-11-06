@@ -270,6 +270,12 @@ const routes: RouteRecordRaw[] = [
         name: 'system-lifecycle',
         component: () => import('@/views/system/LifecycleView.vue'),
         meta: { title: '生命周期设计器' }
+      },
+      {
+        path: 'system/notify',
+        name: 'system-notify',
+        component: () => import('@/views/system/NotifyView.vue'),
+        meta: { title: '通知通道' }
       }
     ]
   },

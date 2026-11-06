@@ -93,6 +93,35 @@ nexplm:
       retain-hours: ${NEXPLM_FILE_RETAIN_HOURS:24}
     # 安全扫描实现：noop（默认不扫描）| 接入杀毒引擎时改为自定义实现名
     scan: ${NEXPLM_FILE_SCAN:noop}
+  # P9-6 通知通道（SPI）：邮件 / 企业微信 / 钉钉
+  notify:
+    # 邮件 SMTP 占位符：通道配置里留空的字段回落到这里；两处都空 → 明确报「SMTP 未配置」，不静默丢弃
+    # 部署时用环境变量覆盖，示例：
+    #   NEXPLM_SMTP_HOST=smtp.example.com
+    #   NEXPLM_SMTP_PORT=465
+    #   NEXPLM_SMTP_USERNAME=notify@example.com
+    #   NEXPLM_SMTP_PASSWORD=******
+    #   NEXPLM_SMTP_FROM=notify@example.com
+    #   NEXPLM_SMTP_FROM_NAME=NexPLM
+    #   NEXPLM_SMTP_SSL=true          # 465 端口直连 TLS
+    #   NEXPLM_SMTP_STARTTLS=false    # 587 端口升级 TLS（与 ssl 二选一）
+    email:
+      host: ${NEXPLM_SMTP_HOST:}
+      port: ${NEXPLM_SMTP_PORT:465}
+      username: ${NEXPLM_SMTP_USERNAME:}
+      password: ${NEXPLM_SMTP_PASSWORD:}
+      from: ${NEXPLM_SMTP_FROM:}
+      from-name: ${NEXPLM_SMTP_FROM_NAME:NexPLM}
+      ssl: ${NEXPLM_SMTP_SSL:true}
+      starttls: ${NEXPLM_SMTP_STARTTLS:false}
+      # 连接/读写超时（毫秒）
+      timeout-ms: ${NEXPLM_SMTP_TIMEOUT_MS:8000}
+    # 发送失败退避重试（与 P9-1/P9-4 同口径）
+    retry:
+      enabled: ${NEXPLM_NOTIFY_RETRY:true}
+      base-seconds: 30
+      fixed-delay: PT60S
+      stale-minutes: 10
 
 springdoc:
   api-docs:

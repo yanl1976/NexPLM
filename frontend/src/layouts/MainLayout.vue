@@ -19,6 +19,7 @@
           <el-menu-item index="/system/security">安全策略</el-menu-item>
           <el-menu-item index="/system/sso">单点登录</el-menu-item>
           <el-menu-item index="/system/lifecycle">生命周期</el-menu-item>
+          <el-menu-item v-if="canReadNotify" index="/system/notify">通知通道</el-menu-item>
         </el-sub-menu>
         <el-sub-menu index="/doc-center">
           <template #title>
@@ -140,6 +141,7 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const canManageWorkflow = computed(() => userStore.can('wf.process.manage'))
+const canReadNotify = computed(() => userStore.can('sys.notify.read'))
 
 const activeMenu = computed(() => {
   if (route.path === '/doc/class') {
