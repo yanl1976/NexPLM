@@ -35,6 +35,10 @@ export interface SupplierRow {
   orgName?: string | null
   partCount: number
   preferredCount: number
+  /** 最近一次确认的评级结果（P8-5-1），未评级时为空 */
+  grade?: string | null
+  ratingScore?: number | null
+  ratedAt?: string | null
   updatedAt?: string | null
 }
 
@@ -77,6 +81,9 @@ export interface SupplierDetail {
   remark?: string | null
   partCount: number
   preferredCount: number
+  grade?: string | null
+  ratingScore?: number | null
+  ratedAt?: string | null
   parts: SupplierPartRow[]
 }
 
@@ -107,6 +114,168 @@ export interface PartSaveReq {
   currency?: string
   status?: string
   remark?: string | null
+}
+
+/* ------------------------------------------------------------ P8-5-1 评级 */
+
+export const RATING_STATUS_LABEL: Record<string, string> = {
+  DRAFT: '草稿',
+  CONFIRMED: '已确认'
+}
+
+export const SCHEME_STATUS_LABEL: Record<string, string> = {
+  ACTIVE: '启用',
+  INACTIVE: '停用'
+}
+
+/** 等级档位：min 为该档最低总分，列表按 min 从高到低。 */
+export interface GradeBand {
+  grade: string
+  min: number
+}
+
+export interface RatingDim {
+  id: string
+  code: string
+  name: string
+  weight: number
+  maxScore: number
+  sortNo: number
+  enabled: boolean
+}
+
+export interface RatingSchemeRow {
+  id: string
+  code: string
+  name: string
+  category?: string | null
+  suspendGrade?: string | null
+  status: string
+  dimCount: number
+  weightSum: number
+  updatedAt?: string | null
+}
+
+export interface RatingSchemeDetail {
+  id: string
+  code: string
+  name: string
+  category?: string | null
+  gradeRule: GradeBand[]
+  suspendGrade?: string | null
+  status: string
+  remark?: string | null
+  ratingCount: number
+  dims: RatingDim[]
+}
+
+export interface DimSaveReq {
+  code?: string | null
+  name: string
+  weight: number
+  maxScore?: number | null
+  enabled?: boolean
+}
+
+export interface RatingSchemeSaveReq {
+  name: string
+  category?: string | null
+  gradeRule: GradeBand[]
+  suspendGrade?: string | null
+  status?: string
+  remark?: string | null
+  dims: DimSaveReq[]
+}
+
+export interface RatingItem {
+  id: string
+  dimCode: string
+  dimName: string
+  weight: number
+  maxScore: number
+  score: number
+  comment?: string | null
+}
+
+export interface SupplierRatingRow {
+  id: string
+  supplierId: string
+  supplierCode?: string | null
+  supplierName?: string | null
+  schemeId: string
+  schemeCode?: string | null
+  schemeName?: string | null
+  period: string
+  status: string
+  totalScore?: number | null
+  grade?: string | null
+  ratedAt?: string | null
+  confirmedAt?: string | null
+}
+
+export interface SupplierRatingDetail extends SupplierRatingRow {
+  remark?: string | null
+  items: RatingItem[]
+}
+
+export interface RatingItemReq {
+  dimId: string
+  score: number
+  comment?: string | null
+}
+
+export interface RatingSaveReq {
+  supplierId: string
+  schemeId: string
+  period: string
+  remark?: string | null
+  items: RatingItemReq[]
+}
+
+export const ratingApi = {
+  schemes(params?: { category?: string; status?: string }): Promise<RatingSchemeRow[]> {
+    return http.get<RatingSchemeRow[]>('/sup/rating-schemes', params)
+  },
+  scheme(id: string): Promise<RatingSchemeDetail> {
+    return http.get<RatingSchemeDetail>(`/sup/rating-schemes/${id}`)
+  },
+  createScheme(req: RatingSchemeSaveReq): Promise<RatingSchemeDetail> {
+    return http.post<RatingSchemeDetail>('/sup/rating-schemes', req)
+  },
+  updateScheme(id: string, req: RatingSchemeSaveReq): Promise<RatingSchemeDetail> {
+    return http.put<RatingSchemeDetail>(`/sup/rating-schemes/${id}`, req)
+  },
+  removeScheme(id: string): Promise<void> {
+    return http.delete<void>(`/sup/rating-schemes/${id}`)
+  },
+  page(params: {
+    supplierId?: string
+    schemeId?: string
+    period?: string
+    status?: string
+    page?: number
+    size?: number
+  }): Promise<{ items: SupplierRatingRow[]; total: number; page: number; size: number }> {
+    return http.get('/sup/ratings', params)
+  },
+  detail(id: string): Promise<SupplierRatingDetail> {
+    return http.get<SupplierRatingDetail>(`/sup/ratings/${id}`)
+  },
+  create(req: RatingSaveReq): Promise<SupplierRatingDetail> {
+    return http.post<SupplierRatingDetail>('/sup/ratings', req)
+  },
+  update(id: string, req: RatingSaveReq): Promise<SupplierRatingDetail> {
+    return http.put<SupplierRatingDetail>(`/sup/ratings/${id}`, req)
+  },
+  confirm(id: string): Promise<SupplierRatingDetail> {
+    return http.post<SupplierRatingDetail>(`/sup/ratings/${id}/confirm`)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/sup/ratings/${id}`)
+  },
+  bySupplier(supplierId: string): Promise<SupplierRatingRow[]> {
+    return http.get<SupplierRatingRow[]>(`/sup/suppliers/${supplierId}/ratings`)
+  }
 }
 
 export const supplierApi = {

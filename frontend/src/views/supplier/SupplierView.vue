@@ -10,6 +10,7 @@
       </el-select>
       <el-button type="primary" @click="reload">查询</el-button>
       <el-button v-if="canWrite" type="primary" plain @click="openCreate">新建供应商</el-button>
+      <el-button plain @click="schemeVisible = true">评级方案</el-button>
       <span class="hint">一个零件可挂多个供应商（多源），但首选只能一个；有在用零件关系的供应商不能删除</span>
     </div>
 
@@ -37,6 +38,13 @@
       </el-table-column>
       <el-table-column label="零件关系" width="120" align="center">
         <template #default="{ row }">{{ row.partCount }}（首选 {{ row.preferredCount }}）</template>
+      </el-table-column>
+      <el-table-column label="评级" width="120" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.grade" :type="gradeType(row.grade)" size="small">{{ row.grade }} 级</el-tag>
+          <span v-else class="muted">未评级</span>
+          <span v-if="row.ratingScore != null" class="score">{{ row.ratingScore }} 分</span>
+        </template>
       </el-table-column>
       <el-table-column label="操作" width="90" fixed="right">
         <template #default="{ row }">
@@ -132,6 +140,14 @@
           <el-descriptions-item label="币种/账期">
             {{ detail.currency }} / {{ detail.paymentTerms || '-' }}
           </el-descriptions-item>
+          <el-descriptions-item label="评级">
+            <template v-if="detail.grade">
+              <el-tag :type="gradeType(detail.grade)" size="small">{{ detail.grade }} 级</el-tag>
+              <span class="score">{{ detail.ratingScore ?? '-' }} 分</span>
+            </template>
+            <span v-else class="muted">未评级</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="评级时间">{{ detail.ratedAt ? detail.ratedAt.substring(0, 10) : '-' }}</el-descriptions-item>
           <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
 
@@ -180,6 +196,46 @@
           </el-table-column>
         </el-table>
         <el-empty v-if="!detail.parts.length" description="还没有关联零件" :image-size="50" />
+
+        <div class="section-title">评级记录（{{ ratings.length }}）</div>
+        <div class="action-bar">
+          <el-button v-if="canWrite" size="small" type="primary" plain @click="openRatingDialog">
+            发起评级
+          </el-button>
+          <span class="hint">确认后等级与分数回写供应商；低于等于方案暂停档时供应商状态自动置为暂停</span>
+        </div>
+        <el-table :data="ratings" border size="small">
+          <el-table-column prop="period" label="周期" width="100" />
+          <el-table-column label="方案" min-width="150" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.schemeName || row.schemeCode }}</template>
+          </el-table-column>
+          <el-table-column label="总分" width="90" align="right">
+            <template #default="{ row }">{{ row.totalScore ?? '-' }}</template>
+          </el-table-column>
+          <el-table-column label="等级" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.grade" :type="gradeType(row.grade)" size="small">{{ row.grade }}</el-tag>
+              <span v-else class="muted">-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 'CONFIRMED' ? 'success' : 'info'" size="small">
+                {{ RATING_STATUS_LABEL[row.status] ?? row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="170" align="center">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openRatingDetail(row.id)">明细</el-button>
+              <template v-if="canWrite && row.status === 'DRAFT'">
+                <el-button link type="success" @click="onConfirmRating(row)">确认</el-button>
+                <el-button link type="danger" @click="onRemoveRating(row)">删除</el-button>
+              </template>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!ratings.length" description="还没有评级记录" :image-size="50" />
       </div>
     </el-drawer>
 
@@ -233,6 +289,93 @@
         <el-button type="primary" :loading="partSaving" @click="onSavePart">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 评级方案（维度可配） -->
+    <RatingSchemeDialog v-model="schemeVisible" :can-write="canWrite" />
+
+    <!-- 发起评级 -->
+    <el-dialog v-model="ratingVisible" title="发起评级" width="720px" destroy-on-close>
+      <el-form label-width="96px">
+        <el-form-item label="评级方案" required>
+          <el-select
+            v-model="ratingForm.schemeId"
+            placeholder="选择启用的方案"
+            style="width: 320px"
+            @change="onSchemeChange"
+          >
+            <el-option
+              v-for="scheme in schemeOptions"
+              :key="scheme.id"
+              :label="`${scheme.code} ${scheme.name}`"
+              :value="scheme.id"
+            />
+          </el-select>
+          <span class="label-gap">周期</span>
+          <el-input v-model="ratingForm.period" placeholder="2026-Q4" style="width: 130px" />
+        </el-form-item>
+        <el-form-item label="维度打分">
+          <el-table :data="ratingForm.items" border size="small">
+            <el-table-column prop="dimName" label="维度" min-width="140" />
+            <el-table-column label="权重" width="80" align="right">
+              <template #default="{ row }">{{ row.weight }}</template>
+            </el-table-column>
+            <el-table-column label="得分" width="160">
+              <template #default="{ row }">
+                <el-input-number
+                  v-model="row.score"
+                  :min="0"
+                  :max="row.maxScore"
+                  :precision="2"
+                  style="width: 100%"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="满分" width="80" align="right">
+              <template #default="{ row }">{{ row.maxScore }}</template>
+            </el-table-column>
+            <el-table-column label="说明" min-width="160">
+              <template #default="{ row }">
+                <el-input v-model="row.comment" maxlength="500" placeholder="扣分原因（可选）" />
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="rating-tip">
+            总分 = Σ(得分 / 满分 × 权重)；当前预估
+            <b>{{ previewScore }}</b> 分，等级 <b>{{ previewGrade || '-' }}</b>
+          </div>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="ratingForm.remark" type="textarea" :rows="2" maxlength="1000" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ratingVisible = false">取消</el-button>
+        <el-button type="primary" :loading="ratingSaving" @click="onSaveRating">保存草稿</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 评级明细 -->
+    <el-dialog v-model="ratingDetailVisible" title="评级明细" width="680px" destroy-on-close>
+      <el-descriptions v-if="ratingDetail" :column="3" border size="small">
+        <el-descriptions-item label="周期">{{ ratingDetail.period }}</el-descriptions-item>
+        <el-descriptions-item label="方案">{{ ratingDetail.schemeName }}</el-descriptions-item>
+        <el-descriptions-item label="总分">{{ ratingDetail.totalScore ?? '-' }}</el-descriptions-item>
+        <el-descriptions-item label="等级">{{ ratingDetail.grade || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="状态">
+          {{ RATING_STATUS_LABEL[ratingDetail.status] ?? ratingDetail.status }}
+        </el-descriptions-item>
+        <el-descriptions-item label="确认时间">
+          {{ ratingDetail.confirmedAt ? ratingDetail.confirmedAt.substring(0, 16).replace('T', ' ') : '-' }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-table v-if="ratingDetail" :data="ratingDetail.items" border size="small" class="rating-items">
+        <el-table-column prop="dimName" label="维度" width="120" />
+        <el-table-column prop="weight" label="权重" width="80" align="right" />
+        <el-table-column prop="score" label="得分" width="80" align="right" />
+        <el-table-column prop="maxScore" label="满分" width="80" align="right" />
+        <el-table-column prop="comment" label="说明" show-overflow-tooltip />
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
@@ -240,17 +383,25 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  ratingApi,
+  RATING_STATUS_LABEL,
   supplierApi,
   SUPPLIER_CATEGORY_LABEL,
   SUPPLIER_STATUS_LABEL,
   SUPPLY_TYPE_LABEL,
+  type GradeBand,
+  type RatingSchemeDetail,
+  type RatingSchemeRow,
   type SupplierDetail,
   type SupplierPartRow,
+  type SupplierRatingDetail,
+  type SupplierRatingRow,
   type SupplierRow
 } from '@/api/supplier'
 import { itemApi, type ItemSummary } from '@/api/item'
 import { orgApi, type OrgNode } from '@/api/system'
 import { useUserStore } from '@/stores/user'
+import RatingSchemeDialog from './RatingSchemeDialog.vue'
 
 const userStore = useUserStore()
 const canWrite = computed(() => userStore.can('sup.supplier.write'))
@@ -303,6 +454,48 @@ const partForm = reactive({
   price: 0 as number | null,
   currency: 'CNY',
   remark: ''
+})
+
+/* ------------------------------------------------------------ 评级（P8-5-1） */
+
+interface RatingItemDraft {
+  dimId: string
+  dimName: string
+  weight: number
+  maxScore: number
+  score: number
+  comment: string
+}
+
+const schemeVisible = ref(false)
+const ratings = ref<SupplierRatingRow[]>([])
+const schemeOptions = ref<RatingSchemeRow[]>([])
+const ratingScheme = ref<RatingSchemeDetail | null>(null)
+const ratingVisible = ref(false)
+const ratingSaving = ref(false)
+const ratingDetailVisible = ref(false)
+const ratingDetail = ref<SupplierRatingDetail | null>(null)
+const ratingForm = reactive({
+  schemeId: '',
+  period: defaultPeriod(),
+  remark: '',
+  items: [] as RatingItemDraft[]
+})
+
+const previewScore = computed(() => {
+  const total = ratingForm.items.reduce((sum, item) => {
+    if (!item.maxScore) {
+      return sum
+    }
+    return sum + (Number(item.score || 0) / item.maxScore) * item.weight
+  }, 0)
+  return Math.round(total * 100) / 100
+})
+
+const previewGrade = computed(() => {
+  const bands: GradeBand[] = ratingScheme.value?.gradeRule ?? []
+  const hit = bands.find((band) => previewScore.value >= band.min)
+  return hit ? hit.grade : bands.length ? bands[bands.length - 1].grade : ''
 })
 
 onMounted(async () => {
@@ -429,8 +622,17 @@ async function openDetail(id: string): Promise<void> {
   try {
     detail.value = await supplierApi.detail(id)
     detailVisible.value = true
+    await loadRatings(id)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载详情失败')
+  }
+}
+
+async function loadRatings(supplierId: string): Promise<void> {
+  try {
+    ratings.value = await ratingApi.bySupplier(supplierId)
+  } catch {
+    ratings.value = []
   }
 }
 
@@ -556,7 +758,163 @@ async function onRemovePart(row: SupplierPartRow): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------ 评级操作 */
+
+function defaultPeriod(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`
+}
+
+async function openRatingDialog(): Promise<void> {
+  try {
+    schemeOptions.value = await ratingApi.schemes({ status: 'ACTIVE' })
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载评级方案失败')
+    return
+  }
+  if (!schemeOptions.value.length) {
+    ElMessage.warning('还没有启用的评级方案，请先在「评级方案」里创建')
+    return
+  }
+  ratingForm.schemeId = schemeOptions.value[0].id
+  ratingForm.period = defaultPeriod()
+  ratingForm.remark = ''
+  await onSchemeChange(ratingForm.schemeId)
+  ratingVisible.value = true
+}
+
+async function onSchemeChange(schemeId: string): Promise<void> {
+  if (!schemeId) {
+    ratingForm.items = []
+    ratingScheme.value = null
+    return
+  }
+  try {
+    const scheme = await ratingApi.scheme(schemeId)
+    ratingScheme.value = scheme
+    ratingForm.items = scheme.dims
+      .filter((dim) => dim.enabled)
+      .map((dim) => ({
+        dimId: dim.id,
+        dimName: dim.name,
+        weight: dim.weight,
+        maxScore: dim.maxScore,
+        score: dim.maxScore,
+        comment: ''
+      }))
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载方案失败')
+  }
+}
+
+async function onSaveRating(): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  if (!ratingForm.schemeId || !ratingForm.period.trim()) {
+    ElMessage.warning('请选择方案并填写周期')
+    return
+  }
+  if (!ratingForm.items.length) {
+    ElMessage.warning('该方案没有启用维度，无法评级')
+    return
+  }
+  ratingSaving.value = true
+  try {
+    await ratingApi.create({
+      supplierId: detail.value.id,
+      schemeId: ratingForm.schemeId,
+      period: ratingForm.period.trim(),
+      remark: ratingForm.remark.trim() || null,
+      items: ratingForm.items.map((item) => ({
+        dimId: item.dimId,
+        score: item.score,
+        comment: item.comment.trim() || null
+      }))
+    })
+    ElMessage.success('评级草稿已保存，确认后才会回写供应商等级')
+    ratingVisible.value = false
+    await loadRatings(detail.value.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存评级失败')
+  } finally {
+    ratingSaving.value = false
+  }
+}
+
+async function onConfirmRating(row: SupplierRatingRow): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认 ${row.period} 评级？确认后等级与分数回写供应商，且不可再修改。`,
+      '确认评级',
+      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    await ratingApi.confirm(row.id)
+    ElMessage.success('评级已确认')
+    detail.value = await supplierApi.detail(detail.value.id)
+    await loadRatings(detail.value.id)
+    await reload()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '确认评级失败')
+  }
+}
+
+async function onRemoveRating(row: SupplierRatingRow): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确认删除 ${row.period} 的评级草稿？`, '删除评级', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    await ratingApi.remove(row.id)
+    ElMessage.success('已删除')
+    await loadRatings(detail.value.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除失败')
+  }
+}
+
+async function openRatingDetail(id: string): Promise<void> {
+  try {
+    ratingDetail.value = await ratingApi.detail(id)
+    ratingDetailVisible.value = true
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载评级明细失败')
+  }
+}
+
 /* ------------------------------------------------------------ 展示辅助 */
+
+function gradeType(grade: string): 'success' | 'primary' | 'info' | 'warning' | 'danger' {
+  if (grade === 'A') {
+    return 'success'
+  }
+  if (grade === 'B') {
+    return 'primary'
+  }
+  if (grade === 'C') {
+    return 'warning'
+  }
+  if (grade === 'D') {
+    return 'danger'
+  }
+  return 'info'
+}
+
 
 function statusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
   if (value === 'QUALIFIED') {
@@ -607,6 +965,22 @@ function statusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
 
 .muted {
   color: #909399;
+}
+
+.score {
+  margin-left: 6px;
+  color: #606266;
+  font-size: 12px;
+}
+
+.rating-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #606266;
+}
+
+.rating-items {
+  margin-top: 12px;
 }
 
 .label-gap {
