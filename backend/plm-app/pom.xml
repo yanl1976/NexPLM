@@ -68,12 +68,17 @@
             <version>2.2.0</version>
             <scope>test</scope>
         </dependency>
-        <!-- embedded-postgres 解压需新版 commons-compress，其传递的 commons-lang3 过旧会 NoSuchMethodError -->
+        <!--
+            commons-lang3 必须为 compile 作用域：
+            1) 测试侧：embedded-postgres 解压依赖新版 commons-compress，其传递的 commons-lang3 过旧会 NoSuchMethodError；
+            2) 运行侧：Flowable 7.1 的 DefaultAsyncTaskExecutor 直接使用 org.apache.commons.lang3.StringUtils，
+               而 Spring Boot 未默认引入 commons-lang3 —— 若声明为 test，打包出的 jar 启动即
+               NoClassDefFoundError: org/apache/commons/lang3/StringUtils。
+        -->
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
             <version>3.17.0</version>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 
