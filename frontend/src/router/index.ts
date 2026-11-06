@@ -86,6 +86,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '工艺路线' }
       },
       {
+        path: 'capp/resource',
+        name: 'capp-resource',
+        component: () => import('@/views/capp/ResourceView.vue'),
+        meta: { title: '工艺资源' }
+      },
+      {
         path: 'workflow/definitions',
         name: 'workflow-definitions',
         component: () => import('@/views/workflow/DefinitionView.vue'),

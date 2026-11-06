@@ -160,6 +160,29 @@
             <el-input v-model="row.workCenter" :disabled="readonly" maxlength="100" />
           </template>
         </el-table-column>
+        <el-table-column label="工艺资源" width="170">
+          <template #default="{ row }">
+            <el-select
+              v-model="row.resourceId"
+              filterable
+              remote
+              reserve-keyword
+              clearable
+              placeholder="可选"
+              :remote-method="searchResources"
+              :loading="resourcesLoading"
+              :disabled="readonly"
+              @visible-change="(visible: boolean) => visible && searchResources('')"
+            >
+              <el-option
+                v-for="item in resources"
+                :key="item.id"
+                :label="`${item.code} ${item.name}`"
+                :value="item.id"
+              />
+            </el-select>
+          </template>
+        </el-table-column>
         <el-table-column label="准备工时(h)" width="120">
           <template #default="{ row }">
             <el-input-number v-model="row.setupMinutes" :min="0" :precision="2" :controls="false" :disabled="readonly" style="width: 100%" />
@@ -210,6 +233,8 @@ import {
   cappApi,
   OP_TYPE_LABEL,
   ROUTING_STATUS_LABEL,
+  resourceApi,
+  type CappResource,
   type RoutingRow,
   type RoutingStatus,
   type RoutingStep
@@ -236,6 +261,8 @@ const items = ref<ItemSummary[]>([])
 const itemsLoading = ref(false)
 const users = ref<ActorUserRow[]>([])
 const usersLoading = ref(false)
+const resources = ref<CappResource[]>([])
+const resourcesLoading = ref(false)
 
 const form = reactive<{
   id?: string
@@ -308,6 +335,24 @@ async function searchItems(keywordText: string): Promise<void> {
   }
 }
 
+/** 工序可选工艺资源（只列在用资源）。 */
+async function searchResources(keywordText: string): Promise<void> {
+  resourcesLoading.value = true
+  try {
+    const result = await resourceApi.list({
+      page: 1,
+      size: 50,
+      keyword: keywordText || undefined,
+      status: 'ACTIVE'
+    })
+    resources.value = result.items
+  } catch {
+    resources.value = []
+  } finally {
+    resourcesLoading.value = false
+  }
+}
+
 async function searchUsers(keywordText: string): Promise<void> {
   usersLoading.value = true
   try {
@@ -360,6 +405,7 @@ async function fillForm(id: string): Promise<void> {
       ownerId: detail.ownerId ?? null,
       steps: detail.steps.map((step) => ({ ...step }))
     })
+    mergeBoundResources(form.steps)
     if (detail.ownerId && detail.ownerName) {
       users.value = [{ id: detail.ownerId, username: detail.ownerName, displayName: detail.ownerName } as ActorUserRow]
     }
@@ -376,7 +422,35 @@ async function fillForm(id: string): Promise<void> {
 }
 
 function emptyStep(seqNo: number): RoutingStep {
-  return { seqNo, name: '', opType: 'MACHINING', workCenter: '', setupMinutes: 0, runMinutes: 0, remark: '' }
+  return {
+    seqNo,
+    name: '',
+    opType: 'MACHINING',
+    workCenter: '',
+    resourceId: null,
+    setupMinutes: 0,
+    runMinutes: 0,
+    remark: ''
+  }
+}
+
+/** 已绑定资源补进候选，否则下拉缺少 option 会显示原始 id 而非「编码 名称」。 */
+function mergeBoundResources(steps: RoutingStep[]): void {
+  const merged = new Map(resources.value.map((item) => [item.id, item]))
+  steps.forEach((step) => {
+    if (step.resourceId && !merged.has(step.resourceId)) {
+      merged.set(step.resourceId, {
+        id: step.resourceId,
+        classId: '',
+        code: step.resourceCode ?? String(step.resourceId),
+        name: step.resourceName ?? '(已删除资源)',
+        status: 'ACTIVE',
+        attrs: {},
+        referenceCount: 0
+      })
+    }
+  })
+  resources.value = [...merged.values()]
 }
 
 function addStep(): void {
@@ -440,6 +514,7 @@ async function onSave(): Promise<void> {
         name: step.name,
         opType: step.opType,
         workCenter: step.workCenter || null,
+        resourceId: step.resourceId ?? null,
         setupMinutes: step.setupMinutes ?? 0,
         runMinutes: step.runMinutes ?? 0,
         remark: step.remark || null

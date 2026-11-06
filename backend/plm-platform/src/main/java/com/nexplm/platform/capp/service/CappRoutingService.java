@@ -254,7 +254,7 @@ public class CappRoutingService {
         int seqNo = 10;
         for (CappDtos.StepRow step : steps) {
             insertStep(id, companyId, seqNo, step.name(), normalizeOpType(step.opType()),
-                    step.workCenter(), step.setupMinutes(), step.runMinutes(), step.remark());
+                    step.workCenter(), step.resourceId(), step.setupMinutes(), step.runMinutes(), step.remark());
             seqNo += 10;
         }
         jdbcTemplate.update("""
@@ -298,38 +298,47 @@ public class CappRoutingService {
                 .sorted((left, right) -> Integer.compare(left.seqNo(), right.seqNo()))
                 .toList();
         for (CappDtos.StepSaveReq step : ordered) {
+            if (step.resourceId() != null) {
+                requireResource(step.resourceId(), companyId);
+            }
             insertStep(routingId, companyId, step.seqNo(), step.name().trim(),
-                    normalizeOpType(step.opType()), blankToNull(step.workCenter()),
+                    normalizeOpType(step.opType()), blankToNull(step.workCenter()), step.resourceId(),
                     step.setupMinutes(), step.runMinutes(), blankToNull(step.remark()));
         }
     }
 
     /** 插入一道工序：主键逐行生成（批量 INSERT…SELECT 会让所有行共用一个 id）。 */
     private void insertStep(long routingId, Long companyId, int seqNo, String name, String opType,
-                            String workCenter, BigDecimal setupMinutes, BigDecimal runMinutes, String remark) {
+                            String workCenter, Long resourceId, BigDecimal setupMinutes,
+                            BigDecimal runMinutes, String remark) {
         jdbcTemplate.update("""
                         INSERT INTO capp_routing_step (id, company_id, routing_id, seq_no, name, op_type,
-                                                       work_center, setup_minutes, run_minutes, remark)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                       work_center, resource_id, setup_minutes, run_minutes, remark)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                IdWorker.getId(), companyId, routingId, seqNo, name, opType, workCenter,
+                IdWorker.getId(), companyId, routingId, seqNo, name, opType, workCenter, resourceId,
                 nullToZero(setupMinutes), nullToZero(runMinutes), remark);
     }
 
     private void insertStep(long routingId, Long companyId, CappDtos.StepRow step) {
         insertStep(routingId, companyId, step.seqNo(), step.name(), normalizeOpType(step.opType()),
-                step.workCenter(), step.setupMinutes(), step.runMinutes(), step.remark());
+                step.workCenter(), step.resourceId(), step.setupMinutes(), step.runMinutes(), step.remark());
     }
 
     private List<CappDtos.StepRow> stepsOf(Long routingId) {
         return jdbcTemplate.query("""
-                        SELECT id, seq_no, name, op_type, work_center, setup_minutes, run_minutes, remark
-                          FROM capp_routing_step
-                         WHERE routing_id = ?
-                         ORDER BY seq_no
+                        SELECT s.id, s.seq_no, s.name, s.op_type, s.work_center, s.resource_id,
+                               r.code AS resource_code, r.name AS resource_name,
+                               s.setup_minutes, s.run_minutes, s.remark
+                          FROM capp_routing_step s
+                          LEFT JOIN capp_resource r ON r.id = s.resource_id AND r.deleted = false
+                         WHERE s.routing_id = ?
+                         ORDER BY s.seq_no
                         """,
                 (rs, rowNum) -> new CappDtos.StepRow(rs.getLong("id"), rs.getInt("seq_no"),
                         rs.getString("name"), rs.getString("op_type"), rs.getString("work_center"),
+                        (Long) rs.getObject("resource_id"), rs.getString("resource_code"),
+                        rs.getString("resource_name"),
                         rs.getBigDecimal("setup_minutes"), rs.getBigDecimal("run_minutes"),
                         rs.getString("remark")),
                 routingId);
@@ -357,6 +366,16 @@ public class CappRoutingService {
                     "工艺路线只能挂在零件上（当前对象类型：" + rows.get(0).objectType() + "）");
         }
         return rows.get(0);
+    }
+
+    private void requireResource(Long resourceId, Long companyId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(1) FROM capp_resource
+                 WHERE id = ? AND company_id = ? AND deleted = false
+                """, Integer.class, resourceId, companyId);
+        if (count == null || count == 0) {
+            throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "工艺资源不存在：" + resourceId);
+        }
     }
 
     private static void requireDraft(String status, String message) {

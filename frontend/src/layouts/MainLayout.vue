@@ -54,6 +54,7 @@
             <span>工艺管理</span>
           </template>
           <el-menu-item index="/capp/routing">工艺路线</el-menu-item>
+          <el-menu-item index="/capp/resource">工艺资源</el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/project" disabled>
           <el-icon><Calendar /></el-icon>

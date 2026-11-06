@@ -19,6 +19,7 @@ public final class CappDtos {
 
     /** 工序行。 */
     public record StepRow(Long id, int seqNo, String name, String opType, String workCenter,
+                          Long resourceId, String resourceCode, String resourceName,
                           BigDecimal setupMinutes, BigDecimal runMinutes, String remark) {
     }
 
@@ -27,6 +28,7 @@ public final class CappDtos {
                               @NotBlank @Size(max = 100) String name,
                               @Size(max = 32) String opType,
                               @Size(max = 100) String workCenter,
+                              Long resourceId,
                               BigDecimal setupMinutes,
                               BigDecimal runMinutes,
                               @Size(max = 500) String remark) {

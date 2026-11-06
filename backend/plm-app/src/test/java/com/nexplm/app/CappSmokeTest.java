@@ -221,6 +221,93 @@ class CappSmokeTest {
                 .andExpect(status().isBadRequest());
     }
 
+    /** P6-3：分类树 + 动态属性筛选 + 保存查询条件。 */
+    @Test
+    void resourceLibraryWithDynamicAttrsAndSavedQuery() throws Exception {
+        String admin = login("admin", "Admin@12345");
+
+        long toolClass = call(post("/api/v1/capp/resource-classes"), admin,
+                json(Map.of("code", "TOOL", "name", "刀具"))).path("id").asLong();
+        long turningClass = call(post("/api/v1/capp/resource-classes"), admin,
+                json(Map.of("code", "TOOL-TURN", "name", "车刀", "parentId", toolClass))).path("id").asLong();
+
+        JsonNode created = call(post("/api/v1/capp/resources"), admin, json(Map.of(
+                "classId", turningClass,
+                "code", "R-001",
+                "name", "外圆车刀",
+                "spec", "25×25",
+                "unit", "把",
+                "attrs", Map.of("品牌", "山特", "直径", "20"))));
+        long resourceId = created.path("id").asLong();
+        assertThat(created.path("className").asText()).isEqualTo("车刀");
+        assertThat(created.path("attrs").path("品牌").asText()).isEqualTo("山特");
+
+        // 按分类筛选
+        assertThat(call(get("/api/v1/capp/resources?classId=" + turningClass), admin, null)
+                .path("total").asLong()).isEqualTo(1);
+        // 动态属性包含匹配（用 param 传原始 JSON；手写 %XX 在 MockMvc 里不会二次解码）
+        assertThat(call(get("/api/v1/capp/resources").param("attrs", "{\"品牌\":\"山特\"}"), admin, null)
+                .path("total").asLong()).isEqualTo(1);
+        assertThat(call(get("/api/v1/capp/resources").param("attrs", "{\"品牌\":\"他人\"}"), admin, null)
+                .path("total").asLong()).isZero();
+
+        // 保存查询条件并按条件执行
+        JsonNode saved = call(post("/api/v1/capp/resource-queries"), admin, json(Map.of(
+                "name", "山特车刀", "classId", turningClass, "attrs", Map.of("品牌", "山特"))));
+        assertThat(call(get("/api/v1/capp/resource-queries/" + saved.path("id").asLong() + "/run"), admin, null)
+                .path("total").asLong()).isEqualTo(1);
+        // 同名再保存 → 覆盖，不新增
+        call(post("/api/v1/capp/resource-queries"), admin, json(Map.of("name", "山特车刀", "classId", turningClass)));
+        assertThat(call(get("/api/v1/capp/resource-queries"), admin, null).size()).isEqualTo(1);
+
+        // 分类下有资源时不允许删
+        mockMvc.perform(delete("/api/v1/capp/resource-classes/{id}", turningClass)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isConflict());
+
+        // 资源无引用可删，删完分类才能删
+        call(delete("/api/v1/capp/resources/{id}", resourceId), admin, null);
+        call(delete("/api/v1/capp/resource-classes/{id}", turningClass), admin, null);
+        assertThat(call(get("/api/v1/capp/resources?classId=" + turningClass), admin, null)
+                .path("total").asLong()).isZero();
+    }
+
+    /** P6-3：工序引用资源后禁止删除资源，引用统计可回溯到路线与工序。 */
+    @Test
+    void resourceReferenceBlocksDeletion() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long itemId = createItem(admin, "引用资源零件");
+        long resourceClass = call(post("/api/v1/capp/resource-classes"), admin,
+                json(Map.of("code", "TOOL-REF", "name", "引用刀具"))).path("id").asLong();
+        long resourceId = call(post("/api/v1/capp/resources"), admin, json(Map.of(
+                "classId", resourceClass, "code", "R-REF-01", "name", "切断刀", "unit", "把")))
+                .path("id").asLong();
+
+        Map<String, Object> step = step(10, "切断", "MACHINING", "下料车间", 0, 2);
+        step.put("resourceId", resourceId);
+        long routingId = call(post("/api/v1/capp/routings"), admin,
+                json(routing("引用资源工艺", itemId, steps(step)))).path("id").asLong();
+
+        JsonNode detail = call(get("/api/v1/capp/routings/{id}", routingId), admin, null);
+        assertThat(detail.path("steps").get(0).path("resourceId").asLong()).isEqualTo(resourceId);
+        assertThat(detail.path("steps").get(0).path("resourceCode").asText()).isEqualTo("R-REF-01");
+
+        JsonNode references = call(get("/api/v1/capp/resources/" + resourceId + "/references"), admin, null);
+        assertThat(references.size()).isEqualTo(1);
+        assertThat(references.get(0).path("routingId").asLong()).isEqualTo(routingId);
+        assertThat(references.get(0).path("seqNo").asInt()).isEqualTo(10);
+        assertThat(call(get("/api/v1/capp/resources/" + resourceId), admin, null)
+                .path("referenceCount").asInt()).isEqualTo(1);
+
+        mockMvc.perform(delete("/api/v1/capp/resources/{id}", resourceId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isConflict());
+
+        // 删掉引用它的草稿路线后可删除
+        call(delete("/api/v1/capp/routings/{id}", routingId), admin, null);
+        call(delete("/api/v1/capp/resources/{id}", resourceId), admin, null);
+    }
+
     // ------------------------------------------------------------------ 工具
 
     private Map<String, Object> routing(String name, long objectId, List<Map<String, Object>> steps) {
