@@ -17,13 +17,34 @@ public final class CappDtos {
     private CappDtos() {
     }
 
-    /** 工序行。 */
-    public record StepRow(Long id, int seqNo, String name, String opType, String workCenter,
-                          Long resourceId, String resourceCode, String resourceName,
-                          BigDecimal setupMinutes, BigDecimal runMinutes, String remark) {
+    /**
+     * 工步行（工序内部的操作细分）。
+     *
+     * <p>隶属于「工序号」而不是工序行 id：工序行 id 在序号重建时会变，绑定 id 会产生孤儿工步。</p>
+     */
+    public record SubstepRow(Long id, int seqNo, String name, String content, Long resourceId,
+                             String resourceCode, String resourceName,
+                             BigDecimal setupMinutes, BigDecimal runMinutes, String remark) {
     }
 
-    /** 工序保存入参（保存时整表替换，id 不参与）。 */
+    /** 工步保存入参（同一工序内整表替换）。 */
+    public record SubstepSaveReq(@NotNull @Positive Integer seqNo,
+                                 @NotBlank @Size(max = 100) String name,
+                                 @Size(max = 500) String content,
+                                 Long resourceId,
+                                 BigDecimal setupMinutes,
+                                 BigDecimal runMinutes,
+                                 @Size(max = 500) String remark) {
+    }
+
+    /** 工序行（含工步）。 */
+    public record StepRow(Long id, int seqNo, String name, String opType, String workCenter,
+                          Long resourceId, String resourceCode, String resourceName,
+                          BigDecimal setupMinutes, BigDecimal runMinutes, String remark,
+                          List<SubstepRow> substeps) {
+    }
+
+    /** 工序保存入参（保存时整表替换，id 不参与；工步随工序一并整表替换）。 */
     public record StepSaveReq(@NotNull @Positive Integer seqNo,
                               @NotBlank @Size(max = 100) String name,
                               @Size(max = 32) String opType,
@@ -31,7 +52,16 @@ public final class CappDtos {
                               Long resourceId,
                               BigDecimal setupMinutes,
                               BigDecimal runMinutes,
-                              @Size(max = 500) String remark) {
+                              @Size(max = 500) String remark,
+                              @Valid List<SubstepSaveReq> substeps) {
+    }
+
+    /** 工艺过程树节点：一道工序 + 其下的工步。 */
+    public record ProcessTreeNode(int stepSeqNo, String stepName, String opType, String workCenter,
+                                  Long resourceId, String resourceCode, String resourceName,
+                                  BigDecimal setupMinutes, BigDecimal runMinutes,
+                                  int substepCount, BigDecimal substepMinutes,
+                                  List<SubstepRow> substeps) {
     }
 
     /** 工艺路线保存入参：主档 + 工序（批量编辑，整表替换）。 */

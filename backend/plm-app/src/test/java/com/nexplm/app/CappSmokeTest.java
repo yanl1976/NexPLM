@@ -524,7 +524,93 @@ class CappSmokeTest {
         call(delete("/api/v1/capp/routings/{id}", routingId), admin, null);
     }
 
+    /**
+     * P6-2（补齐）工步与工艺过程树。
+     *
+     * <p>覆盖：工步随工序整表替换提交、工步级资源回填、过程树同源聚合、序号重建时工步跟随迁移
+     * （工步绑工序号而非工序行 id，重排后不能变孤儿）、复制路线带工步、同工序工步号重复被拒。</p>
+     */
+    @Test
+    void substepsAndProcessTree() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long itemId = createItem(admin, "工步零件");
+        long classId = call(post("/api/v1/capp/resource-classes"), admin,
+                json(Map.of("code", "TMP-SUB-CLS", "name", "工步夹具"))).path("id").asLong();
+        long resourceId = call(post("/api/v1/capp/resources"), admin, json(Map.of(
+                "classId", classId, "code", "TMP-SUB-R1", "name", "三爪卡盘", "unit", "套")))
+                .path("id").asLong();
+
+        Map<String, Object> step10 = step(5, "粗车", "MACHINING", "机加车间", 0.3, 1.5);
+        step10.put("substeps", List.of(
+                substep(1, "装夹", "三爪卡盘装夹找正", resourceId, "0.2", "0.0"),
+                substep(2, "粗走刀", "车外圆至 Φ52", null, "0.1", "1.2")));
+        Map<String, Object> step20 = step(7, "终检", "INSPECTION", "检验站", 0.1, 0.2);
+        long routingId = call(post("/api/v1/capp/routings"), admin,
+                json(routing("工步路线", itemId, List.of(step10, step20)))).path("id").asLong();
+
+        JsonNode detail = call(get("/api/v1/capp/routings/{id}", routingId), admin, null);
+        assertThat(detail.path("steps")).hasSize(2);
+        JsonNode substeps = detail.path("steps").get(0).path("substeps");
+        assertThat(substeps).hasSize(2);
+        assertThat(substeps.get(0).path("name").asText()).isEqualTo("装夹");
+        assertThat(substeps.get(0).path("resourceCode").asText()).isEqualTo("TMP-SUB-R1");
+        assertThat(substeps.get(0).path("resourceName").asText()).isEqualTo("三爪卡盘");
+        assertThat(detail.path("steps").get(1).path("substeps")).hasSize(0);
+
+        // 过程树：与工序表同源，聚合工步数与工步工时之和（0.2+0.0 + 0.1+1.2 = 1.5）
+        JsonNode tree = call(get("/api/v1/capp/routings/{id}/process-tree", routingId), admin, null);
+        assertThat(tree).hasSize(2);
+        assertThat(tree.get(0).path("stepSeqNo").asInt()).isEqualTo(5);
+        assertThat(tree.get(0).path("substepCount").asInt()).isEqualTo(2);
+        assertThat(tree.get(0).path("substepMinutes").asDouble()).isCloseTo(1.5, within(0.001));
+        assertThat(tree.get(1).path("substepCount").asInt()).isZero();
+
+        // 同工序内工步号重复 → 400
+        Map<String, Object> dupStep = step(5, "粗车", "MACHINING", "机加车间", 0.3, 1.5);
+        dupStep.put("substeps", List.of(
+                substep(1, "装夹", null, null, "0", "0"),
+                substep(1, "重复号", null, null, "0", "0")));
+        mockMvc.perform(post("/api/v1/capp/routings")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(routing("重复工步路线", itemId, List.of(dupStep)))))
+                .andExpect(status().isBadRequest());
+
+        // 序号重建：5/7 → 10/20，工步必须跟着工序号迁移
+        JsonNode reseq = call(post("/api/v1/capp/routings/{id}/resequence", routingId), admin, null);
+        JsonNode stepsAfter = reseq.path("steps");
+        assertThat(stepsAfter.get(0).path("seqNo").asInt()).isEqualTo(10);
+        assertThat(stepsAfter.get(0).path("name").asText()).isEqualTo("粗车");
+        assertThat(stepsAfter.get(0).path("substeps")).hasSize(2);
+        assertThat(stepsAfter.get(0).path("substeps").get(1).path("name").asText()).isEqualTo("粗走刀");
+        assertThat(stepsAfter.get(1).path("seqNo").asInt()).isEqualTo(20);
+        assertThat(stepsAfter.get(1).path("substeps")).hasSize(0);
+
+        // 复制为新草稿也带工步
+        JsonNode copied = call(post("/api/v1/capp/routings/{id}/copy", routingId), admin, null);
+        assertThat(copied.path("steps").get(0).path("substeps")).hasSize(2);
+        assertThat(copied.path("steps").get(0).path("substeps").get(0).path("resourceCode").asText())
+                .isEqualTo("TMP-SUB-R1");
+
+        call(delete("/api/v1/capp/routings/{id}", copied.path("id").asLong()), admin, null);
+        call(delete("/api/v1/capp/routings/{id}", routingId), admin, null);
+        call(delete("/api/v1/capp/resources/{id}", resourceId), admin, null);
+        call(delete("/api/v1/capp/resource-classes/{id}", classId), admin, null);
+    }
+
     // ------------------------------------------------------------------ 工具
+
+    private Map<String, Object> substep(int seqNo, String name, String content, Long resourceId,
+                                        String setupMinutes, String runMinutes) {
+        Map<String, Object> substep = new HashMap<>();
+        substep.put("seqNo", seqNo);
+        substep.put("name", name);
+        substep.put("content", content);
+        substep.put("resourceId", resourceId);
+        substep.put("setupMinutes", new java.math.BigDecimal(setupMinutes));
+        substep.put("runMinutes", new java.math.BigDecimal(runMinutes));
+        return substep;
+    }
 
     private Map<String, Object> timeRule(String name, String opType, String workCenter,
                                          String setupBase, String setupFactor, String runFactor,

@@ -138,6 +138,29 @@
         <el-button size="small" type="primary" plain :disabled="readonly" @click="addStep">添加工序</el-button>
       </div>
       <el-table :data="form.steps" border size="small">
+        <el-table-column type="expand" width="40">
+          <template #default="{ row }">
+            <div class="substep-panel">
+              <el-table v-if="row.substeps?.length" :data="row.substeps" border size="small">
+                <el-table-column prop="seqNo" label="工步号" width="80" align="center" />
+                <el-table-column prop="name" label="工步名称" width="140" />
+                <el-table-column prop="content" label="工步内容" min-width="220" show-overflow-tooltip />
+                <el-table-column label="工艺资源" width="180" show-overflow-tooltip>
+                  <template #default="scope">
+                    {{ scope.row.resourceCode ? `${scope.row.resourceCode} ${scope.row.resourceName ?? ''}` : '-' }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="工时(准备/单件)" width="150" align="right">
+                  <template #default="scope">
+                    {{ formatMinutes(scope.row.setupMinutes) }} / {{ formatMinutes(scope.row.runMinutes) }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="remark" label="备注" min-width="120" />
+              </el-table>
+              <span v-else class="sub">该工序还没有工步</span>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="工序号" width="100">
           <template #default="{ row }">
             <el-input-number v-model="row.seqNo" :min="1" :step="10" :controls="false" :disabled="readonly" style="width: 100%" />
@@ -198,6 +221,14 @@
             <el-input v-model="row.remark" :disabled="readonly" maxlength="500" />
           </template>
         </el-table-column>
+        <el-table-column label="工步" width="110" align="center">
+          <template #default="{ row, $index }">
+            <el-button v-if="!readonly" link type="primary" @click="openSubsteps(row, $index)">
+              {{ row.substeps?.length ? `${row.substeps.length} 个` : '添加' }}
+            </el-button>
+            <span v-else>{{ row.substeps?.length ?? 0 }}</span>
+          </template>
+        </el-table-column>
         <el-table-column v-if="!readonly" label="排序" width="150" align="center">
           <template #default="{ $index }">
             <el-button link type="primary" :disabled="$index === 0" @click="moveStep($index, -1)">上移</el-button>
@@ -222,6 +253,79 @@
         <el-button v-if="!readonly" type="primary" :loading="saving" @click="onSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 工步编辑：只改本地草稿，随「保存路线」一并整表提交（工序号变化不会丢工步） -->
+    <el-drawer v-model="substepVisible" :title="substepTitle" size="1000px">
+      <el-table :data="substepDraft" border size="small">
+        <el-table-column label="工步号" width="90">
+          <template #default="{ row }">
+            <el-input-number v-model="row.seqNo" :min="1" :step="1" :controls="false" style="width: 100%" />
+          </template>
+        </el-table-column>
+        <el-table-column label="工步名称" width="140">
+          <template #default="{ row }">
+            <el-input v-model="row.name" maxlength="100" placeholder="装夹 / 走刀" />
+          </template>
+        </el-table-column>
+        <el-table-column label="工步内容" min-width="200">
+          <template #default="{ row }">
+            <el-input v-model="row.content" maxlength="500" />
+          </template>
+        </el-table-column>
+        <el-table-column label="工艺资源" width="200">
+          <template #default="{ row }">
+            <el-select
+              v-model="row.resourceId"
+              filterable
+              remote
+              reserve-keyword
+              clearable
+              placeholder="可选（覆盖工序级）"
+              :remote-method="searchResources"
+              :loading="resourcesLoading"
+              @visible-change="(visible: boolean) => visible && searchResources('')"
+            >
+              <el-option
+                v-for="item in resources"
+                :key="item.id"
+                :label="`${item.code} ${item.name}`"
+                :value="item.id"
+              />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="准备(h)" width="100">
+          <template #default="{ row }">
+            <el-input-number v-model="row.setupMinutes" :min="0" :precision="2" :controls="false" style="width: 100%" />
+          </template>
+        </el-table-column>
+        <el-table-column label="单件(h)" width="100">
+          <template #default="{ row }">
+            <el-input-number v-model="row.runMinutes" :min="0" :precision="2" :controls="false" style="width: 100%" />
+          </template>
+        </el-table-column>
+        <el-table-column label="备注" min-width="120">
+          <template #default="{ row }">
+            <el-input v-model="row.remark" maxlength="500" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="80" align="center">
+          <template #default="{ $index }">
+            <el-button link type="danger" @click="substepDraft.splice($index, 1)">移除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="section-title">
+        <el-button size="small" type="primary" plain @click="addSubstep">添加工步</el-button>
+        <span class="hint">工步工时之和应与工序工时对得上，保存后可在展开行核对</span>
+      </div>
+
+      <template #footer>
+        <el-button @click="substepVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmSubsteps">确定</el-button>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -237,7 +341,8 @@ import {
   type CappResource,
   type RoutingRow,
   type RoutingStatus,
-  type RoutingStep
+  type RoutingStep,
+  type SubstepRow
 } from '@/api/capp'
 import { workflowApi, type ActorUserRow } from '@/api/workflow'
 import { useUserStore } from '@/stores/user'
@@ -264,6 +369,11 @@ const usersLoading = ref(false)
 const resources = ref<CappResource[]>([])
 const resourcesLoading = ref(false)
 
+/** 工步编辑抽屉：改动只落在本地草稿，点「确定」写回当前工序，随路线保存一起提交。 */
+const substepVisible = ref(false)
+const substepDraft = ref<SubstepRow[]>([])
+const substepStepIndex = ref(-1)
+
 const form = reactive<{
   id?: string
   name: string
@@ -286,6 +396,11 @@ const dialogTitle = computed(() => {
     return '工艺路线详情'
   }
   return form.id ? '编辑工艺路线' : '新建工艺路线'
+})
+
+const substepTitle = computed(() => {
+  const step = form.steps[substepStepIndex.value]
+  return step ? `工步 - 工序 ${step.seqNo} ${step.name || ''}` : '工步'
 })
 
 /** 路线串预览：与后端 detail.routeString 同规则（10 下料 → 20 车削）。 */
@@ -517,7 +632,16 @@ async function onSave(): Promise<void> {
         resourceId: step.resourceId ?? null,
         setupMinutes: step.setupMinutes ?? 0,
         runMinutes: step.runMinutes ?? 0,
-        remark: step.remark || null
+        remark: step.remark || null,
+        substeps: (step.substeps ?? []).map((substep) => ({
+          seqNo: substep.seqNo,
+          name: substep.name,
+          content: substep.content || null,
+          resourceId: substep.resourceId ?? null,
+          setupMinutes: substep.setupMinutes ?? 0,
+          runMinutes: substep.runMinutes ?? 0,
+          remark: substep.remark || null
+        }))
       }))
     }
     if (form.id) {
@@ -602,6 +726,46 @@ async function onDelete(row: RoutingRow): Promise<void> {
   }
 }
 
+/** 打开工步抽屉：拷贝成草稿，避免「取消」污染原表单。 */
+function openSubsteps(step: RoutingStep, index: number): void {
+  substepStepIndex.value = index
+  substepDraft.value = (step.substeps ?? []).map((item) => ({ ...item }))
+  substepVisible.value = true
+}
+
+function addSubstep(): void {
+  const maxSeq = substepDraft.value.reduce((max, item) => Math.max(max, item.seqNo || 0), 0)
+  substepDraft.value.push({
+    seqNo: maxSeq + 1,
+    name: '',
+    content: '',
+    resourceId: null,
+    setupMinutes: 0,
+    runMinutes: 0,
+    remark: ''
+  })
+}
+
+function confirmSubsteps(): void {
+  if (substepDraft.value.some((item) => !item.name?.trim())) {
+    ElMessage.warning('请填写每个工步的名称')
+    return
+  }
+  const seqs = new Set(substepDraft.value.map((item) => item.seqNo))
+  if (seqs.size !== substepDraft.value.length) {
+    ElMessage.warning('同一工序内的工步号不能重复')
+    return
+  }
+  const step = form.steps[substepStepIndex.value]
+  if (step) {
+    step.substeps = substepDraft.value
+      .slice()
+      .sort((left, right) => (left.seqNo ?? 0) - (right.seqNo ?? 0))
+      .map((item) => ({ ...item }))
+  }
+  substepVisible.value = false
+}
+
 function statusTagType(value: RoutingStatus): 'success' | 'info' | 'warning' {
   if (value === 'RELEASED') {
     return 'success'
@@ -657,5 +821,10 @@ function formatTime(value?: string | null): string {
 .sub {
   color: #909399;
   font-size: 12px;
+}
+
+.substep-panel {
+  padding: 8px 12px;
+  background: #fafafa;
 }
 </style>

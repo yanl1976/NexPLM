@@ -19,6 +19,47 @@ export const OP_TYPE_LABEL: Record<string, string> = {
   OTHER: '其它'
 }
 
+/** 工步：工序内部的操作细分（装夹 / 走刀 / 测量），挂在「工序号」上而非工序行 id。 */
+export interface SubstepRow {
+  id?: string
+  seqNo: number
+  name: string
+  content?: string | null
+  resourceId?: string | null
+  resourceCode?: string | null
+  resourceName?: string | null
+  setupMinutes?: number | null
+  runMinutes?: number | null
+  remark?: string | null
+}
+
+export interface SubstepSaveReq {
+  seqNo: number
+  name: string
+  content?: string | null
+  resourceId?: string | null
+  setupMinutes?: number
+  runMinutes?: number
+  remark?: string | null
+}
+
+/** 工艺过程树节点（工序 + 其下工步）。 */
+export interface ProcessTreeNode {
+  stepSeqNo: number
+  stepName: string
+  opType: string
+  workCenter?: string | null
+  resourceId?: string | null
+  resourceCode?: string | null
+  resourceName?: string | null
+  setupMinutes?: number | null
+  runMinutes?: number | null
+  substepCount: number
+  /** 工步工时之和（准备 + 单件），用于核对与工序工时的差额。 */
+  substepMinutes: number
+  substeps: SubstepRow[]
+}
+
 export interface RoutingStep {
   id?: string
   seqNo: number
@@ -32,6 +73,8 @@ export interface RoutingStep {
   setupMinutes?: number | null
   runMinutes?: number | null
   remark?: string | null
+  /** 工序下的工步（随工序整表替换提交）。 */
+  substeps?: SubstepRow[]
 }
 
 export interface RoutingRow {
@@ -227,6 +270,10 @@ export const cappApi = {
   /** 序号重建：按当前顺序重排为 10/20/30…（仅草稿）。 */
   resequence(id: string): Promise<RoutingDetail> {
     return http.post<RoutingDetail>(`/capp/routings/${id}/resequence`)
+  },
+  /** 工艺过程树：工序 → 工步（与工序表同源）。 */
+  processTree(id: string): Promise<ProcessTreeNode[]> {
+    return http.get<ProcessTreeNode[]>(`/capp/routings/${id}/process-tree`)
   },
   remove(id: string): Promise<void> {
     return http.delete<void>(`/capp/routings/${id}`)

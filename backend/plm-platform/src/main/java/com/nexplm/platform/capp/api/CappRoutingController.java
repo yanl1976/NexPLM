@@ -49,6 +49,13 @@ public class CappRoutingController {
         return Result.ok(routingService.detail(id, CurrentUser.companyId()));
     }
 
+    @Operation(summary = "工艺过程树（工序 → 工步，与工序表同源）")
+    @GetMapping("/capp/routings/{id}/process-tree")
+    @PreAuthorize("hasAuthority('capp.routing.read')")
+    public Result<java.util.List<CappDtos.ProcessTreeNode>> processTree(@PathVariable Long id) {
+        return Result.ok(routingService.processTree(id, CurrentUser.companyId()));
+    }
+
     @Operation(summary = "新建工艺路线（自动生成 RT-xxxxxx）")
     @PostMapping("/capp/routings")
     @PreAuthorize("hasAuthority('capp.routing.write')")

@@ -13,7 +13,9 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -234,8 +236,29 @@ public class CappRoutingService {
         // 逐行插入（INSERTSELECT 会让所有行共用一个主键，撞 uk(id)）
         for (CappDtos.StepRow step : stepsOf(id)) {
             insertStep(newId, companyId, step);
+            writeSubstepsFromRows(newId, companyId, step.seqNo(), step.substeps());
         }
         return detail(newId, companyId);
+    }
+
+    /** 把已读出的工步行按「目标工序号」重写到某条路线（复制、序号重建共用）。 */
+    private void writeSubstepsFromRows(long routingId, Long companyId, int targetStepSeqNo,
+                                       List<CappDtos.SubstepRow> substeps) {
+        if (substeps == null || substeps.isEmpty()) {
+            return;
+        }
+        for (CappDtos.SubstepRow substep : substeps) {
+            jdbcTemplate.update("""
+                            INSERT INTO capp_routing_substep (id, company_id, routing_id, step_seq_no,
+                                                              seq_no, name, content, resource_id,
+                                                              setup_minutes, run_minutes, remark)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                    IdWorker.getId(), companyId, routingId, targetStepSeqNo, substep.seqNo(),
+                    substep.name(), substep.content(), substep.resourceId(),
+                    nullToZero(substep.setupMinutes()), nullToZero(substep.runMinutes()),
+                    substep.remark());
+        }
     }
 
     /**
@@ -251,10 +274,14 @@ public class CappRoutingService {
         List<CappDtos.StepRow> steps = current.steps();
         jdbcTemplate.update("DELETE FROM capp_routing_step WHERE routing_id = ? AND company_id = ?",
                 id, companyId);
+        // 工步挂的是工序号（语义键），重排后必须跟着迁移：先整表记下，插入工序后再按映射重写
+        jdbcTemplate.update("DELETE FROM capp_routing_substep WHERE routing_id = ? AND company_id = ?",
+                id, companyId);
         int seqNo = 10;
         for (CappDtos.StepRow step : steps) {
             insertStep(id, companyId, seqNo, step.name(), normalizeOpType(step.opType()),
                     step.workCenter(), step.resourceId(), step.setupMinutes(), step.runMinutes(), step.remark());
+            writeSubstepsFromRows(id, companyId, seqNo, step.substeps());
             seqNo += 10;
         }
         jdbcTemplate.update("""
@@ -268,12 +295,38 @@ public class CappRoutingService {
     public void delete(Long id, Long companyId) {
         CappDtos.RoutingDetail current = detail(id, companyId);
         requireDraft(current.status(), "只有草稿状态的工艺路线可以删除");
+        jdbcTemplate.update("DELETE FROM capp_routing_substep WHERE routing_id = ? AND company_id = ?",
+                id, companyId);
         jdbcTemplate.update("DELETE FROM capp_routing_step WHERE routing_id = ? AND company_id = ?",
                 id, companyId);
         jdbcTemplate.update("""
                 UPDATE capp_routing SET deleted = true, updated_at = now()
                  WHERE id = ? AND company_id = ?
                 """, id, companyId);
+    }
+
+    /**
+     * 工艺过程树：工序 → 工步。
+     *
+     * <p>只读视图，数据源就是 {@link #detail}（不额外建表/不缓存），保证「树」与「工序表」
+     * 永远同源；{@code substepMinutes} 是工步工时之和，用于核对工步拆分是否与工序工时对得上。</p>
+     */
+    public List<CappDtos.ProcessTreeNode> processTree(Long id, Long companyId) {
+        CappDtos.RoutingDetail routing = detail(id, companyId);
+        return routing.steps().stream()
+                .map(step -> {
+                    List<CappDtos.SubstepRow> substeps = step.substeps() == null
+                            ? List.of() : step.substeps();
+                    BigDecimal substepMinutes = substeps.stream()
+                            .map(item -> nullToZero(item.setupMinutes())
+                                    .add(nullToZero(item.runMinutes())))
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    return new CappDtos.ProcessTreeNode(step.seqNo(), step.name(), step.opType(),
+                            step.workCenter(), step.resourceId(), step.resourceCode(),
+                            step.resourceName(), step.setupMinutes(), step.runMinutes(),
+                            substeps.size(), substepMinutes, substeps);
+                })
+                .toList();
     }
 
     // ------------------------------------------------------------------ 内部
@@ -294,6 +347,9 @@ public class CappRoutingService {
         }
         jdbcTemplate.update("DELETE FROM capp_routing_step WHERE routing_id = ? AND company_id = ?",
                 routingId, companyId);
+        // 工步也随工序整表替换：先清空，再按提交内容重写（避免工序号变化后残留孤儿工步）
+        jdbcTemplate.update("DELETE FROM capp_routing_substep WHERE routing_id = ? AND company_id = ?",
+                routingId, companyId);
         List<CappDtos.StepSaveReq> ordered = steps.stream()
                 .sorted((left, right) -> Integer.compare(left.seqNo(), right.seqNo()))
                 .toList();
@@ -304,6 +360,45 @@ public class CappRoutingService {
             insertStep(routingId, companyId, step.seqNo(), step.name().trim(),
                     normalizeOpType(step.opType()), blankToNull(step.workCenter()), step.resourceId(),
                     step.setupMinutes(), step.runMinutes(), blankToNull(step.remark()));
+            writeSubsteps(routingId, companyId, step.seqNo(), step.substeps());
+        }
+    }
+
+    /** 写入一道工序的工步（同一工序内整表替换；工序号与工步号都不允许重复）。 */
+    private void writeSubsteps(long routingId, Long companyId, int stepSeqNo,
+                               List<CappDtos.SubstepSaveReq> substeps) {
+        if (substeps == null || substeps.isEmpty()) {
+            return;
+        }
+        Set<Integer> seqs = new HashSet<>();
+        for (CappDtos.SubstepSaveReq substep : substeps) {
+            if (!seqs.add(substep.seqNo())) {
+                throw BizException.of(ErrorCode.CAPP_STEP_INVALID,
+                        "工序 " + stepSeqNo + " 的工步号重复：" + substep.seqNo());
+            }
+            if (nullToZero(substep.setupMinutes()).signum() < 0
+                    || nullToZero(substep.runMinutes()).signum() < 0) {
+                throw BizException.of(ErrorCode.CAPP_STEP_INVALID,
+                        "工步工时不能为负数：工序 " + stepSeqNo + " 工步 " + substep.seqNo());
+            }
+            if (substep.resourceId() != null) {
+                requireResource(substep.resourceId(), companyId);
+            }
+        }
+        List<CappDtos.SubstepSaveReq> ordered = substeps.stream()
+                .sorted((left, right) -> Integer.compare(left.seqNo(), right.seqNo()))
+                .toList();
+        for (CappDtos.SubstepSaveReq substep : ordered) {
+            jdbcTemplate.update("""
+                            INSERT INTO capp_routing_substep (id, company_id, routing_id, step_seq_no,
+                                                              seq_no, name, content, resource_id,
+                                                              setup_minutes, run_minutes, remark)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                    IdWorker.getId(), companyId, routingId, stepSeqNo, substep.seqNo(),
+                    substep.name().trim(), blankToNull(substep.content()), substep.resourceId(),
+                    nullToZero(substep.setupMinutes()), nullToZero(substep.runMinutes()),
+                    blankToNull(substep.remark()));
         }
     }
 
@@ -326,6 +421,7 @@ public class CappRoutingService {
     }
 
     private List<CappDtos.StepRow> stepsOf(Long routingId) {
+        Map<Integer, List<CappDtos.SubstepRow>> substeps = substepsByStep(routingId);
         return jdbcTemplate.query("""
                         SELECT s.id, s.seq_no, s.name, s.op_type, s.work_center, s.resource_id,
                                r.code AS resource_code, r.name AS resource_name,
@@ -335,13 +431,42 @@ public class CappRoutingService {
                          WHERE s.routing_id = ?
                          ORDER BY s.seq_no
                         """,
-                (rs, rowNum) -> new CappDtos.StepRow(rs.getLong("id"), rs.getInt("seq_no"),
-                        rs.getString("name"), rs.getString("op_type"), rs.getString("work_center"),
-                        (Long) rs.getObject("resource_id"), rs.getString("resource_code"),
-                        rs.getString("resource_name"),
-                        rs.getBigDecimal("setup_minutes"), rs.getBigDecimal("run_minutes"),
-                        rs.getString("remark")),
+                (rs, rowNum) -> {
+                    int seqNo = rs.getInt("seq_no");
+                    return new CappDtos.StepRow(rs.getLong("id"), seqNo,
+                            rs.getString("name"), rs.getString("op_type"), rs.getString("work_center"),
+                            (Long) rs.getObject("resource_id"), rs.getString("resource_code"),
+                            rs.getString("resource_name"),
+                            rs.getBigDecimal("setup_minutes"), rs.getBigDecimal("run_minutes"),
+                            rs.getString("remark"), substeps.getOrDefault(seqNo, List.of()));
+                },
                 routingId);
+    }
+
+    /** 一次查出整条路线的工步并按工序号分组（避免每道工序各查一次）。 */
+    private Map<Integer, List<CappDtos.SubstepRow>> substepsByStep(Long routingId) {
+        Map<Integer, List<CappDtos.SubstepRow>> grouped = new LinkedHashMap<>();
+        jdbcTemplate.query("""
+                        SELECT s.step_seq_no, s.id, s.seq_no, s.name, s.content, s.resource_id,
+                               r.code AS resource_code, r.name AS resource_name,
+                               s.setup_minutes, s.run_minutes, s.remark
+                          FROM capp_routing_substep s
+                          LEFT JOIN capp_resource r ON r.id = s.resource_id AND r.deleted = false
+                         WHERE s.routing_id = ?
+                         ORDER BY s.step_seq_no, s.seq_no
+                        """,
+                rs -> {
+                    int stepSeqNo = rs.getInt("step_seq_no");
+                    grouped.computeIfAbsent(stepSeqNo, key -> new ArrayList<>())
+                            .add(new CappDtos.SubstepRow(rs.getLong("id"), rs.getInt("seq_no"),
+                                    rs.getString("name"), rs.getString("content"),
+                                    (Long) rs.getObject("resource_id"), rs.getString("resource_code"),
+                                    rs.getString("resource_name"),
+                                    rs.getBigDecimal("setup_minutes"), rs.getBigDecimal("run_minutes"),
+                                    rs.getString("remark")));
+                },
+                routingId);
+        return grouped;
     }
 
     /** 路线串：{@code 10 下料 → 20 车削 → 30 检验}。 */
