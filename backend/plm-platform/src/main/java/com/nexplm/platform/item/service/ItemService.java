@@ -234,8 +234,8 @@ public class ItemService {
         object.setMasterId(id);
         object.setCode(resolveCode(req.code()));
         object.setName(req.name().trim());
-        object.setCompanyId(companyId(userId));
-        object.setOrgId(req.orgId());
+        object.setCompanyId(requireCompanyId(userId));
+        object.setOrgId(resolveOrgId(userId, req.orgId()));
         object.setOwnerId(userId);
         object.setSecurityLevel(req.securityLevel() == null ? 0 : req.securityLevel());
         object.setLifecycleState(lifecycleService.definitionForType(OBJECT_TYPE).initial());
@@ -286,7 +286,8 @@ public class ItemService {
         update.setId(id);
         update.setVersion(object.getVersion());
         update.setName(req.name().trim());
-        update.setOrgId(req.orgId());
+        // 请求未指定组织时保留原归属，避免前端不传字段把已有 org_id 冲成 NULL
+        update.setOrgId(req.orgId() == null ? object.getOrgId() : req.orgId());
         update.setSecurityLevel(req.securityLevel() == null ? 0 : req.securityLevel());
         update.setExtJson(buildExt(itemType, req, unit, sourceType));
         update.setUpdatedBy(userId);
@@ -693,5 +694,32 @@ public class ItemService {
     private Long companyId(Long userId) {
         return jdbcTemplate.query("SELECT company_id FROM sys_user WHERE id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, userId);
+    }
+
+    /**
+     * 公司归属必填：{@code plm_object.company_id} 为 NOT NULL，
+     * 用户缺失公司时直接给业务提示，而不是让数据库抛 SQL 异常变成 500。
+     * <p>与 {@code DocService} 保持同一口径。</p>
+     */
+    private Long requireCompanyId(Long userId) {
+        Long companyId = companyId(userId);
+        if (companyId == null) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "当前用户未归属任何公司，无法创建零部件：" + userId);
+        }
+        return companyId;
+    }
+
+    /** 组织归属：请求未指定时回落到用户主组织（{@code sys_user_org.is_primary} 优先）。 */
+    private Long resolveOrgId(Long userId, Long requested) {
+        if (requested != null) {
+            return requested;
+        }
+        return jdbcTemplate.query("""
+                        SELECT org_id FROM sys_user_org
+                         WHERE user_id = ?
+                         ORDER BY is_primary DESC, org_id
+                         LIMIT 1
+                        """, rs -> rs.next() ? rs.getLong(1) : null, userId);
     }
 }
