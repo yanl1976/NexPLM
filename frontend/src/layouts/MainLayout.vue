@@ -84,6 +84,13 @@
           <el-menu-item index="/quality/sys-doc-templates">体系文件模板</el-menu-item>
           <el-menu-item index="/quality/audits">体系审核</el-menu-item>
         </el-sub-menu>
+        <el-sub-menu index="/sup">
+          <template #title>
+            <el-icon><OfficeBuilding /></el-icon>
+            <span>供应商</span>
+          </template>
+          <el-menu-item index="/sup/suppliers">供应商主数据</el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
 
@@ -111,6 +118,7 @@ import {
   Checked,
   Document,
   HomeFilled,
+  OfficeBuilding,
   Operation,
   Refresh,
   Setting,

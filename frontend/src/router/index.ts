@@ -218,6 +218,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '体系审核' }
       },
       {
+        path: 'sup/suppliers',
+        name: 'sup-suppliers',
+        component: () => import('@/views/supplier/SupplierView.vue'),
+        meta: { title: '供应商主数据' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),
