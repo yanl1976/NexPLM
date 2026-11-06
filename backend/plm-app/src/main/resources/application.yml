@@ -48,6 +48,24 @@ mybatis-plus:
       logic-delete-value: true
       logic-not-delete-value: false
 
+flowable:
+  # 引擎表（ACT_*）由 Flowable 自管：首次启动自动建表，升级随引擎脚本演进，**不纳入 Flyway**
+  database-schema-update: true
+  # 默认不启用异步作业线程（超时催办/定时任务接入后再打开）
+  async-executor-activate: false
+  # 启动时自动部署 classpath:/processes/ 下的流程定义（内容不变则不会重复部署）
+  check-process-definitions: true
+  process-definition-location-prefix: classpath*:/processes/
+  # 只用 BPMN 流程引擎，关掉 CMMN / DMN / 表单 / 事件注册，减少建表与启动开销
+  cmmn:
+    enabled: false
+  dmn:
+    enabled: false
+  form:
+    enabled: false
+  eventregistry:
+    enabled: false
+
 nexplm:
   security:
     jwt:

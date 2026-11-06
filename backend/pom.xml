@@ -31,6 +31,8 @@
         <mybatis-plus.version>3.5.7</mybatis-plus.version>
         <jjwt.version>0.12.6</jjwt.version>
         <springdoc.version>2.6.0</springdoc.version>
+        <!-- 工作流引擎：7.1.x 与 Spring Boot 3.3.x 对齐（升级 Boot 时需同步复核） -->
+        <flowable.version>7.1.0</flowable.version>
     </properties>
 
     <dependencyManagement>
@@ -74,6 +76,11 @@
                 <groupId>org.springdoc</groupId>
                 <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
                 <version>${springdoc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.flowable</groupId>
+                <artifactId>flowable-spring-boot-starter-process</artifactId>
+                <version>${flowable.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

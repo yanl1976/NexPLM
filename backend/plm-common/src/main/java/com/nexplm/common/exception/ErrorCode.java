@@ -43,7 +43,16 @@ public enum ErrorCode {
     FILE_STORAGE_ERROR("FILE.STORAGE.FAILED", "文件存储失败", 500),
     FILE_UPLOAD_SESSION_NOT_FOUND("FILE.UPLOAD.SESSION_NOT_FOUND", "上传会话不存在或已结束", 404),
     FILE_UPLOAD_CHUNK_INVALID("FILE.UPLOAD.CHUNK_INVALID", "分片数据不完整或不合法", 400),
-    FILE_SCAN_INFECTED("FILE.SCAN.INFECTED", "文件未通过安全扫描，禁止下载", 403);
+    FILE_SCAN_INFECTED("FILE.SCAN.INFECTED", "文件未通过安全扫描，禁止下载", 403),
+
+    // 工作流
+    WF_DEFINITION_NOT_FOUND("WF.DEFINITION.NOT_FOUND", "流程定义不存在或未部署", 404),
+    WF_BINDING_NOT_FOUND("WF.BINDING.NOT_FOUND", "该对象类型未配置可用流程", 400),
+    WF_INSTANCE_NOT_FOUND("WF.INSTANCE.NOT_FOUND", "流程实例不存在或已结束", 404),
+    WF_TASK_NOT_FOUND("WF.TASK.NOT_FOUND", "待办任务不存在或已被处理", 404),
+    WF_TASK_NOT_ASSIGNEE("WF.TASK.NOT_ASSIGNEE", "该任务不属于当前用户", 403),
+    WF_OPERATION_DENIED("WF.OPERATION.DENIED", "当前流程状态不允许该操作", 409),
+    WF_VARIABLE_INVALID("WF.VARIABLE.INVALID", "流程参数不合法", 400);
 
     private final String code;
     private final String message;

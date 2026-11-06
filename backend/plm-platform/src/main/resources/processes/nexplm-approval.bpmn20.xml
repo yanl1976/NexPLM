@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath"
+             targetNamespace="http://nexplm.com/workflow">
+
+    <!--
+      NexPLM 通用审批：发起 → 初审 → 会签（全票通过）→ 归档
+      变量约定：
+        approver   初审办理人（用户 id 字符串）
+        approvers  会签人列表（用户 id 字符串数组）
+        initiator  发起人（用户 id 字符串）
+      驳回由 API 通过 changeActivityState 回退到指定节点，流程模型本身不设驳回分支。
+    -->
+    <process id="nexplmApproval" name="NexPLM 通用审批" isExecutable="true">
+        <documentation>发起 → 初审 → 会签（全票）→ 归档</documentation>
+
+        <startEvent id="start" name="发起"/>
+        <sequenceFlow id="flowStartToReview" sourceRef="start" targetRef="initialReview"/>
+
+        <userTask id="initialReview" name="初审" flowable:assignee="${approver}">
+            <documentation>单人初审，可由 API 驳回至「发起」</documentation>
+        </userTask>
+        <sequenceFlow id="flowReviewToCountersign" sourceRef="initialReview" targetRef="countersign"/>
+
+        <userTask id="countersign" name="会签" flowable:assignee="${countersigner}">
+            <documentation>会签，需全部签核完成后才流转（可驳回至「初审」）</documentation>
+            <multiInstanceLoopCharacteristics isSequential="false"
+                                              flowable:collection="approvers"
+                                              flowable:elementVariable="countersigner">
+                <completionCondition>${nrOfCompletedInstances == nrOfInstances}</completionCondition>
+            </multiInstanceLoopCharacteristics>
+        </userTask>
+        <sequenceFlow id="flowCountersignToArchive" sourceRef="countersign" targetRef="archive"/>
+
+        <endEvent id="archive" name="归档"/>
+    </process>
+</definitions>

@@ -56,6 +56,22 @@
             <artifactId>minio</artifactId>
             <version>8.5.12</version>
         </dependency>
+        <!-- BOM Excel 导入导出：沿用旧系统 xlsx 模板口径 -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+        <!-- 工作流引擎（嵌入式）：流程定义部署、任务、会签/驳回/撤回、委托 -->
+        <dependency>
+            <groupId>org.flowable</groupId>
+            <artifactId>flowable-spring-boot-starter-process</artifactId>
+        </dependency>
+        <!-- BPMN 部署资源解析需要 XML 支持（随 flowable 传递，显式声明避免版本漂移） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
