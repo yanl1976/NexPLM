@@ -14,9 +14,7 @@
           <el-card v-for="item in mine" :key="item.id" shadow="hover" class="project-card">
             <div class="card-head">
               <span class="card-code">{{ item.code }}</span>
-              <el-tag :type="statusType(item.status)" size="small">
-                {{ statusLabel(item.status) }}
-              </el-tag>
+              <StatusDot :tone="statusTone(item.status)" :label="statusLabel(item.status)" />
             </div>
             <div class="card-name" :title="item.name">{{ item.name }}</div>
             <el-progress :percentage="item.progress" :stroke-width="10" />
@@ -107,9 +105,13 @@
 
         <div class="section-title">状态分布</div>
         <div class="status-row">
-          <el-tag v-for="item in portfolio?.byStatus ?? []" :key="item.status" :type="statusType(item.status)" size="large">
-            {{ statusLabel(item.status) }}：{{ item.count }}
-          </el-tag>
+          <StatusDot
+            v-for="item in portfolio?.byStatus ?? []"
+            :key="item.status"
+            :tone="statusTone(item.status)"
+            :label="`${statusLabel(item.status)}：${item.count}`"
+            class="status-chip"
+          />
           <span v-if="!(portfolio?.byStatus ?? []).length" class="sub">暂无数据</span>
         </div>
 
@@ -119,9 +121,7 @@
           <el-table-column prop="name" label="项目名称" min-width="180" show-overflow-tooltip />
           <el-table-column label="状态" width="100" align="center">
             <template #default="{ row }">
-              <el-tag :type="statusType(row.status)" size="small">
-                {{ statusLabel(row.status) }}
-              </el-tag>
+              <StatusDot :tone="statusTone(row.status)" :label="statusLabel(row.status)" />
             </template>
           </el-table-column>
           <el-table-column prop="progress" label="进度" width="90" align="right" />
@@ -157,6 +157,7 @@ import {
   type PortfolioOverview,
   type ProjectStatus
 } from '@/api/project'
+import StatusDot from '@/components/StatusDot.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -189,17 +190,17 @@ function statusLabel(value: string): string {
   return PROJECT_STATUS_LABEL[value as ProjectStatus] ?? value
 }
 
-function statusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
+function statusTone(value: string): 'ok' | 'warn' | 'muted' | 'running' {
   if (value === 'ACTIVE') {
-    return 'success'
+    return 'ok'
   }
   if (value === 'PAUSED') {
-    return 'warning'
+    return 'warn'
   }
   if (value === 'CLOSED') {
-    return 'info'
+    return 'muted'
   }
-  return 'info'
+  return 'running'
 }
 
 function deviationClass(value: number): string {
@@ -303,6 +304,14 @@ function goList(): void {
   gap: 10px;
   flex-wrap: wrap;
   margin-bottom: 12px;
+}
+
+/* 状态分布：色点 + 「状态：数量」，替代整块彩色标签 */
+.status-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--plm-border);
+  border-radius: var(--plm-radius);
+  background: #fff;
 }
 
 .danger-text {

@@ -29,9 +29,7 @@
       </el-table-column>
       <el-table-column label="状态" width="90" align="center">
         <template #default="{ row }">
-          <el-tag :type="statusTagType(row.status)" size="small">
-            {{ TIMESHEET_STATUS_LABEL[row.status] ?? row.status }}
-          </el-tag>
+          <StatusDot :tone="statusTone(row.status)" :label="TIMESHEET_STATUS_LABEL[row.status] ?? row.status" />
         </template>
       </el-table-column>
       <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
@@ -104,6 +102,7 @@ import {
   type TimesheetStatus,
   type TimesheetWorkType
 } from '@/api/project'
+import StatusDot from '@/components/StatusDot.vue'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -264,17 +263,17 @@ async function onRemove(row: TimesheetRow): Promise<void> {
   }
 }
 
-function statusTagType(value: TimesheetStatus): 'success' | 'info' | 'warning' | 'danger' {
+function statusTone(value: TimesheetStatus): 'ok' | 'warn' | 'danger' | 'muted' {
   if (value === 'APPROVED') {
-    return 'success'
+    return 'ok'
   }
   if (value === 'SUBMITTED') {
-    return 'warning'
+    return 'warn'
   }
   if (value === 'REJECTED') {
     return 'danger'
   }
-  return 'info'
+  return 'muted'
 }
 
 function flatten(nodes: ProjectTask[]): ProjectTask[] {
