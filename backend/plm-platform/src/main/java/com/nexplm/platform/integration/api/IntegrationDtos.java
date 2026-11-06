@@ -110,4 +110,22 @@ public final class IntegrationDtos {
 
     public record JobSubmitResult(JobDetail job, boolean duplicated) {
     }
+
+    /* ---------------------------------------------------------------- 金蝶适配 */
+
+    public record KingdeePushReq(@NotNull Long endpointId,
+                                 @NotBlank @Size(max = 64) String bizType,
+                                 @NotNull Long bizId,
+                                 @Size(max = 16) String viewType,
+                                 Boolean dryRun,
+                                 Integer maxAttempt) {
+    }
+
+    public record KingdeePreviewReq(@NotBlank @Size(max = 64) String bizType,
+                                    @NotNull Long bizId,
+                                    @Size(max = 16) String viewType) {
+    }
+
+    public record KingdeePreviewResult(String bizType, String bizKey, JsonNode payload) {
+    }
 }
