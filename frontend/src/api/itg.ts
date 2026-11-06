@@ -273,3 +273,72 @@ export const KINGDEE_BIZ_LABEL: Record<string, string> = {
   Doc: '图文档',
   Route: '工艺路线'
 }
+
+/* ------------------------------------------------------------ P9-3 API 客户端 */
+
+export const SCOPE_LABEL: Record<string, string> = {
+  'object.read': '对象查询',
+  'file.read': '文件下载',
+  'file.write': '文件上传'
+}
+
+export interface ApiClientRow {
+  id: string
+  code: string
+  name: string
+  keyPrefix: string
+  scopes: string[]
+  rateLimitPerMin: number
+  enabled: boolean
+  expiresAt?: string | null
+  lastUsedAt?: string | null
+  createdAt?: string | null
+}
+
+export interface ApiClientDetail {
+  id: string
+  code: string
+  name: string
+  keyPrefix: string
+  scopes: string[]
+  rateLimitPerMin: number
+  enabled: boolean
+  expiresAt?: string | null
+  lastUsedAt?: string | null
+  remark?: string | null
+}
+
+export interface ApiClientSaveReq {
+  code: string
+  name: string
+  scopes: string[]
+  rateLimitPerMin?: number
+  enabled?: boolean
+  expiresAt?: string | null
+  remark?: string | null
+}
+
+export const clientApi = {
+  page(params: {
+    keyword?: string
+    page?: number
+    size?: number
+  }): Promise<{ items: ApiClientRow[]; total: number; page: number; size: number }> {
+    return http.get('/itg/clients', params)
+  },
+  detail(id: string): Promise<ApiClientDetail> {
+    return http.get<ApiClientDetail>(`/itg/clients/${id}`)
+  },
+  create(req: ApiClientSaveReq): Promise<{ client: ApiClientDetail; apiKey: string }> {
+    return http.post('/itg/clients', req)
+  },
+  update(id: string, req: ApiClientSaveReq): Promise<ApiClientDetail> {
+    return http.put<ApiClientDetail>(`/itg/clients/${id}`, req)
+  },
+  rotate(id: string): Promise<{ client: ApiClientDetail; apiKey: string }> {
+    return http.post(`/itg/clients/${id}/rotate`)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/itg/clients/${id}`)
+  }
+}

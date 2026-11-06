@@ -179,6 +179,57 @@
           @current-change="(page: number) => { jobPageNo = page; loadJobs() }"
         />
       </el-tab-pane>
+      <!-- ------------------------------------------------------ API 客户端 -->
+      <el-tab-pane label="API 客户端" name="client">
+        <div class="toolbar">
+          <el-input
+            v-model="clientKeyword"
+            placeholder="编码/名称"
+            clearable
+            style="width: 200px"
+            @keyup.enter="loadClients"
+          />
+          <el-button type="primary" @click="loadClients">查询</el-button>
+          <el-button v-if="canConfig" type="primary" plain @click="openClientCreate">新建客户端</el-button>
+          <span class="hint">Key 只在创建/轮换时显示一次；过期或停用立即失效（走库校验，不是 JWT）</span>
+        </div>
+        <el-table v-loading="clientLoading" :data="clients" border stripe>
+          <el-table-column prop="code" label="编码" width="140" />
+          <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="keyPrefix" label="Key 前缀" width="130" />
+          <el-table-column label="作用域" min-width="200">
+            <template #default="{ row }">
+              <el-tag v-for="scope in row.scopes" :key="scope" size="small" class="tag-gap">
+                {{ SCOPE_LABEL[scope] ?? scope }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="限流" width="100" align="center">
+            <template #default="{ row }">{{ row.rateLimitPerMin }}/分</template>
+          </el-table-column>
+          <el-table-column label="启用" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
+                {{ row.enabled ? '启用' : '停用' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="到期" width="110" align="center">
+            <template #default="{ row }">{{ row.expiresAt || '长期' }}</template>
+          </el-table-column>
+          <el-table-column label="最近使用" width="150" align="center">
+            <template #default="{ row }">{{ formatTime(row.lastUsedAt) }}</template>
+          </el-table-column>
+          <el-table-column v-if="canConfig" label="操作" width="180" align="center" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openClientEdit(row)">编辑</el-button>
+              <el-button link type="warning" @click="rotateClient(row)">轮换</el-button>
+              <el-button link type="danger" @click="removeClient(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!clientLoading && !clients.length" description="还没有 API 客户端" :image-size="60" />
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 端点编辑 -->
@@ -364,6 +415,52 @@
       </template>
     </el-dialog>
 
+    <!-- API 客户端编辑 -->
+    <el-dialog v-model="clientDialogVisible" :title="clientForm.id ? '编辑 API 客户端' : '新建 API 客户端'" width="600px" destroy-on-close>
+      <el-form label-width="110px">
+        <el-form-item label="编码" required>
+          <el-input v-model="clientForm.code" :disabled="!!clientForm.id" maxlength="64" style="width: 240px" />
+        </el-form-item>
+        <el-form-item label="名称" required>
+          <el-input v-model="clientForm.name" maxlength="200" style="width: 340px" />
+        </el-form-item>
+        <el-form-item label="作用域" required>
+          <el-checkbox-group v-model="clientForm.scopes">
+            <el-checkbox v-for="(label, value) in SCOPE_LABEL" :key="value" :value="value">
+              {{ label }}（{{ value }}）
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="限流(次/分)">
+          <el-input-number v-model="clientForm.rateLimitPerMin" :min="1" :max="10000" controls-position="right" style="width: 160px" />
+        </el-form-item>
+        <el-form-item label="到期日">
+          <el-date-picker v-model="clientForm.expiresAt" type="date" value-format="YYYY-MM-DD" placeholder="留空为长期" style="width: 180px" />
+          <span class="label-gap">启用</span>
+          <el-switch v-model="clientForm.enabled" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="clientForm.remark" type="textarea" :rows="2" maxlength="1000" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="clientDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="clientSaving" @click="saveClient">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- API Key 展示（仅一次） -->
+    <el-dialog v-model="keyVisible" title="API Key" width="560px" destroy-on-close>
+      <el-alert
+        type="warning"
+        :closable="false"
+        title="请立即复制保存：服务端只存摘要，关闭后无法再次查看"
+        show-icon
+      />
+      <div class="api-key">{{ newApiKey }}</div>
+      <el-button size="small" @click="copyKey">复制 Key</el-button>
+    </el-dialog>
+
     <!-- 任务详情 -->
     <el-drawer v-model="jobDetailVisible" title="集成任务详情" size="640px" destroy-on-close>
       <template v-if="jobDetail">
@@ -426,11 +523,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '../../stores/user'
 import {
   AUTH_TYPE_LABEL,
+  clientApi,
   itgApi,
   JOB_STATUS_LABEL,
   KINGDEE_BIZ_LABEL,
+  SCOPE_LABEL,
   SYSTEM_CODE_LABEL,
   TRANSFORM_LABEL,
+  type ApiClientRow,
   type EndpointDetail,
   type EndpointRow,
   type JobDetail,
@@ -880,6 +980,156 @@ async function openJobDetail(id: string): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------ API 客户端 */
+
+const clients = ref<ApiClientRow[]>([])
+const clientLoading = ref(false)
+const clientKeyword = ref('')
+const clientDialogVisible = ref(false)
+const clientSaving = ref(false)
+const keyVisible = ref(false)
+const newApiKey = ref('')
+const clientForm = reactive({
+  id: '' as string,
+  code: '',
+  name: '',
+  scopes: ['object.read'] as string[],
+  rateLimitPerMin: 60,
+  enabled: true,
+  expiresAt: '' as string,
+  remark: ''
+})
+
+async function loadClients(): Promise<void> {
+  clientLoading.value = true
+  try {
+    const result = await clientApi.page({ keyword: clientKeyword.value || undefined, page: 1, size: 50 })
+    clients.value = result.items
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载客户端失败')
+  } finally {
+    clientLoading.value = false
+  }
+}
+
+function openClientCreate(): void {
+  Object.assign(clientForm, {
+    id: '',
+    code: '',
+    name: '',
+    scopes: ['object.read'],
+    rateLimitPerMin: 60,
+    enabled: true,
+    expiresAt: '',
+    remark: ''
+  })
+  clientDialogVisible.value = true
+}
+
+async function openClientEdit(row: ApiClientRow): Promise<void> {
+  try {
+    const detail = await clientApi.detail(row.id)
+    Object.assign(clientForm, {
+      id: detail.id,
+      code: detail.code,
+      name: detail.name,
+      scopes: [...detail.scopes],
+      rateLimitPerMin: detail.rateLimitPerMin,
+      enabled: detail.enabled,
+      expiresAt: detail.expiresAt ?? '',
+      remark: detail.remark ?? ''
+    })
+    clientDialogVisible.value = true
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载客户端失败')
+  }
+}
+
+async function saveClient(): Promise<void> {
+  if (!clientForm.code.trim() || !clientForm.name.trim()) {
+    ElMessage.warning('编码与名称为必填')
+    return
+  }
+  if (!clientForm.scopes.length) {
+    ElMessage.warning('至少选择一个作用域')
+    return
+  }
+  clientSaving.value = true
+  try {
+    const payload = {
+      code: clientForm.code.trim(),
+      name: clientForm.name.trim(),
+      scopes: clientForm.scopes,
+      rateLimitPerMin: clientForm.rateLimitPerMin,
+      enabled: clientForm.enabled,
+      expiresAt: clientForm.expiresAt || null,
+      remark: clientForm.remark.trim() || null
+    }
+    if (clientForm.id) {
+      await clientApi.update(clientForm.id, payload)
+      ElMessage.success('已保存')
+    } else {
+      const created = await clientApi.create(payload)
+      newApiKey.value = created.apiKey
+      keyVisible.value = true
+    }
+    clientDialogVisible.value = false
+    await loadClients()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存客户端失败')
+  } finally {
+    clientSaving.value = false
+  }
+}
+
+async function rotateClient(row: ApiClientRow): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `轮换 ${row.code} 的密钥？旧 Key 会立即失效，已接入的外部系统需要用新 Key。`,
+      '轮换 API Key',
+      { confirmButtonText: '轮换', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    const rotated = await clientApi.rotate(row.id)
+    newApiKey.value = rotated.apiKey
+    keyVisible.value = true
+    await loadClients()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '轮换失败')
+  }
+}
+
+async function removeClient(row: ApiClientRow): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`删除客户端 ${row.code}？其 Key 将立即失效。`, '删除客户端', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    await clientApi.remove(row.id)
+    ElMessage.success('已删除')
+    await loadClients()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除失败')
+  }
+}
+
+async function copyKey(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(newApiKey.value)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.warning('复制失败，请手动选中复制')
+  }
+}
+
 /* ------------------------------------------------------------ 金蝶下发 */
 
 const kingdeeVisible = ref(false)
@@ -984,6 +1234,7 @@ onMounted(async () => {
   await loadEndpoints()
   await loadMappings()
   await loadJobs()
+  await loadClients()
 })
 </script>
 
@@ -1054,5 +1305,17 @@ onMounted(async () => {
 
 .kingdee-payload {
   width: 100%;
+}
+
+.api-key {
+  margin: 12px 0;
+  padding: 12px;
+  background: #f5f7fa;
+  border: 1px dashed #dcdfe6;
+  border-radius: 4px;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 13px;
+  word-break: break-all;
+  user-select: all;
 }
 </style>
