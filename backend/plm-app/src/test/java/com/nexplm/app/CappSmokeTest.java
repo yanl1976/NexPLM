@@ -3,6 +3,10 @@ package com.nexplm.app;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -15,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -308,7 +313,152 @@ class CappSmokeTest {
         call(delete("/api/v1/capp/resources/{id}", resourceId), admin, null);
     }
 
+    /**
+     * P6-4 工艺卡片：模板版本化 + 卡片快照 + 导出 + 重新生成。
+     *
+     * <p>覆盖的关键规则：草稿模板不能生成卡片、未知变量拒绝、发布归档同族旧版本、
+     * 卡片落地双快照（模板改版后历史卡片版式不变）、导出 xlsx 可被 POI 读回、重新生成刷新行。</p>
+     */
+    @Test
+    void cardTemplateVersioningAndExport() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long itemId = createItem(admin, "卡片零件");
+        long routingId = call(post("/api/v1/capp/routings"), admin,
+                json(routing("卡片路线", itemId, steps(
+                        step(10, "粗车", "MACHINING", "机加车间", 0.5, 1.5),
+                        step(20, "精车", "MACHINING", "机加车间", 0.2, 2.0))))).path("id").asLong();
+
+        Map<String, Object> layout = new HashMap<>();
+        layout.put("title", "机械加工工序卡");
+        layout.put("headerFields", List.of(
+                Map.of("label", "零件编码", "field", "objectCode"),
+                Map.of("label", "规格型号", "field", "objectSpec")));
+        layout.put("columns", List.of(
+                column("seqNo", "工序号", "CENTER", 10),
+                column("name", "工序名称", "LEFT", 18),
+                column("setupMinutes", "准备工时", "RIGHT", 10),
+                column("runMinutes", "单件工时", "RIGHT", 10),
+                column("totalMinutes", "工时合计", "RIGHT", 10)));
+        layout.put("footerText", "编制：____ 审核：____");
+
+        Map<String, Object> req = new HashMap<>();
+        req.put("name", "工序卡模板");
+        req.put("cardType", "CRAFT");
+        req.put("layout", layout);
+        JsonNode template = call(post("/api/v1/capp/card-templates"), admin, json(req));
+        long templateId = template.path("id").asLong();
+        assertThat(template.path("code").asText()).startsWith("CT-");
+        assertThat(template.path("status").asText()).isEqualTo("DRAFT");
+        assertThat(template.path("versionNo").asInt()).isEqualTo(1);
+        assertThat(template.path("layout").path("columns")).hasSize(5);
+
+        // 草稿模板不能生成卡片
+        mockMvc.perform(post("/api/v1/capp/cards")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("templateId", templateId, "routingId", routingId))))
+                .andExpect(status().isBadRequest());
+
+        // 未知明细变量被拒绝
+        Map<String, Object> badLayout = new HashMap<>(layout);
+        badLayout.put("columns", List.of(column("notExist", "未知列", "LEFT", 10)));
+        Map<String, Object> badReq = new HashMap<>();
+        badReq.put("name", "非法模板");
+        badReq.put("layout", badLayout);
+        mockMvc.perform(post("/api/v1/capp/card-templates")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(badReq)))
+                .andExpect(status().isBadRequest());
+
+        JsonNode released = call(post("/api/v1/capp/card-templates/{id}/release", templateId),
+                admin, null);
+        assertThat(released.path("status").asText()).isEqualTo("RELEASED");
+
+        JsonNode card = call(post("/api/v1/capp/cards"), admin, json(Map.of(
+                "templateId", templateId,
+                "routingId", routingId,
+                "fieldValues", Map.of("objectSpec", "Φ50×200"))));
+        long cardId = card.path("id").asLong();
+        assertThat(card.path("code").asText()).startsWith("CC-");
+        assertThat(card.path("templateVersion").asInt()).isEqualTo(1);
+        assertThat(card.path("fieldValues").path("objectCode").asText()).isNotBlank();
+        assertThat(card.path("fieldValues").path("objectSpec").asText()).isEqualTo("Φ50×200");
+        assertThat(card.path("fieldValues").path("routeString").asText())
+                .contains("10 粗车").contains("20 精车");
+        // 2 道工序 + 1 行合计
+        assertThat(card.path("rows")).hasSize(3);
+        JsonNode summary = card.path("rows").get(2);
+        assertThat(summary.path("__summary__").asText()).isEqualTo("true");
+        assertThat(summary.path("setupMinutes").asText()).isEqualTo("0.70");
+        assertThat(summary.path("runMinutes").asText()).isEqualTo("3.50");
+        assertThat(summary.path("totalMinutes").asText()).isEqualTo("4.20");
+        assertThat(call(get("/api/v1/capp/cards"), admin, null).path("items").get(0)
+                .path("rowCount").asInt()).isEqualTo(2);
+
+        // 导出 xlsx：标题 → 表头字段 → 明细表头 → 工序行 → 合计行 → 表尾
+        MvcResult exported = mockMvc.perform(get("/api/v1/capp/cards/{id}/export", cardId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk())
+                .andReturn();
+        byte[] content = exported.getResponse().getContentAsByteArray();
+        try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(content))) {
+            Sheet sheet = workbook.getSheetAt(0);
+            assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("机械加工工序卡");
+            int headRow = findRow(sheet, "工序号");
+            assertThat(headRow).isGreaterThan(0);
+            assertThat(sheet.getRow(headRow).getCell(1).getStringCellValue()).isEqualTo("工序名称");
+            assertThat(sheet.getRow(headRow + 1).getCell(1).getStringCellValue()).isEqualTo("粗车");
+            assertThat(sheet.getRow(headRow + 3).getCell(0).getStringCellValue()).isEqualTo("合计");
+            assertThat(sheet.getRow(headRow + 3).getCell(4).getStringCellValue()).isEqualTo("4.20");
+        }
+
+        // 改版：另存 v2 并发布 → v1 归档；历史卡片仍是 v1 版式（5 列）
+        JsonNode v2 = call(post("/api/v1/capp/card-templates/{id}/new-version", templateId),
+                admin, null);
+        assertThat(v2.path("versionNo").asInt()).isEqualTo(2);
+        assertThat(v2.path("code").asText()).isEqualTo(template.path("code").asText());
+        call(post("/api/v1/capp/card-templates/{id}/release", v2.path("id").asLong()), admin, null);
+        assertThat(call(get("/api/v1/capp/card-templates/{id}", templateId), admin, null)
+                .path("status").asText()).isEqualTo("ARCHIVED");
+        JsonNode oldCard = call(get("/api/v1/capp/cards/{id}", cardId), admin, null);
+        assertThat(oldCard.path("templateVersion").asInt()).isEqualTo(1);
+        assertThat(oldCard.path("layout").path("columns")).hasSize(5);
+        assertThat(oldCard.path("rows").get(0).path("totalMinutes").asText()).isEqualTo("2.00");
+
+        // 重新生成：路线工序改动后刷新行，用户手填的表头值保留
+        call(put("/api/v1/capp/routings/{id}", routingId), admin,
+                json(routing("卡片路线", itemId,
+                        steps(step(10, "粗车", "MACHINING", "机加车间", 0.5, 1.5)))));
+        JsonNode refreshed = call(post("/api/v1/capp/cards/{id}/regenerate", cardId), admin, null);
+        assertThat(refreshed.path("rows")).hasSize(2);
+        assertThat(refreshed.path("fieldValues").path("objectSpec").asText()).isEqualTo("Φ50×200");
+
+        call(delete("/api/v1/capp/cards/{id}", cardId), admin, null);
+        call(delete("/api/v1/capp/routings/{id}", routingId), admin, null);
+    }
+
     // ------------------------------------------------------------------ 工具
+
+    private Map<String, Object> column(String field, String title, String align, int width) {
+        Map<String, Object> column = new HashMap<>();
+        column.put("field", field);
+        column.put("title", title);
+        column.put("align", align);
+        column.put("width", width);
+        return column;
+    }
+
+    private int findRow(Sheet sheet, String firstCellValue) {
+        for (int i = 0; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i);
+            if (row != null && row.getCell(0) != null
+                    && firstCellValue.equals(row.getCell(0).getStringCellValue())) {
+                return i;
+            }
+        }
+        return -1;
+    }
 
     private Map<String, Object> routing(String name, long objectId, List<Map<String, Object>> steps) {
         Map<String, Object> body = new HashMap<>();

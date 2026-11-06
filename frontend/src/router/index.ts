@@ -92,6 +92,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '工艺资源' }
       },
       {
+        path: 'capp/card',
+        name: 'capp-card',
+        component: () => import('@/views/capp/CardView.vue'),
+        meta: { title: '工艺卡片' }
+      },
+      {
         path: 'workflow/definitions',
         name: 'workflow-definitions',
         component: () => import('@/views/workflow/DefinitionView.vue'),

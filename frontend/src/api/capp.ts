@@ -1,4 +1,4 @@
-import { http } from './http'
+import { downloadFile, http, saveBlob } from './http'
 
 /** 工艺路线状态。 */
 export type RoutingStatus = 'DRAFT' | 'RELEASED' | 'ARCHIVED'
@@ -230,5 +230,167 @@ export const cappApi = {
   },
   remove(id: string): Promise<void> {
     return http.delete<void>(`/capp/routings/${id}`)
+  }
+}
+
+// ---------------------------------------------------------------- 工艺卡片（P6-4）
+
+export type CardType = 'PROCESS' | 'CRAFT' | 'INSPECT'
+
+export const CARD_TYPE_LABEL: Record<CardType, string> = {
+  PROCESS: '工艺卡',
+  CRAFT: '工序卡',
+  INSPECT: '检验卡'
+}
+
+/** 模板状态（与工艺路线同构：草稿可改、已发布可生成卡片、已归档为历史版本）。 */
+export const CARD_TEMPLATE_STATUS_LABEL: Record<RoutingStatus, string> = ROUTING_STATUS_LABEL
+
+/** 明细列：field 走内置变量，留空时输出 constValue 固定文本。 */
+export interface CardColumn {
+  key?: string | null
+  title: string
+  field?: string | null
+  constValue?: string | null
+  width?: number | null
+  align?: 'LEFT' | 'CENTER' | 'RIGHT' | null
+}
+
+export interface CardHeaderField {
+  label: string
+  field?: string | null
+}
+
+export interface CardLayout {
+  title?: string | null
+  headerFields: CardHeaderField[]
+  columns: CardColumn[]
+  footerText?: string | null
+}
+
+export interface CardTemplateRow {
+  id: string
+  code: string
+  name: string
+  cardType: string
+  versionNo: number
+  status: RoutingStatus
+  title?: string | null
+  remark?: string | null
+  cardCount: number
+  releasedAt?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface CardTemplateDetail extends CardTemplateRow {
+  layout: CardLayout
+}
+
+export interface CardTemplateSaveReq {
+  name: string
+  cardType?: string | null
+  title?: string | null
+  layout: CardLayout
+  remark?: string | null
+}
+
+export interface CappCardRow {
+  id: string
+  code: string
+  title?: string | null
+  templateId: string
+  templateCode: string
+  templateVersion: number
+  templateName: string
+  routingId: string
+  routingCode?: string | null
+  objectId: string
+  objectCode?: string | null
+  objectName?: string | null
+  /** 工序行数（不含合计行）。 */
+  rowCount: number
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface CappCardDetail extends CappCardRow {
+  layout: CardLayout
+  fieldValues: Record<string, string>
+  rows: Record<string, string>[]
+  remark?: string | null
+  routeString?: string | null
+}
+
+export interface CappCardSaveReq {
+  templateId: string
+  routingId: string
+  fieldValues?: Record<string, string> | null
+  remark?: string | null
+}
+
+/** 可用变量字典：编辑模板时给出可选项，避免手打错字段名。 */
+export interface CardFieldDict {
+  stepFields: Record<string, string>
+  cardFields: Record<string, string>
+  cardTypes: Record<string, string>
+}
+
+export const cardApi = {
+  fields(): Promise<CardFieldDict> {
+    return http.get<CardFieldDict>(`/capp/card-fields`)
+  },
+  templateList(params: {
+    page?: number
+    size?: number
+    keyword?: string
+    cardType?: string
+    status?: string
+  }): Promise<{ items: CardTemplateRow[]; total: number; page: number; size: number }> {
+    return http.get(`/capp/card-templates`, params)
+  },
+  template(id: string): Promise<CardTemplateDetail> {
+    return http.get<CardTemplateDetail>(`/capp/card-templates/${id}`)
+  },
+  createTemplate(req: CardTemplateSaveReq): Promise<CardTemplateDetail> {
+    return http.post<CardTemplateDetail>(`/capp/card-templates`, req)
+  },
+  updateTemplate(id: string, req: CardTemplateSaveReq): Promise<CardTemplateDetail> {
+    return http.put<CardTemplateDetail>(`/capp/card-templates/${id}`, req)
+  },
+  newVersion(id: string): Promise<CardTemplateDetail> {
+    return http.post<CardTemplateDetail>(`/capp/card-templates/${id}/new-version`)
+  },
+  releaseTemplate(id: string): Promise<CardTemplateDetail> {
+    return http.post<CardTemplateDetail>(`/capp/card-templates/${id}/release`)
+  },
+  removeTemplate(id: string): Promise<void> {
+    return http.delete<void>(`/capp/card-templates/${id}`)
+  },
+  list(params: {
+    page?: number
+    size?: number
+    keyword?: string
+    routingId?: string
+    templateId?: string
+  }): Promise<{ items: CappCardRow[]; total: number; page: number; size: number }> {
+    return http.get(`/capp/cards`, params)
+  },
+  detail(id: string): Promise<CappCardDetail> {
+    return http.get<CappCardDetail>(`/capp/cards/${id}`)
+  },
+  create(req: CappCardSaveReq): Promise<CappCardDetail> {
+    return http.post<CappCardDetail>(`/capp/cards`, req)
+  },
+  regenerate(id: string): Promise<CappCardDetail> {
+    return http.post<CappCardDetail>(`/capp/cards/${id}/regenerate`)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/capp/cards/${id}`)
+  },
+  /** 导出 xlsx（后端按卡片自带版式快照渲染）。 */
+  async exportExcel(id: string): Promise<void> {
+    const { blob, fileName } = await downloadFile(`/capp/cards/${id}/export`)
+    saveBlob(blob, fileName)
   }
 }

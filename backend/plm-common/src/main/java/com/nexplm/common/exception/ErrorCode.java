@@ -62,7 +62,11 @@ public enum ErrorCode {
     // 工艺（CAPP）
     CAPP_ROUTING_NOT_FOUND("CAPP.ROUTING.NOT_FOUND", "工艺路线不存在", 404),
     CAPP_STATE_INVALID("CAPP.STATE.INVALID", "当前工艺路线状态不允许该操作", 409),
-    CAPP_STEP_INVALID("CAPP.STEP.INVALID", "工艺工序不合法", 400);
+    CAPP_STEP_INVALID("CAPP.STEP.INVALID", "工艺工序不合法", 400),
+    CAPP_TEMPLATE_NOT_FOUND("CAPP.TEMPLATE.NOT_FOUND", "工艺卡片模板不存在", 404),
+    CAPP_TEMPLATE_STATE_INVALID("CAPP.TEMPLATE.STATE.INVALID", "当前模板状态不允许该操作", 409),
+    CAPP_CARD_NOT_FOUND("CAPP.CARD.NOT_FOUND", "工艺卡片不存在", 404),
+    CAPP_CARD_INVALID("CAPP.CARD.INVALID", "工艺卡片不合法", 400);
 
     private final String code;
     private final String message;
