@@ -123,6 +123,7 @@
           />
           <el-button type="primary" @click="loadJobs">查询</el-button>
           <el-button v-if="canRun" type="primary" plain @click="openJobSubmit">提交任务</el-button>
+          <el-button v-if="canRun" plain @click="openKingdee">下发本地对象</el-button>
           <span class="hint">同一端点+业务类型+业务键只发一次（幂等）；失败按退避重试，次数用尽进死信需人工重放</span>
         </div>
         <el-table v-loading="jobLoading" :data="jobs" border stripe>
@@ -327,6 +328,42 @@
       </template>
     </el-dialog>
 
+    <!-- 下发本地对象 -->
+    <el-dialog v-model="kingdeeVisible" title="下发本地对象到金蝶" width="720px" destroy-on-close>
+      <el-form label-width="110px">
+        <el-form-item label="端点" required>
+          <el-select v-model="kingdeeForm.endpointId" style="width: 220px">
+            <el-option v-for="item in endpointOptions" :key="item.id" :label="item.code" :value="item.id" />
+          </el-select>
+          <span class="label-gap">业务类型</span>
+          <el-select v-model="kingdeeForm.bizType" style="width: 140px">
+            <el-option v-for="(label, value) in KINGDEE_BIZ_LABEL" :key="value" :label="label" :value="value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="对象 ID" required>
+          <el-input v-model="kingdeeForm.bizId" placeholder="本地对象 id（零件/BOM 根件/文档/工艺路线）" style="width: 300px" />
+          <span v-if="kingdeeForm.bizType === 'Bom'" class="label-gap">视图</span>
+          <el-select v-if="kingdeeForm.bizType === 'Bom'" v-model="kingdeeForm.viewType" style="width: 120px">
+            <el-option label="设计" value="DESIGN" />
+            <el-option label="工艺" value="PROCESS" />
+            <el-option label="制造" value="MANUFACTURE" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="操作">
+          <el-button :loading="kingdeePreviewing" @click="previewKingdee">预览源报文</el-button>
+          <el-checkbox v-model="kingdeeForm.dryRun" class="label-gap">仅生成快照（不发送）</el-checkbox>
+        </el-form-item>
+        <el-form-item v-if="kingdeePreviewed" label="源报文">
+          <pre class="payload kingdee-payload">{{ prettyJson(kingdeePreviewed.payload) }}</pre>
+          <div class="hint">幂等键：{{ kingdeePreviewed.bizKey }}（同一版本重复下发会返回原任务）</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="kingdeeVisible = false">取消</el-button>
+        <el-button type="primary" :loading="kingdeePushing" @click="pushKingdee">下发</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 任务详情 -->
     <el-drawer v-model="jobDetailVisible" title="集成任务详情" size="640px" destroy-on-close>
       <template v-if="jobDetail">
@@ -391,6 +428,7 @@ import {
   AUTH_TYPE_LABEL,
   itgApi,
   JOB_STATUS_LABEL,
+  KINGDEE_BIZ_LABEL,
   SYSTEM_CODE_LABEL,
   TRANSFORM_LABEL,
   type EndpointDetail,
@@ -842,6 +880,76 @@ async function openJobDetail(id: string): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------ 金蝶下发 */
+
+const kingdeeVisible = ref(false)
+const kingdeePreviewing = ref(false)
+const kingdeePushing = ref(false)
+const kingdeePreviewed = ref<{ bizType: string; bizKey: string; payload: unknown } | null>(null)
+const kingdeeForm = reactive({
+  endpointId: '' as string,
+  bizType: 'Material',
+  bizId: '',
+  viewType: 'DESIGN',
+  dryRun: false
+})
+
+function openKingdee(): void {
+  kingdeeForm.endpointId = endpointOptions.value[0]?.id ?? ''
+  kingdeeForm.bizType = 'Material'
+  kingdeeForm.bizId = ''
+  kingdeeForm.viewType = 'DESIGN'
+  kingdeeForm.dryRun = false
+  kingdeePreviewed.value = null
+  kingdeeVisible.value = true
+}
+
+async function previewKingdee(): Promise<void> {
+  if (!kingdeeForm.bizType || !kingdeeForm.bizId.trim()) {
+    ElMessage.warning('请填写对象 ID')
+    return
+  }
+  kingdeePreviewing.value = true
+  try {
+    kingdeePreviewed.value = await itgApi.kingdeePreview({
+      bizType: kingdeeForm.bizType,
+      bizId: kingdeeForm.bizId.trim(),
+      viewType: kingdeeForm.bizType === 'Bom' ? kingdeeForm.viewType : undefined
+    })
+  } catch (error) {
+    kingdeePreviewed.value = null
+    ElMessage.error(error instanceof Error ? error.message : '预览失败')
+  } finally {
+    kingdeePreviewing.value = false
+  }
+}
+
+async function pushKingdee(): Promise<void> {
+  if (!kingdeeForm.endpointId || !kingdeeForm.bizId.trim()) {
+    ElMessage.warning('请选择端点并填写对象 ID')
+    return
+  }
+  kingdeePushing.value = true
+  try {
+    const result = await itgApi.kingdeePush({
+      endpointId: kingdeeForm.endpointId,
+      bizType: kingdeeForm.bizType,
+      bizId: kingdeeForm.bizId.trim(),
+      viewType: kingdeeForm.bizType === 'Bom' ? kingdeeForm.viewType : undefined,
+      dryRun: kingdeeForm.dryRun
+    })
+    ElMessage.success(result.duplicated ? '该版本已下发过，返回原任务' : '已下发')
+    kingdeeVisible.value = false
+    await loadJobs()
+    jobDetail.value = result.job
+    jobDetailVisible.value = true
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '下发失败')
+  } finally {
+    kingdeePushing.value = false
+  }
+}
+
 /* ------------------------------------------------------------ 展示辅助 */
 
 function jobStatusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
@@ -942,5 +1050,9 @@ onMounted(async () => {
   margin-top: 16px;
   display: flex;
   gap: 8px;
+}
+
+.kingdee-payload {
+  width: 100%;
 }
 </style>

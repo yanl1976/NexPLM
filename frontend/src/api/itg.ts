@@ -244,5 +244,32 @@ export const itgApi = {
   },
   replayJob(id: string): Promise<JobDetail> {
     return http.post<JobDetail>(`/itg/jobs/${id}/replay`)
+  },
+
+  /** 金蝶下发：由服务端按本地对象组装源报文（bizKey 带版本号，同版本重复下发幂等）。 */
+  kingdeePreview(req: {
+    bizType: string
+    bizId: string
+    viewType?: string
+  }): Promise<{ bizType: string; bizKey: string; payload: unknown }> {
+    return http.post('/itg/kingdee/preview', req)
+  },
+  kingdeePush(req: {
+    endpointId: string
+    bizType: string
+    bizId: string
+    viewType?: string
+    dryRun?: boolean
+    maxAttempt?: number
+  }): Promise<JobSubmitResult> {
+    return http.post<JobSubmitResult>('/itg/kingdee/push', req)
   }
+}
+
+/** 金蝶下发支持的业务类型（与后端 KingdeePayloadService 一致）。 */
+export const KINGDEE_BIZ_LABEL: Record<string, string> = {
+  Material: '物料',
+  Bom: 'BOM',
+  Doc: '图文档',
+  Route: '工艺路线'
 }
