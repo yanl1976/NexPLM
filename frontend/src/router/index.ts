@@ -182,6 +182,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '项目日历' }
       },
       {
+        path: 'quality/issues',
+        name: 'quality-issues',
+        component: () => import('@/views/quality/QualityIssueView.vue'),
+        meta: { title: '质量问题' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),

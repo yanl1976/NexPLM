@@ -72,6 +72,13 @@
           <el-menu-item index="/project/my-timesheets">我的工时</el-menu-item>
           <el-menu-item index="/project/templates">项目模板</el-menu-item>
         </el-sub-menu>
+        <el-sub-menu index="/quality">
+          <template #title>
+            <el-icon><Checked /></el-icon>
+            <span>质量与体系</span>
+          </template>
+          <el-menu-item index="/quality/issues">质量问题</el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
 
