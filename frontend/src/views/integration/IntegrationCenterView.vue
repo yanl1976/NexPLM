@@ -29,7 +29,7 @@
           <el-table-column label="认证" width="150" align="center">
             <template #default="{ row }">
               {{ AUTH_TYPE_LABEL[row.authType] ?? row.authType }}
-              <el-tag v-if="row.authConfigured" type="success" size="small" class="tag-gap">已配置</el-tag>
+              <StatusDot v-if="row.authConfigured" tone="ok" label="已配置" class="tag-gap" />
             </template>
           </el-table-column>
           <el-table-column label="超时" width="90" align="center">
@@ -92,9 +92,7 @@
           </el-table-column>
           <el-table-column label="启用" width="90" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
-                {{ row.enabled ? '启用' : '停用' }}
-              </el-tag>
+              <StatusDot :tone="row.enabled ? 'ok' : 'muted'" :label="row.enabled ? '启用' : '停用'" />
             </template>
           </el-table-column>
           <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
@@ -133,9 +131,7 @@
           <el-table-column prop="bizKey" label="业务键" width="150" show-overflow-tooltip />
           <el-table-column label="状态" width="120" align="center">
             <template #default="{ row }">
-              <el-tag :type="jobStatusType(row.status)" size="small">
-                {{ JOB_STATUS_LABEL[row.status] ?? row.status }}
-              </el-tag>
+              <StatusDot :tone="jobStatusTone(row.status)" :label="JOB_STATUS_LABEL[row.status] ?? row.status" />
             </template>
           </el-table-column>
           <el-table-column label="尝试" width="90" align="center">
@@ -209,9 +205,7 @@
           </el-table-column>
           <el-table-column label="启用" width="80" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
-                {{ row.enabled ? '启用' : '停用' }}
-              </el-tag>
+              <StatusDot :tone="row.enabled ? 'ok' : 'muted'" :label="row.enabled ? '启用' : '停用'" />
             </template>
           </el-table-column>
           <el-table-column label="到期" width="110" align="center">
@@ -257,9 +251,7 @@
           </el-table-column>
           <el-table-column label="启用" width="80" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
-                {{ row.enabled ? '启用' : '停用' }}
-              </el-tag>
+              <StatusDot :tone="row.enabled ? 'ok' : 'muted'" :label="row.enabled ? '启用' : '停用'" />
             </template>
           </el-table-column>
           <el-table-column label="重试" width="90" align="center">
@@ -589,9 +581,10 @@
         </el-table-column>
         <el-table-column label="状态" width="110" align="center">
           <template #default="{ row }">
-            <el-tag :type="deliveryStatusType(row.status)" size="small">
-              {{ DELIVERY_STATUS_LABEL[row.status] ?? row.status }}
-            </el-tag>
+            <StatusDot
+              :tone="deliveryStatusTone(row.status)"
+              :label="DELIVERY_STATUS_LABEL[row.status] ?? row.status"
+            />
           </template>
         </el-table-column>
         <el-table-column label="尝试" width="80" align="center">
@@ -630,9 +623,10 @@
           <el-descriptions-item label="端点">{{ jobDetail.endpointCode || '-' }}</el-descriptions-item>
           <el-descriptions-item label="业务">{{ jobDetail.bizType }} / {{ jobDetail.bizKey }}</el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag :type="jobStatusType(jobDetail.status)" size="small">
-              {{ JOB_STATUS_LABEL[jobDetail.status] ?? jobDetail.status }}
-            </el-tag>
+            <StatusDot
+              :tone="jobStatusTone(jobDetail.status)"
+              :label="JOB_STATUS_LABEL[jobDetail.status] ?? jobDetail.status"
+            />
           </el-descriptions-item>
           <el-descriptions-item label="尝试">{{ jobDetail.attempt }}/{{ jobDetail.maxAttempt }}</el-descriptions-item>
           <el-descriptions-item label="HTTP">{{ jobDetail.httpStatus ?? '-' }}</el-descriptions-item>
@@ -652,9 +646,7 @@
           <el-table-column prop="attempt" label="#" width="50" align="center" />
           <el-table-column label="结果" width="90" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'" size="small">
-                {{ row.status }}
-              </el-tag>
+              <StatusDot :tone="row.status === 'SUCCESS' ? 'ok' : 'danger'" :label="row.status" />
             </template>
           </el-table-column>
           <el-table-column label="HTTP" width="70" align="center">
@@ -682,6 +674,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '../../stores/user'
+import StatusDot from '@/components/StatusDot.vue'
 import {
   AUTH_TYPE_LABEL,
   clientApi,
@@ -1571,35 +1564,35 @@ async function copyWebhookSecret(): Promise<void> {
   }
 }
 
-function deliveryStatusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
+function deliveryStatusTone(value: string): 'ok' | 'warn' | 'danger' | 'muted' {
   if (value === 'SENT') {
-    return 'success'
+    return 'ok'
   }
   if (value === 'DEAD') {
     return 'danger'
   }
   if (value === 'FAILED') {
-    return 'warning'
+    return 'warn'
   }
-  return 'info'
+  return 'muted'
 }
 
 /* ------------------------------------------------------------ 展示辅助 */
 
-function jobStatusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
+function jobStatusTone(value: string): 'ok' | 'warn' | 'danger' | 'running' | 'muted' {
   if (value === 'SUCCESS') {
-    return 'success'
+    return 'ok'
   }
   if (value === 'DEAD') {
     return 'danger'
   }
   if (value === 'FAILED') {
-    return 'warning'
+    return 'warn'
   }
   if (value === 'RUNNING') {
-    return 'warning'
+    return 'running'
   }
-  return 'info'
+  return 'muted'
 }
 
 function formatTime(value?: string | null): string {

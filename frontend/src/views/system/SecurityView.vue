@@ -20,15 +20,13 @@
           <el-table-column prop="actions" label="授予操作" width="160" />
           <el-table-column label="效果" width="90">
             <template #default="{ row }">
-              <el-tag size="small" :type="row.effect === 'DENY' ? 'danger' : 'success'">
-                {{ row.effect === 'DENY' ? '拒绝' : '允许' }}
-              </el-tag>
+              <StatusDot :tone="row.effect === 'DENY' ? 'danger' : 'ok'" :label="row.effect === 'DENY' ? '拒绝' : '允许'" />
             </template>
           </el-table-column>
           <el-table-column prop="priority" label="优先级" width="90" />
           <el-table-column label="启用" width="80">
             <template #default="{ row }">
-              <el-tag size="small" :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '是' : '否' }}</el-tag>
+              <StatusDot :tone="row.enabled ? 'ok' : 'muted'" :label="row.enabled ? '是' : '否'" />
             </template>
           </el-table-column>
           <el-table-column label="操作" width="140" fixed="right">
@@ -55,9 +53,7 @@
           <el-table-column prop="actions" label="操作" width="200" />
           <el-table-column label="效果" width="90">
             <template #default="{ row }">
-              <el-tag size="small" :type="row.effect === 'DENY' ? 'danger' : 'success'">
-                {{ row.effect === 'DENY' ? '拒绝' : '允许' }}
-              </el-tag>
+              <StatusDot :tone="row.effect === 'DENY' ? 'danger' : 'ok'" :label="row.effect === 'DENY' ? '拒绝' : '允许'" />
             </template>
           </el-table-column>
           <el-table-column prop="source" label="来源" width="110" />
@@ -172,6 +168,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { securityApi, type AclRow, type RuleRow, type RuleSaveReq } from '@/api/security'
+import StatusDot from '@/components/StatusDot.vue'
 
 const activeTab = ref('rule')
 const actionOptions = ['READ', 'WRITE', 'DELETE', 'GRANT', 'CHECKOUT', 'RELEASE', 'APPROVE']

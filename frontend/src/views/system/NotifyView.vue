@@ -32,9 +32,7 @@
       </el-table-column>
       <el-table-column label="启用" width="80" align="center">
         <template #default="{ row }">
-          <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
-            {{ row.enabled ? '启用' : '停用' }}
-          </el-tag>
+          <StatusDot :tone="row.enabled ? 'ok' : 'muted'" :label="row.enabled ? '启用' : '停用'" />
         </template>
       </el-table-column>
       <el-table-column label="重试上限" width="90" align="center">
@@ -185,9 +183,7 @@
         <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
         <el-table-column label="状态" width="110" align="center">
           <template #default="{ row }">
-            <el-tag :type="statusTag(row.status)" size="small">
-              {{ NOTIFY_STATUS_LABEL[row.status] ?? row.status }}
-            </el-tag>
+            <StatusDot :tone="statusTone(row.status)" :label="NOTIFY_STATUS_LABEL[row.status] ?? row.status" />
           </template>
         </el-table-column>
         <el-table-column label="尝试" width="80" align="center">
@@ -225,6 +221,7 @@ import {
   type NotifyChannelRow,
   type NotifyMessageRow
 } from '@/api/notify'
+import StatusDot from '@/components/StatusDot.vue'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
@@ -485,17 +482,17 @@ function typeTag(type: string): 'primary' | 'success' | 'warning' | 'info' {
   return type === 'WECOM' ? 'success' : 'warning'
 }
 
-function statusTag(status: string): 'success' | 'info' | 'warning' | 'danger' {
+function statusTone(status: string): 'ok' | 'warn' | 'danger' | 'muted' {
   if (status === 'SENT') {
-    return 'success'
+    return 'ok'
   }
   if (status === 'DEAD') {
     return 'danger'
   }
   if (status === 'FAILED') {
-    return 'warning'
+    return 'warn'
   }
-  return 'info'
+  return 'muted'
 }
 
 function formatTime(value?: string | null): string {
