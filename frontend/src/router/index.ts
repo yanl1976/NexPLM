@@ -200,6 +200,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '质量看板' }
       },
       {
+        path: 'quality/sys-docs',
+        name: 'quality-sys-docs',
+        component: () => import('@/views/quality/SysDocView.vue'),
+        meta: { title: '体系文件' }
+      },
+      {
+        path: 'quality/sys-doc-templates',
+        name: 'quality-sys-doc-templates',
+        component: () => import('@/views/quality/SysDocTemplateView.vue'),
+        meta: { title: '体系文件模板' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),
