@@ -353,6 +353,56 @@ class WorkflowSmokeTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void doneStartedAndBatchComplete() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long otherId = createUser(admin, "wf_batch", "批量审批人");
+        long itemId = createItem(admin, "批量零件");
+
+        JsonNode flowA = start(admin, itemId, adminId, List.of(otherId));
+        JsonNode flowB = start(admin, itemId, adminId, List.of(otherId));
+        String pidA = flowA.path("processInstanceId").asText();
+        String taskA = flowA.path("activeTasks").get(0).path("taskId").asText();
+        String taskB = flowB.path("activeTasks").get(0).path("taskId").asText();
+
+        // 1. 批量办理：2 条本人任务成功、1 条不存在失败，互不影响
+        Map<String, Object> batchReq = new HashMap<>();
+        batchReq.put("taskIds", List.of(taskA, taskB, "not-exists-task"));
+        batchReq.put("comment", "批量初审通过");
+        JsonNode batch = call(post("/api/v1/workflow/tasks/batch-complete"), admin, json(batchReq));
+        assertThat(batch.path("total").asInt()).isEqualTo(3);
+        assertThat(batch.path("succeeded").asInt()).isEqualTo(2);
+        assertThat(batch.path("failed").asInt()).isEqualTo(1);
+        assertThat(batch.path("messages").size()).isEqualTo(1);
+
+        // 2. 已办：能查到刚办理的任务，带业务对象上下文
+        JsonNode done = call(get("/api/v1/workflow/tasks/done?page=1&size=50"), admin, null);
+        assertThat(done.path("total").asLong()).isGreaterThanOrEqualTo(2);
+        assertThat(done.path("items").findValuesAsText("taskId")).contains(taskA, taskB);
+        JsonNode doneRow = findTaskByTaskId(done.path("items"), taskA);
+        assertThat(doneRow.path("objectType").asText()).isEqualTo("PdmItem");
+        assertThat(doneRow.path("endTime").isNull()).isFalse();
+
+        // 3. 我发起：状态 RUNNING 且当前活动节点为「会签」
+        JsonNode started = call(get("/api/v1/workflow/instances/started?page=1&size=50"), admin, null);
+        JsonNode instanceRow = findInstanceById(started.path("items"), pidA);
+        assertThat(instanceRow).isNotNull();
+        assertThat(instanceRow.path("status").asText()).isEqualTo("RUNNING");
+        assertThat(instanceRow.path("currentActivities").get(0).asText()).isEqualTo("会签");
+        assertThat(instanceRow.path("objectCode").asText()).isNotBlank();
+
+        // 4. 批量办理他人任务 → 计入失败而不是整批报错
+        JsonNode detail = call(get("/api/v1/workflow/instances/{id}", pidA), admin, null);
+        String otherTask = findTaskOfAssignee(detail.path("activeTasks"), otherId).path("taskId").asText();
+        Map<String, Object> crossBatch = new HashMap<>();
+        crossBatch.put("taskIds", List.of(otherTask));
+        crossBatch.put("comment", "越权批量");
+        JsonNode crossResult = call(post("/api/v1/workflow/tasks/batch-complete"), admin, json(crossBatch));
+        assertThat(crossResult.path("succeeded").asInt()).isZero();
+        assertThat(crossResult.path("failed").asInt()).isEqualTo(1);
+    }
+
     // ------------------------------------------------------------ 工具
 
     private JsonNode start(String token, long itemId, long approverId, List<Long> approverIds) throws Exception {
@@ -379,6 +429,24 @@ class WorkflowSmokeTest {
         for (JsonNode task : tasks) {
             if (String.valueOf(userId).equals(task.path("assignee").asText())) {
                 return task;
+            }
+        }
+        return null;
+    }
+
+    private JsonNode findTaskByTaskId(JsonNode tasks, String taskId) {
+        for (JsonNode task : tasks) {
+            if (taskId.equals(task.path("taskId").asText())) {
+                return task;
+            }
+        }
+        return null;
+    }
+
+    private JsonNode findInstanceById(JsonNode instances, String pid) {
+        for (JsonNode instance : instances) {
+            if (pid.equals(instance.path("processInstanceId").asText())) {
+                return instance;
             }
         }
         return null;

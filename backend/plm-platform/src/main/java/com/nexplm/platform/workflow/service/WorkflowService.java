@@ -9,6 +9,7 @@ import com.nexplm.platform.workflow.service.assignee.AssigneeResolverRegistry;
 import org.flowable.bpmn.model.BpmnModel;
 import org.flowable.bpmn.model.FlowElement;
 import org.flowable.bpmn.model.UserTask;
+import org.flowable.engine.HistoryService;
 import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
@@ -16,6 +17,7 @@ import org.flowable.engine.repository.ProcessDefinition;
 import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.task.api.Task;
 import org.flowable.task.api.TaskQuery;
+import org.flowable.task.api.history.HistoricTaskInstance;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -52,15 +54,17 @@ public class WorkflowService {
     private final RuntimeService runtimeService;
     private final TaskService taskService;
     private final RepositoryService repositoryService;
+    private final HistoryService historyService;
     private final JdbcTemplate jdbcTemplate;
     private final AssigneeResolverRegistry assigneeResolvers;
 
     public WorkflowService(RuntimeService runtimeService, TaskService taskService,
-                           RepositoryService repositoryService, JdbcTemplate jdbcTemplate,
-                           AssigneeResolverRegistry assigneeResolvers) {
+                           RepositoryService repositoryService, HistoryService historyService,
+                           JdbcTemplate jdbcTemplate, AssigneeResolverRegistry assigneeResolvers) {
         this.runtimeService = runtimeService;
         this.taskService = taskService;
         this.repositoryService = repositoryService;
+        this.historyService = historyService;
         this.jdbcTemplate = jdbcTemplate;
         this.assigneeResolvers = assigneeResolvers;
     }
@@ -355,6 +359,102 @@ public class WorkflowService {
                 base.objectType(), base.objectId(), base.objectCode(), base.objectName(),
                 running ? "RUNNING" : finalStatus(processInstanceId), base.startedBy(),
                 base.startedAt(), base.endedAt(), activeTasks(processInstanceId), comments(processInstanceId));
+    }
+
+    /** 已办：历史任务（按结束时间倒序）。 */
+    public WfDtos.PageResult<WfDtos.DoneTaskRow> doneTasks(Long userId, int page, int size) {
+        int pageNo = Math.max(page, 1);
+        int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        String assignee = String.valueOf(userId);
+        long total = historyService.createHistoricTaskInstanceQuery()
+                .taskAssignee(assignee).finished().count();
+        List<HistoricTaskInstance> tasks = historyService.createHistoricTaskInstanceQuery()
+                .taskAssignee(assignee).finished()
+                .orderByHistoricTaskInstanceEndTime().desc()
+                .listPage((pageNo - 1) * pageSize, pageSize);
+        Map<String, LinkInfo> links = loadLinks(tasks.stream()
+                .map(HistoricTaskInstance::getProcessInstanceId).distinct().toList());
+        List<WfDtos.DoneTaskRow> rows = new ArrayList<>(tasks.size());
+        for (HistoricTaskInstance task : tasks) {
+            LinkInfo info = links.get(task.getProcessInstanceId());
+            rows.add(new WfDtos.DoneTaskRow(task.getId(), task.getTaskDefinitionKey(), task.getName(),
+                    task.getAssignee(), task.getProcessInstanceId(),
+                    info == null ? null : info.objectType(),
+                    info == null ? null : info.objectId(),
+                    info == null ? null : info.code(),
+                    info == null ? null : info.name(),
+                    toOffsetDateTime(task.getCreateTime()), toOffsetDateTime(task.getEndTime()),
+                    task.getDurationInMillis(), task.getDeleteReason()));
+        }
+        return new WfDtos.PageResult<>(total, rows);
+    }
+
+    /** 我发起的流程：附带当前活动节点名称，便于判断卡在哪一步。 */
+    public WfDtos.PageResult<WfDtos.InstanceRow> startedInstances(Long userId, int page, int size) {
+        int pageNo = Math.max(page, 1);
+        int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        Long total = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM wf_instance_link WHERE started_by = ?", Long.class, userId);
+        List<WfDtos.InstanceRow> rows = jdbcTemplate.query("""
+                        SELECT l.process_instance_id, l.process_key, l.object_type, l.object_id, l.status,
+                               l.started_by, l.started_at, l.ended_at, o.code, o.name
+                          FROM wf_instance_link l
+                          LEFT JOIN plm_object o ON o.id = l.object_id
+                         WHERE l.started_by = ?
+                         ORDER BY l.started_at DESC
+                         LIMIT ? OFFSET ?
+                        """,
+                (rs, rowNum) -> new WfDtos.InstanceRow(rs.getString("process_instance_id"),
+                        rs.getString("process_key"), rs.getString("object_type"), rs.getLong("object_id"),
+                        rs.getString("code"), rs.getString("name"), rs.getString("status"),
+                        rs.getLong("started_by"),
+                        rs.getObject("started_at", OffsetDateTime.class),
+                        rs.getObject("ended_at", OffsetDateTime.class), List.of()),
+                userId, pageSize, (pageNo - 1) * pageSize);
+        if (rows.isEmpty()) {
+            return new WfDtos.PageResult<>(total == null ? 0 : total, rows);
+        }
+        List<String> instanceIds = rows.stream().map(WfDtos.InstanceRow::processInstanceId).toList();
+        Map<String, List<String>> activities = loadActiveActivities(instanceIds);
+        List<WfDtos.InstanceRow> enriched = rows.stream()
+                .map(row -> new WfDtos.InstanceRow(row.processInstanceId(), row.processKey(),
+                        row.objectType(), row.objectId(), row.objectCode(), row.objectName(), row.status(),
+                        row.startedBy(), row.startedAt(), row.endedAt(),
+                        activities.getOrDefault(row.processInstanceId(), List.of())))
+                .toList();
+        return new WfDtos.PageResult<>(total == null ? 0 : total, enriched);
+    }
+
+    /**
+     * 批量办理：逐条独立处理，一条失败不影响其它，失败项回带原因。
+     * <p>刻意不加类级事务：单条办理各自提交，避免某条异常把整批标记 rollback-only。</p>
+     */
+    public WfDtos.BatchResult batchComplete(List<String> taskIds, String comment, Long userId) {
+        int succeeded = 0;
+        List<String> messages = new ArrayList<>();
+        for (String taskId : taskIds) {
+            try {
+                complete(taskId, new WfDtos.CompleteReq(comment, null), userId);
+                succeeded++;
+            } catch (BizException ex) {
+                messages.add(taskId + "：" + ex.getMessage());
+            }
+        }
+        return new WfDtos.BatchResult(taskIds.size(), succeeded, taskIds.size() - succeeded, messages);
+    }
+
+    private Map<String, List<String>> loadActiveActivities(List<String> processInstanceIds) {
+        String placeholders = String.join(",", Collections.nCopies(processInstanceIds.size(), "?"));
+        Map<String, List<String>> result = new HashMap<>();
+        jdbcTemplate.query("""
+                SELECT proc_inst_id_, name_ FROM act_ru_task
+                 WHERE proc_inst_id_ IN (%s)
+                 ORDER BY create_time_
+                """.formatted(placeholders), rs -> {
+            String pid = rs.getString("proc_inst_id_");
+            result.computeIfAbsent(pid, key -> new ArrayList<>()).add(rs.getString("name_"));
+        }, processInstanceIds.toArray());
+        return result;
     }
 
     public List<WfDtos.BindingRow> bindings(String objectType) {

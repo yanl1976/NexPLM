@@ -2,6 +2,7 @@ package com.nexplm.platform.workflow.api;
 
 import com.nexplm.platform.workflow.service.assignee.AssigneeSpec;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -50,6 +51,29 @@ public final class WfDtos {
     }
 
     public record CompleteReq(@Size(max = 2000) String comment, Map<String, Object> variables) {
+    }
+
+    /** 已办（历史任务）：带业务对象与耗时，便于个人工作量统计。 */
+    public record DoneTaskRow(String taskId, String taskKey, String name, String assignee,
+                              String processInstanceId, String objectType, Long objectId,
+                              String objectCode, String objectName,
+                              OffsetDateTime startTime, OffsetDateTime endTime,
+                              Long durationInMillis, String deleteReason) {
+    }
+
+    /** 我发起的流程（含当前活动节点，便于判断卡在哪一步）。 */
+    public record InstanceRow(String processInstanceId, String processKey, String objectType, Long objectId,
+                              String objectCode, String objectName, String status,
+                              Long startedBy, OffsetDateTime startedAt, OffsetDateTime endedAt,
+                              List<String> currentActivities) {
+    }
+
+    public record BatchCompleteReq(@NotEmpty(message = "任务不能为空") List<String> taskIds,
+                                   @Size(max = 2000) String comment) {
+    }
+
+    /** 批量结果：逐条独立办理，失败项回带原因，不因一条失败回滚全部。 */
+    public record BatchResult(int total, int succeeded, int failed, List<String> messages) {
     }
 
     /** 加签：给当前会签节点再追加一名审批人（只对多实例节点有效）。 */

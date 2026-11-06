@@ -49,6 +49,31 @@ public class WorkflowController {
         return Result.ok(workflowService.myTasks(CurrentUser.userId(), page, size));
     }
 
+    @Operation(summary = "我的已办")
+    @GetMapping("/tasks/done")
+    @PreAuthorize("hasAuthority('wf.task.read')")
+    public Result<WfDtos.PageResult<WfDtos.DoneTaskRow>> doneTasks(@RequestParam(defaultValue = "1") int page,
+                                                                   @RequestParam(defaultValue = "20") int size) {
+        return Result.ok(workflowService.doneTasks(CurrentUser.userId(), page, size));
+    }
+
+    @Operation(summary = "我发起的流程")
+    @GetMapping("/instances/started")
+    @PreAuthorize("hasAuthority('wf.task.read')")
+    public Result<WfDtos.PageResult<WfDtos.InstanceRow>> startedInstances(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return Result.ok(workflowService.startedInstances(CurrentUser.userId(), page, size));
+    }
+
+    @Operation(summary = "批量办理（逐条独立，失败项回带原因）")
+    @PostMapping("/tasks/batch-complete")
+    @PreAuthorize("hasAuthority('wf.task.audit')")
+    @Audit(module = "WF", action = "TASK_BATCH_COMPLETE", objectType = "WfTask")
+    public Result<WfDtos.BatchResult> batchComplete(@Valid @RequestBody WfDtos.BatchCompleteReq req) {
+        return Result.ok(workflowService.batchComplete(req.taskIds(), req.comment(), CurrentUser.userId()));
+    }
+
     @Operation(summary = "办理任务（通过）")
     @PostMapping("/tasks/{taskId}/complete")
     @PreAuthorize("hasAuthority('wf.task.audit')")
