@@ -82,6 +82,7 @@
           <el-menu-item index="/quality/dashboard">质量看板</el-menu-item>
           <el-menu-item index="/quality/sys-docs">体系文件</el-menu-item>
           <el-menu-item index="/quality/sys-doc-templates">体系文件模板</el-menu-item>
+          <el-menu-item index="/quality/audits">体系审核</el-menu-item>
         </el-sub-menu>
       </el-menu>
     </el-aside>

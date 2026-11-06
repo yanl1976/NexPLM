@@ -212,6 +212,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '体系文件模板' }
       },
       {
+        path: 'quality/audits',
+        name: 'quality-audits',
+        component: () => import('@/views/quality/AuditPlanView.vue'),
+        meta: { title: '体系审核' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),
