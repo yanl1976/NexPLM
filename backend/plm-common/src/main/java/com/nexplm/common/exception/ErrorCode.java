@@ -105,7 +105,10 @@ public enum ErrorCode {
     SUP_IN_USE("SUP.IN_USE", "供应商还有在用的零件关系，不能删除", 409),
     SUP_RATE_NOT_FOUND("SUP.RATE.NOT_FOUND", "供应商评级对象不存在", 404),
     SUP_RATE_INVALID("SUP.RATE.INVALID", "供应商评级数据不合法", 400),
-    SUP_RATE_STATE_INVALID("SUP.RATE.STATE.INVALID", "当前评级状态不允许该操作", 409);
+    SUP_RATE_STATE_INVALID("SUP.RATE.STATE.INVALID", "当前评级状态不允许该操作", 409),
+    SUP_ADMISSION_NOT_FOUND("SUP.ADMISSION.NOT_FOUND", "供应商准入评审不存在", 404),
+    SUP_ADMISSION_INVALID("SUP.ADMISSION.INVALID", "供应商准入数据不合法", 400),
+    SUP_ADMISSION_STATE_INVALID("SUP.ADMISSION.STATE.INVALID", "当前准入评审状态不允许该操作", 409);
 
     private final String code;
     private final String message;
