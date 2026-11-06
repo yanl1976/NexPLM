@@ -74,6 +74,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '委托设置' }
       },
       {
+        path: 'change',
+        name: 'change-list',
+        component: () => import('@/views/change/ChangeListView.vue'),
+        meta: { title: '变更管理' }
+      },
+      {
         path: 'workflow/definitions',
         name: 'workflow-definitions',
         component: () => import('@/views/workflow/DefinitionView.vue'),

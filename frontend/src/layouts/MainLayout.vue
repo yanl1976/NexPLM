@@ -44,9 +44,9 @@
           <el-menu-item index="/workflow/delegate">委托设置</el-menu-item>
           <el-menu-item v-if="canManageWorkflow" index="/workflow/definitions">流程定义</el-menu-item>
         </el-sub-menu>
-        <el-menu-item index="/change" disabled>
+        <el-menu-item index="/change">
           <el-icon><Refresh /></el-icon>
-          <span>变更管理（P5）</span>
+          <span>变更管理</span>
         </el-menu-item>
         <el-menu-item index="/capp" disabled>
           <el-icon><Operation /></el-icon>
