@@ -100,7 +100,50 @@ export interface PageResult<T> {
   size: number
 }
 
+/** 变更问题行。 */
+export interface ProblemRow {
+  id: string
+  code: string
+  ecnId: string
+  description: string
+  status: string
+  ownerId?: string | null
+  ownerName?: string | null
+  dueDate?: string | null
+  closedAt?: string | null
+  createdAt: string | null
+}
+
+export interface ExecuteResult {
+  total: number
+  succeeded: number
+  skipped: number
+  messages: string[]
+}
+
 export const changeApi = {
+  createEcn(ecrId: string, body: { title: string; executorId?: string | null; planDate?: string | null; remark?: string | null }) {
+    return http.post<EcnRow>(`/chg/ecrs/${ecrId}/ecns`, body)
+  },
+  issueEcn(ecnId: string) {
+    return http.post<EcnRow>(`/chg/ecns/${ecnId}/issue`)
+  },
+  closeEcn(ecnId: string) {
+    return http.post<EcnRow>(`/chg/ecns/${ecnId}/close`)
+  },
+  problems(ecnId: string) {
+    return http.get<ProblemRow[]>(`/chg/ecns/${ecnId}/problems`)
+  },
+  addProblem(ecnId: string, body: { description: string; ownerId?: string | null; dueDate?: string | null }) {
+    return http.post<ProblemRow>(`/chg/ecns/${ecnId}/problems`, body)
+  },
+  closeProblem(problemId: string) {
+    return http.post<void>(`/chg/problems/${problemId}/close`)
+  },
+  /** 执行变更：对受影响对象按意图升版/废弃/发布。 */
+  execute(ecrId: string) {
+    return http.post<ExecuteResult>(`/chg/ecrs/${ecrId}/execute`)
+  },
   list(params: { keyword?: string; status?: string; page?: number; size?: number }) {
     return http.get<PageResult<EcrRow>>('/chg/ecrs', params)
   },

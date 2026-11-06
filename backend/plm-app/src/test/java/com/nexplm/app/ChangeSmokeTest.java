@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -58,6 +59,9 @@ class ChangeSmokeTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void ecrLifecycleWithAffectedObjects() throws Exception {
@@ -129,6 +133,87 @@ class ChangeSmokeTest {
         JsonNode list = call(get("/api/v1/chg/ecrs?status=SUBMITTED"), admin, null);
         assertThat(list.path("total").asLong()).isGreaterThanOrEqualTo(1);
         assertThat(list.path("items").get(0).path("affectedCount").asInt()).isEqualTo(1);
+    }
+
+    /** ECN/Problem 闭环 + 受影响对象升版执行（P5 DoD：执行后版本正确递增）。 */
+    @Test
+    void ecnProblemAndExecutionFlow() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long itemId = createItem(admin, "执行零件");
+        Integer revision = jdbcTemplate.queryForObject(
+                "SELECT revision FROM plm_object WHERE id = ?", Integer.class, itemId);
+        assertThat(revision).isEqualTo(1);
+
+        JsonNode ecr = call(post("/api/v1/chg/ecrs"), admin, json(Map.of(
+                "title", "执行验证", "changeType", "DESIGN")));
+        long ecrId = ecr.path("id").asLong();
+
+        Map<String, Object> affected = new HashMap<>();
+        affected.put("objectType", "PdmItem");
+        affected.put("objectId", itemId);
+        affected.put("relation", "AFFECTED");
+        affected.put("action", "REVISE");
+        call(post("/api/v1/chg/ecrs/{id}/objects", ecrId), admin, json(affected));
+        call(post("/api/v1/chg/ecrs/{id}/submit", ecrId), admin, null);
+
+        // 未批准不允许执行 / 下发通知
+        mockMvc.perform(post("/api/v1/chg/ecrs/{id}/execute", ecrId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/v1/chg/ecrs/{id}/ecns", ecrId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("title", "越权通知"))))
+                .andExpect(status().isConflict());
+
+        // 审批流尚未与变更打通，直接置为已批准
+        jdbcTemplate.update("UPDATE chg_ecr SET status = 'APPROVED', approved_at = now() WHERE id = ?", ecrId);
+
+        JsonNode ecn = call(post("/api/v1/chg/ecrs/{id}/ecns", ecrId), admin,
+                json(Map.of("title", "执行通知")));
+        long ecnId = ecn.path("id").asLong();
+        assertThat(ecn.path("status").asText()).isEqualTo("DRAFT");
+        assertThat(ecn.path("code").asText()).startsWith("ECN-");
+        assertThat(call(get("/api/v1/chg/ecrs/{id}", ecrId), admin, null).path("status").asText())
+                .isEqualTo("NOTICED");
+
+        JsonNode issued = call(post("/api/v1/chg/ecns/{id}/issue", ecnId), admin, null);
+        assertThat(issued.path("status").asText()).isEqualTo("ISSUED");
+
+        JsonNode problem = call(post("/api/v1/chg/ecns/{id}/problems", ecnId), admin,
+                json(Map.of("description", "装配尺寸超差")));
+        long problemId = problem.path("id").asLong();
+        assertThat(problem.path("status").asText()).isEqualTo("OPEN");
+
+        // 有未关闭问题，通知不能关闭
+        mockMvc.perform(post("/api/v1/chg/ecns/{id}/close", ecnId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isConflict());
+        call(post("/api/v1/chg/problems/{id}/close", problemId), admin, null);
+        JsonNode closedEcn = call(post("/api/v1/chg/ecns/{id}/close", ecnId), admin, null);
+        assertThat(closedEcn.path("status").asText()).isEqualTo("CLOSED");
+
+        // 执行：受影响对象升版
+        JsonNode result = call(post("/api/v1/chg/ecrs/{id}/execute", ecrId), admin, null);
+        assertThat(result.path("succeeded").asInt()).isEqualTo(1);
+        assertThat(result.path("skipped").asInt()).isZero();
+
+        JsonNode detail = call(get("/api/v1/chg/ecrs/{id}", ecrId), admin, null);
+        assertThat(detail.path("status").asText()).isEqualTo("EXECUTING");
+        assertThat(detail.path("objects").get(0).path("execStatus").asText()).isEqualTo("DONE");
+        assertThat(detail.path("objects").get(0).path("revisionTo").asInt()).isEqualTo(2);
+
+        // 旧版本降为历史，新版本为 v2 且同步复制子表
+        Integer oldIsLatest = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM plm_object WHERE id = ? AND is_latest = false", Integer.class, itemId);
+        assertThat(oldIsLatest).isEqualTo(1);
+        Integer newCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(1) FROM plm_object o
+                  JOIN item_master im ON im.object_id = o.id
+                 WHERE o.master_id = ? AND o.revision = 2 AND o.iteration = 1
+                   AND o.is_latest = true AND o.deleted = false AND o.lifecycle_state = 'Draft'
+                """, Integer.class, itemId);
+        assertThat(newCount).isEqualTo(1);
     }
 
     // ------------------------------------------------------------ 工具

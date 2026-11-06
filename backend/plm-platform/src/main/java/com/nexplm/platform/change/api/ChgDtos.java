@@ -67,4 +67,27 @@ public final class ChgDtos {
     /** 状态流转请求（后续接流程审批时由引擎回调触发）。 */
     public record StatusReq(@Size(max = 500) String comment) {
     }
+
+    /** 新建变更通知（ECN）。 */
+    public record EcnSaveReq(@NotBlank(message = "标题不能为空") @Size(max = 200) String title,
+                             Long executorId,
+                             LocalDate planDate,
+                             @Size(max = 500) String remark) {
+    }
+
+    /** 变更问题行。 */
+    public record ProblemRow(Long id, String code, Long ecnId, String description, String status,
+                             Long ownerId, String ownerName, LocalDate dueDate,
+                             OffsetDateTime closedAt, OffsetDateTime createdAt) {
+    }
+
+    /** 新建变更问题。 */
+    public record ProblemReq(@NotBlank(message = "问题描述不能为空") @Size(max = 2000) String description,
+                             Long ownerId,
+                             LocalDate dueDate) {
+    }
+
+    /** 变更执行结果。 */
+    public record ExecuteResult(int total, int succeeded, int skipped, List<String> messages) {
+    }
 }

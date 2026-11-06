@@ -80,6 +80,9 @@
           <div class="actions">
             <el-button v-if="detail.status === 'DRAFT'" size="small" @click="openEdit">编辑</el-button>
             <el-button v-if="detail.status === 'DRAFT'" size="small" type="primary" @click="onSubmit">提交评审</el-button>
+            <el-button v-if="EXECUTABLE.includes(detail.status)" size="small" type="success" @click="onExecute">
+              执行变更
+            </el-button>
             <el-button v-if="CLOSABLE.includes(detail.status)" size="small" type="warning" @click="onClose">
               关闭
             </el-button>
@@ -160,20 +163,118 @@
           </div>
         </div>
 
-        <div v-if="detail.ecns.length" class="section">
-          <div class="section-title">变更通知</div>
+        <div class="section">
+          <div class="section-head">
+            <span class="section-title">变更通知</span>
+            <el-button
+              v-if="EXECUTABLE.includes(detail.status)"
+              size="small"
+              type="primary"
+              @click="openEcnDialog"
+            >
+              下发通知
+            </el-button>
+          </div>
           <el-table :data="detail.ecns" border size="small">
             <el-table-column prop="code" label="编码" width="140" />
-            <el-table-column prop="title" label="标题" min-width="200" />
-            <el-table-column prop="status" label="状态" width="110" />
-            <el-table-column prop="executorName" label="执行人" width="120" />
-            <el-table-column label="计划日期" width="120">
+            <el-table-column prop="title" label="标题" min-width="180" />
+            <el-table-column label="状态" width="110">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.status === 'CLOSED' ? 'success' : 'warning'">
+                  {{ ECN_LABEL[row.status] ?? row.status }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="executorName" label="执行人" width="110" />
+            <el-table-column label="计划日期" width="110">
               <template #default="{ row }">{{ row.planDate ?? '-' }}</template>
             </el-table-column>
+            <el-table-column label="操作" width="200">
+              <template #default="{ row }">
+                <el-button v-if="row.status === 'DRAFT'" link type="primary" @click="onIssueEcn(row)">签发</el-button>
+                <el-button v-if="row.status !== 'CLOSED'" link type="primary" @click="openProblems(row)">
+                  问题
+                </el-button>
+                <el-button
+                  v-if="row.status === 'ISSUED' || row.status === 'EXECUTING'"
+                  link
+                  type="warning"
+                  @click="onCloseEcn(row)"
+                >
+                  关闭
+                </el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="还没有变更通知" />
+            </template>
           </el-table>
         </div>
       </div>
     </el-drawer>
+
+    <el-dialog v-model="ecnDialogVisible" title="下发变更通知" width="520px">
+      <el-form label-width="90px">
+        <el-form-item label="标题" required>
+          <el-input v-model="ecnForm.title" maxlength="200" />
+        </el-form-item>
+        <el-form-item label="计划日期">
+          <el-date-picker v-model="ecnForm.planDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="ecnForm.remark" type="textarea" :rows="2" maxlength="500" show-word-limit />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ecnDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="onCreateEcn">下发</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="problemDialogVisible"
+      :title="`变更问题 · ${currentEcn?.code ?? ''}`"
+      width="700px"
+    >
+      <div class="add-object">
+        <el-input v-model="problemForm.description" placeholder="问题描述" style="flex: 1" />
+        <el-date-picker
+          v-model="problemForm.dueDate"
+          type="date"
+          value-format="YYYY-MM-DD"
+          placeholder="要求关闭日期"
+          style="width: 170px"
+        />
+        <el-button type="primary" @click="onAddProblem">登记</el-button>
+      </div>
+      <el-table :data="problems" border size="small" style="margin-top: 12px">
+        <el-table-column prop="code" label="编码" width="130" />
+        <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.status === 'CLOSED' ? 'success' : 'warning'">
+              {{ row.status === 'CLOSED' ? '已关闭' : '待处理' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="要求关闭" width="120">
+          <template #default="{ row }">{{ row.dueDate ?? '-' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <el-button v-if="row.status !== 'CLOSED'" link type="primary" @click="onCloseProblem(row)">
+              关闭
+            </el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="暂无问题" />
+        </template>
+      </el-table>
+      <template #footer>
+        <el-button @click="problemDialogVisible = false">关闭窗口</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="formVisible" :title="editing ? '编辑变更申请' : '新建变更申请'" width="640px">
       <el-form label-width="96px">
@@ -220,9 +321,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   changeApi,
   type ChangeObjectRow,
+  type EcnRow,
   type EcrDetail,
   type EcrRow,
-  type EcrSaveReq
+  type EcrSaveReq,
+  type ProblemRow
 } from '@/api/change'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -242,6 +345,13 @@ const RELATION_LABEL: Record<string, string> = { AFFECTED: '受影响', IMPACT: 
 const ACTION_LABEL: Record<string, string> = { REVISE: '升版', OBSOLETE: '废弃', RELEASE: '发布' }
 const EXEC_LABEL: Record<string, string> = { PENDING: '待执行', DONE: '已完成', SKIPPED: '已跳过' }
 const CLOSABLE = ['APPROVED', 'NOTICED', 'EXECUTING']
+const EXECUTABLE = ['APPROVED', 'NOTICED', 'EXECUTING']
+const ECN_LABEL: Record<string, string> = {
+  DRAFT: '草稿',
+  ISSUED: '已签发',
+  EXECUTING: '执行中',
+  CLOSED: '已关闭'
+}
 
 const rows = ref<EcrRow[]>([])
 const total = ref(0)
@@ -269,6 +379,20 @@ const objForm = reactive<{ objectType: string; objectId: string; relation: strin
   objectId: '',
   relation: 'AFFECTED',
   action: 'REVISE'
+})
+
+const ecnDialogVisible = ref(false)
+const ecnForm = reactive<{ title: string; planDate: string | null; remark: string }>({
+  title: '',
+  planDate: null,
+  remark: ''
+})
+const problemDialogVisible = ref(false)
+const currentEcn = ref<EcnRow | null>(null)
+const problems = ref<ProblemRow[]>([])
+const problemForm = reactive<{ description: string; dueDate: string | null }>({
+  description: '',
+  dueDate: null
 })
 
 function formatTime(value?: string | null): string {
@@ -482,6 +606,141 @@ async function onRemoveObject(row: ChangeObjectRow): Promise<void> {
   }
 }
 
+function openEcnDialog(): void {
+  ecnForm.title = detail.value ? `${detail.value.code} 执行通知` : ''
+  ecnForm.planDate = null
+  ecnForm.remark = ''
+  ecnDialogVisible.value = true
+}
+
+async function onCreateEcn(): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  if (!ecnForm.title.trim()) {
+    ElMessage.warning('请填写通知标题')
+    return
+  }
+  saving.value = true
+  try {
+    const ecn = await changeApi.createEcn(detail.value.id, {
+      title: ecnForm.title.trim(),
+      planDate: ecnForm.planDate,
+      remark: ecnForm.remark || null
+    })
+    ElMessage.success(`已下发 ${ecn.code}`)
+    ecnDialogVisible.value = false
+    await openDetail(detail.value.id)
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '下发失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function onIssueEcn(row: EcnRow): Promise<void> {
+  try {
+    await changeApi.issueEcn(row.id)
+    ElMessage.success('已签发')
+    if (detail.value) {
+      await openDetail(detail.value.id)
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '签发失败')
+  }
+}
+
+async function onCloseEcn(row: EcnRow): Promise<void> {
+  try {
+    await ElMessageBox.confirm('关闭前需确认所有变更问题已关闭，继续？', '关闭变更通知', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await changeApi.closeEcn(row.id)
+    ElMessage.success('已关闭')
+    if (detail.value) {
+      await openDetail(detail.value.id)
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '关闭失败')
+  }
+}
+
+async function openProblems(row: EcnRow): Promise<void> {
+  currentEcn.value = row
+  problemDialogVisible.value = true
+  problemForm.description = ''
+  problemForm.dueDate = null
+  await loadProblems(row.id)
+}
+
+async function loadProblems(ecnId: string): Promise<void> {
+  try {
+    problems.value = await changeApi.problems(ecnId)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载变更问题失败')
+  }
+}
+
+async function onAddProblem(): Promise<void> {
+  if (!currentEcn.value) {
+    return
+  }
+  if (!problemForm.description.trim()) {
+    ElMessage.warning('请填写问题描述')
+    return
+  }
+  try {
+    await changeApi.addProblem(currentEcn.value.id, {
+      description: problemForm.description.trim(),
+      dueDate: problemForm.dueDate
+    })
+    problemForm.description = ''
+    problemForm.dueDate = null
+    await loadProblems(currentEcn.value.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '登记失败')
+  }
+}
+
+async function onCloseProblem(row: ProblemRow): Promise<void> {
+  if (!currentEcn.value) {
+    return
+  }
+  try {
+    await changeApi.closeProblem(row.id)
+    ElMessage.success('问题已关闭')
+    await loadProblems(currentEcn.value.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '关闭失败')
+  }
+}
+
+async function onExecute(): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      '将按操作意图对「受影响」对象执行升版 / 废弃 / 发布，执行后不可撤销，确认？',
+      '执行变更',
+      { type: 'warning', confirmButtonText: '执行', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  try {
+    const result = await changeApi.execute(detail.value.id)
+    ElMessage.success(`执行完成：成功 ${result.succeeded} 个，跳过 ${result.skipped} 个`)
+    await openDetail(detail.value.id)
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '执行失败')
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -538,6 +797,12 @@ onMounted(load)
   margin-bottom: 10px;
   padding-left: 8px;
   border-left: 3px solid #2b4a6f;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .add-object {

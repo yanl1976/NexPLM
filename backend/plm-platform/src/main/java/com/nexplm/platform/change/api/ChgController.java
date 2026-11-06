@@ -26,9 +26,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class ChgController {
 
     private final ChgService chgService;
+    private final com.nexplm.platform.change.service.ChgExecService execService;
 
-    public ChgController(ChgService chgService) {
+    public ChgController(ChgService chgService,
+                         com.nexplm.platform.change.service.ChgExecService execService) {
         this.chgService = chgService;
+        this.execService = execService;
     }
 
     @Operation(summary = "变更申请列表（按状态/关键字筛选）")
@@ -97,5 +100,65 @@ public class ChgController {
     public Result<Void> removeObject(@PathVariable Long id, @PathVariable Long linkId) {
         chgService.removeObject(id, linkId, CurrentUser.companyId());
         return Result.ok();
+    }
+
+    // ---------------------------------------------------------------- 变更执行（ECN / Problem / 执行）
+
+    @Operation(summary = "下发变更通知（ECN，ECR 转「已通知」）")
+    @PostMapping("/ecrs/{id}/ecns")
+    @PreAuthorize("hasAuthority('chg.ecr.write')")
+    @Audit(module = "CHG", action = "ECN_CREATE", objectType = "ChgEcn")
+    public Result<ChgDtos.EcnRow> createEcn(@PathVariable Long id,
+                                            @Valid @RequestBody ChgDtos.EcnSaveReq req) {
+        return Result.ok(execService.createEcn(id, req, CurrentUser.companyId(), CurrentUser.userId()));
+    }
+
+    @Operation(summary = "签发变更通知（草稿 → 已签发）")
+    @PostMapping("/ecns/{id}/issue")
+    @PreAuthorize("hasAuthority('chg.ecr.write')")
+    @Audit(module = "CHG", action = "ECN_ISSUE", objectType = "ChgEcn")
+    public Result<ChgDtos.EcnRow> issueEcn(@PathVariable Long id) {
+        return Result.ok(execService.issueEcn(id, CurrentUser.companyId(), CurrentUser.userId()));
+    }
+
+    @Operation(summary = "关闭变更通知（需无未关闭问题）")
+    @PostMapping("/ecns/{id}/close")
+    @PreAuthorize("hasAuthority('chg.ecr.write')")
+    @Audit(module = "CHG", action = "ECN_CLOSE", objectType = "ChgEcn")
+    public Result<ChgDtos.EcnRow> closeEcn(@PathVariable Long id) {
+        return Result.ok(execService.closeEcn(id, CurrentUser.companyId(), CurrentUser.userId()));
+    }
+
+    @Operation(summary = "变更问题列表")
+    @GetMapping("/ecns/{id}/problems")
+    @PreAuthorize("hasAuthority('chg.ecr.read')")
+    public Result<java.util.List<ChgDtos.ProblemRow>> problems(@PathVariable Long id) {
+        return Result.ok(execService.problems(id, CurrentUser.companyId()));
+    }
+
+    @Operation(summary = "登记变更问题")
+    @PostMapping("/ecns/{id}/problems")
+    @PreAuthorize("hasAuthority('chg.ecr.write')")
+    @Audit(module = "CHG", action = "PROBLEM_CREATE", objectType = "ChgProblem")
+    public Result<ChgDtos.ProblemRow> addProblem(@PathVariable Long id,
+                                                 @Valid @RequestBody ChgDtos.ProblemReq req) {
+        return Result.ok(execService.addProblem(id, req, CurrentUser.companyId(), CurrentUser.userId()));
+    }
+
+    @Operation(summary = "关闭变更问题")
+    @PostMapping("/problems/{id}/close")
+    @PreAuthorize("hasAuthority('chg.ecr.write')")
+    @Audit(module = "CHG", action = "PROBLEM_CLOSE", objectType = "ChgProblem")
+    public Result<Void> closeProblem(@PathVariable Long id) {
+        execService.closeProblem(id, CurrentUser.companyId(), CurrentUser.userId());
+        return Result.ok();
+    }
+
+    @Operation(summary = "执行变更（受影响对象批量升版/废弃/发布）")
+    @PostMapping("/ecrs/{id}/execute")
+    @PreAuthorize("hasAuthority('chg.ecr.write')")
+    @Audit(module = "CHG", action = "ECR_EXECUTE", objectType = "ChgEcr")
+    public Result<ChgDtos.ExecuteResult> execute(@PathVariable Long id) {
+        return Result.ok(execService.execute(id, CurrentUser.companyId(), CurrentUser.userId()));
     }
 }
