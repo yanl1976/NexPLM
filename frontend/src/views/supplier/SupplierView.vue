@@ -236,6 +236,51 @@
           </el-table-column>
         </el-table>
         <el-empty v-if="!ratings.length" description="还没有评级记录" :image-size="50" />
+
+        <div class="section-title">准入评审（{{ admissions.length }}）</div>
+        <div class="action-bar">
+          <el-button v-if="canWrite" size="small" type="primary" plain @click="openAdmissionDialog">
+            发起准入评审
+          </el-button>
+          <span class="hint">只有准入评审通过才会把供应商置为合格；评级再高也不会自动准入</span>
+        </div>
+        <el-table :data="admissions" border size="small">
+          <el-table-column prop="code" label="评审单号" width="130" />
+          <el-table-column label="类型" width="100" align="center">
+            <template #default="{ row }">{{ ADMISSION_TYPE_LABEL[row.type] ?? row.type }}</template>
+          </el-table-column>
+          <el-table-column label="计划日期" width="110" align="center">
+            <template #default="{ row }">{{ row.plannedDate || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="检查项" width="120" align="center">
+            <template #default="{ row }">
+              {{ row.passCount }}/{{ row.itemCount }} 通过<template v-if="row.failCount">
+                ，<span class="fail-count">{{ row.failCount }} 项不通过</span>
+              </template>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag :type="admissionStatusType(row.status)" size="small">
+                {{ ADMISSION_STATUS_LABEL[row.status] ?? row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="190" align="center">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openAdmissionDetail(row.id)">明细</el-button>
+              <template v-if="canWrite && row.status === 'DRAFT'">
+                <el-button link type="success" @click="onSubmitAdmission(row)">提交</el-button>
+                <el-button link type="danger" @click="onRemoveAdmission(row)">删除</el-button>
+              </template>
+              <template v-if="canWrite && row.status === 'SUBMITTED'">
+                <el-button link type="success" @click="onApproveAdmission(row)">通过</el-button>
+                <el-button link type="danger" @click="onRejectAdmission(row)">驳回</el-button>
+              </template>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!admissions.length" description="还没有准入评审" :image-size="50" />
       </div>
     </el-drawer>
 
@@ -376,6 +421,111 @@
         <el-table-column prop="comment" label="说明" show-overflow-tooltip />
       </el-table>
     </el-dialog>
+
+    <!-- 发起准入评审 -->
+    <el-dialog v-model="admissionVisible" title="发起准入评审" width="820px" destroy-on-close>
+      <el-form label-width="96px">
+        <el-form-item label="评审类型">
+          <el-select v-model="admissionForm.type" style="width: 150px">
+            <el-option
+              v-for="(label, value) in ADMISSION_TYPE_LABEL"
+              :key="value"
+              :label="label"
+              :value="value"
+            />
+          </el-select>
+          <span class="label-gap">计划日期</span>
+          <el-date-picker
+            v-model="admissionForm.plannedDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选择日期"
+            style="width: 160px"
+          />
+          <span class="label-gap">评审组长</span>
+          <el-input v-model="admissionForm.leader" maxlength="64" style="width: 140px" />
+        </el-form-item>
+        <el-form-item label="检查项">
+          <div class="dims">
+            <el-table :data="admissionForm.items" border size="small">
+              <el-table-column label="检查项" min-width="220">
+                <template #default="{ row }">
+                  <el-input v-model="row.checkItem" maxlength="500" />
+                </template>
+              </el-table-column>
+              <el-table-column label="结果" width="120">
+                <template #default="{ row }">
+                  <el-select v-model="row.result" style="width: 100%">
+                    <el-option
+                      v-for="(label, value) in ADMISSION_RESULT_LABEL"
+                      :key="value"
+                      :label="label"
+                      :value="value"
+                    />
+                  </el-select>
+                </template>
+              </el-table-column>
+              <el-table-column label="证据/说明" min-width="180">
+                <template #default="{ row }">
+                  <el-input v-model="row.evidence" maxlength="500" placeholder="证书编号/样品单号等" />
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="70" align="center">
+                <template #default="{ $index }">
+                  <el-button link type="danger" @click="removeAdmissionItem($index)">移除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="dim-footer">
+              <el-button link type="primary" @click="addAdmissionItem">+ 增加检查项</el-button>
+              <span class="hint">通过评审要求：无「不通过」项，且至少一项「通过」</span>
+            </div>
+          </div>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="admissionForm.remark" type="textarea" :rows="2" maxlength="1000" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="admissionVisible = false">取消</el-button>
+        <el-button type="primary" :loading="admissionSaving" @click="onSaveAdmission">
+          保存草稿
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 准入评审明细 -->
+    <el-dialog v-model="admissionDetailVisible" title="准入评审明细" width="760px" destroy-on-close>
+      <el-descriptions v-if="admissionDetail" :column="3" border size="small">
+        <el-descriptions-item label="评审单号">{{ admissionDetail.code }}</el-descriptions-item>
+        <el-descriptions-item label="类型">
+          {{ ADMISSION_TYPE_LABEL[admissionDetail.type] ?? admissionDetail.type }}
+        </el-descriptions-item>
+        <el-descriptions-item label="状态">
+          <el-tag :type="admissionStatusType(admissionDetail.status)" size="small">
+            {{ ADMISSION_STATUS_LABEL[admissionDetail.status] ?? admissionDetail.status }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="计划日期">{{ admissionDetail.plannedDate || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="实际日期">{{ admissionDetail.actualDate || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="评审组长">{{ admissionDetail.leader || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="结论" :span="3">
+          {{ admissionDetail.conclusion || admissionDetail.rejectReason || '-' }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-table v-if="admissionDetail" :data="admissionDetail.items" border size="small" class="rating-items">
+        <el-table-column prop="seq" label="#" width="50" align="center" />
+        <el-table-column prop="checkItem" label="检查项" min-width="220" show-overflow-tooltip />
+        <el-table-column label="结果" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag :type="admissionResultType(row.result)" size="small">
+              {{ ADMISSION_RESULT_LABEL[row.result] ?? row.result }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="evidence" label="证据/说明" min-width="180" show-overflow-tooltip />
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
@@ -383,12 +533,18 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  admissionApi,
+  ADMISSION_RESULT_LABEL,
+  ADMISSION_STATUS_LABEL,
+  ADMISSION_TYPE_LABEL,
   ratingApi,
   RATING_STATUS_LABEL,
   supplierApi,
   SUPPLIER_CATEGORY_LABEL,
   SUPPLIER_STATUS_LABEL,
   SUPPLY_TYPE_LABEL,
+  type AdmissionDetail,
+  type AdmissionRow,
   type GradeBand,
   type RatingSchemeDetail,
   type RatingSchemeRow,
@@ -496,6 +652,36 @@ const previewGrade = computed(() => {
   const bands: GradeBand[] = ratingScheme.value?.gradeRule ?? []
   const hit = bands.find((band) => previewScore.value >= band.min)
   return hit ? hit.grade : bands.length ? bands[bands.length - 1].grade : ''
+})
+
+/* ------------------------------------------------------------ 准入（P8-5-2） */
+
+interface AdmissionItemDraft {
+  checkItem: string
+  result: string
+  evidence: string
+}
+
+const DEFAULT_ADMISSION_ITEMS = [
+  '营业执照与经营范围',
+  '质量体系证书（ISO9001/IATF16949）',
+  '样品承认与试产验证',
+  '现场审核（过程能力/设备/人员）',
+  '产能与交付能力评估',
+  '财务与信用状况'
+]
+
+const admissions = ref<AdmissionRow[]>([])
+const admissionVisible = ref(false)
+const admissionSaving = ref(false)
+const admissionDetailVisible = ref(false)
+const admissionDetail = ref<AdmissionDetail | null>(null)
+const admissionForm = reactive({
+  type: 'INITIAL',
+  plannedDate: '',
+  leader: '',
+  remark: '',
+  items: [] as AdmissionItemDraft[]
 })
 
 onMounted(async () => {
@@ -623,6 +809,7 @@ async function openDetail(id: string): Promise<void> {
     detail.value = await supplierApi.detail(id)
     detailVisible.value = true
     await loadRatings(id)
+    await loadAdmissions(id)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载详情失败')
   }
@@ -633,6 +820,14 @@ async function loadRatings(supplierId: string): Promise<void> {
     ratings.value = await ratingApi.bySupplier(supplierId)
   } catch {
     ratings.value = []
+  }
+}
+
+async function loadAdmissions(supplierId: string): Promise<void> {
+  try {
+    admissions.value = await admissionApi.bySupplier(supplierId)
+  } catch {
+    admissions.value = []
   }
 }
 
@@ -897,6 +1092,157 @@ async function openRatingDetail(id: string): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------ 准入操作 */
+
+function openAdmissionDialog(): void {
+  admissionForm.type = 'INITIAL'
+  admissionForm.plannedDate = ''
+  admissionForm.leader = ''
+  admissionForm.remark = ''
+  admissionForm.items = DEFAULT_ADMISSION_ITEMS.map((item) => ({
+    checkItem: item,
+    result: 'NA',
+    evidence: ''
+  }))
+  admissionVisible.value = true
+}
+
+function addAdmissionItem(): void {
+  admissionForm.items.push({ checkItem: '', result: 'NA', evidence: '' })
+}
+
+function removeAdmissionItem(index: number): void {
+  admissionForm.items.splice(index, 1)
+}
+
+async function onSaveAdmission(): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  const items = admissionForm.items.filter((item) => item.checkItem.trim())
+  if (!items.length) {
+    ElMessage.warning('至少需要一项检查项')
+    return
+  }
+  admissionSaving.value = true
+  try {
+    await admissionApi.create({
+      supplierId: detail.value.id,
+      type: admissionForm.type,
+      plannedDate: admissionForm.plannedDate || null,
+      leader: admissionForm.leader.trim() || null,
+      remark: admissionForm.remark.trim() || null,
+      items: items.map((item) => ({
+        checkItem: item.checkItem.trim(),
+        result: item.result,
+        evidence: item.evidence.trim() || null
+      }))
+    })
+    ElMessage.success('准入评审草稿已保存')
+    admissionVisible.value = false
+    await loadAdmissions(detail.value.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存准入评审失败')
+  } finally {
+    admissionSaving.value = false
+  }
+}
+
+async function onSubmitAdmission(row: AdmissionRow): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  try {
+    await admissionApi.submit(row.id)
+    ElMessage.success('已提交，检查项已冻结')
+    await loadAdmissions(detail.value.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '提交失败')
+  }
+}
+
+async function onApproveAdmission(row: AdmissionRow): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  let conclusion = ''
+  try {
+    const result = await ElMessageBox.prompt(
+      '通过后供应商将置为「合格」，请填写评审结论（可留空使用默认结论）',
+      '通过准入评审',
+      { confirmButtonText: '通过', cancelButtonText: '取消', inputPlaceholder: '资料齐全，无重大不符合' }
+    )
+    conclusion = result.value ?? ''
+  } catch {
+    return
+  }
+  try {
+    await admissionApi.approve(row.id, conclusion.trim() || undefined)
+    ElMessage.success('准入已通过，供应商已转合格')
+    detail.value = await supplierApi.detail(detail.value.id)
+    await loadAdmissions(detail.value.id)
+    await reload()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '通过失败')
+  }
+}
+
+async function onRejectAdmission(row: AdmissionRow): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  let reason = ''
+  try {
+    const result = await ElMessageBox.prompt('请填写驳回原因', '驳回准入评审', {
+      confirmButtonText: '驳回',
+      cancelButtonText: '取消',
+      inputPlaceholder: '例如：体系证书过期，需换证后重评',
+      inputValidator: (value: string) => (value && value.trim() ? true : '驳回原因必填')
+    })
+    reason = result.value ?? ''
+  } catch {
+    return
+  }
+  try {
+    await admissionApi.reject(row.id, reason.trim())
+    ElMessage.success('已驳回')
+    await loadAdmissions(detail.value.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '驳回失败')
+  }
+}
+
+async function onRemoveAdmission(row: AdmissionRow): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确认删除准入评审草稿 ${row.code}？`, '删除评审', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    await admissionApi.remove(row.id)
+    ElMessage.success('已删除')
+    await loadAdmissions(detail.value.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除失败')
+  }
+}
+
+async function openAdmissionDetail(id: string): Promise<void> {
+  try {
+    admissionDetail.value = await admissionApi.detail(id)
+    admissionDetailVisible.value = true
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载准入明细失败')
+  }
+}
+
 /* ------------------------------------------------------------ 展示辅助 */
 
 function gradeType(grade: string): 'success' | 'primary' | 'info' | 'warning' | 'danger' {
@@ -910,6 +1256,29 @@ function gradeType(grade: string): 'success' | 'primary' | 'info' | 'warning' | 
     return 'warning'
   }
   if (grade === 'D') {
+    return 'danger'
+  }
+  return 'info'
+}
+
+function admissionStatusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
+  if (value === 'APPROVED') {
+    return 'success'
+  }
+  if (value === 'SUBMITTED') {
+    return 'warning'
+  }
+  if (value === 'REJECTED') {
+    return 'danger'
+  }
+  return 'info'
+}
+
+function admissionResultType(value: string): 'success' | 'info' | 'danger' {
+  if (value === 'PASS') {
+    return 'success'
+  }
+  if (value === 'FAIL') {
     return 'danger'
   }
   return 'info'
@@ -981,6 +1350,10 @@ function statusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
 
 .rating-items {
   margin-top: 12px;
+}
+
+.fail-count {
+  color: #f56c6c;
 }
 
 .label-gap {

@@ -278,6 +278,114 @@ export const ratingApi = {
   }
 }
 
+/* ------------------------------------------------------------ P8-5-2 准入评审 */
+
+export const ADMISSION_TYPE_LABEL: Record<string, string> = {
+  INITIAL: '首次准入',
+  ANNUAL: '年度复审',
+  SPECIAL: '专项评审'
+}
+
+export const ADMISSION_STATUS_LABEL: Record<string, string> = {
+  DRAFT: '草稿',
+  SUBMITTED: '已提交',
+  APPROVED: '已通过',
+  REJECTED: '已驳回'
+}
+
+export const ADMISSION_RESULT_LABEL: Record<string, string> = {
+  PASS: '通过',
+  FAIL: '不通过',
+  NA: '不适用'
+}
+
+export interface AdmissionItemRow {
+  id?: string
+  seq: number
+  checkItem: string
+  result: string
+  evidence?: string | null
+  remark?: string | null
+}
+
+export interface AdmissionRow {
+  id: string
+  code: string
+  supplierId: string
+  supplierCode?: string | null
+  supplierName?: string | null
+  type: string
+  status: string
+  plannedDate?: string | null
+  actualDate?: string | null
+  leader?: string | null
+  itemCount: number
+  passCount: number
+  failCount: number
+  submittedAt?: string | null
+  approvedAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface AdmissionDetail extends AdmissionRow {
+  conclusion?: string | null
+  rejectReason?: string | null
+  remark?: string | null
+  items: AdmissionItemRow[]
+}
+
+export interface AdmissionItemReq {
+  checkItem: string
+  result?: string
+  evidence?: string | null
+  remark?: string | null
+}
+
+export interface AdmissionSaveReq {
+  supplierId: string
+  type?: string
+  plannedDate?: string | null
+  leader?: string | null
+  remark?: string | null
+  items: AdmissionItemReq[]
+}
+
+export const admissionApi = {
+  page(params: {
+    supplierId?: string
+    status?: string
+    type?: string
+    page?: number
+    size?: number
+  }): Promise<{ items: AdmissionRow[]; total: number; page: number; size: number }> {
+    return http.get('/sup/admissions', params)
+  },
+  detail(id: string): Promise<AdmissionDetail> {
+    return http.get<AdmissionDetail>(`/sup/admissions/${id}`)
+  },
+  create(req: AdmissionSaveReq): Promise<AdmissionDetail> {
+    return http.post<AdmissionDetail>('/sup/admissions', req)
+  },
+  update(id: string, req: AdmissionSaveReq): Promise<AdmissionDetail> {
+    return http.put<AdmissionDetail>(`/sup/admissions/${id}`, req)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/sup/admissions/${id}`)
+  },
+  submit(id: string): Promise<AdmissionDetail> {
+    return http.post<AdmissionDetail>(`/sup/admissions/${id}/submit`)
+  },
+  approve(id: string, conclusion?: string): Promise<AdmissionDetail> {
+    return http.post<AdmissionDetail>(`/sup/admissions/${id}/approve`, { conclusion: conclusion ?? null })
+  },
+  reject(id: string, reason: string): Promise<AdmissionDetail> {
+    return http.post<AdmissionDetail>(`/sup/admissions/${id}/reject`, { reason })
+  },
+  bySupplier(supplierId: string): Promise<AdmissionRow[]> {
+    return http.get<AdmissionRow[]>(`/sup/suppliers/${supplierId}/admissions`)
+  }
+}
+
 export const supplierApi = {
   page(params: {
     keyword?: string
