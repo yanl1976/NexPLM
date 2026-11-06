@@ -6,6 +6,8 @@ import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.workflow.api.WfDtos;
 import com.nexplm.platform.workflow.service.assignee.AssigneeContext;
 import com.nexplm.platform.workflow.service.assignee.AssigneeResolverRegistry;
+import com.nexplm.platform.workflow.service.plugin.WfPluginContext;
+import com.nexplm.platform.workflow.service.plugin.WfPluginRegistry;
 import org.flowable.bpmn.model.BpmnModel;
 import org.flowable.bpmn.model.FlowElement;
 import org.flowable.bpmn.model.UserTask;
@@ -57,20 +59,23 @@ public class WorkflowService {
     private final HistoryService historyService;
     private final JdbcTemplate jdbcTemplate;
     private final AssigneeResolverRegistry assigneeResolvers;
+    private final WfPluginRegistry pluginRegistry;
 
     public WorkflowService(RuntimeService runtimeService, TaskService taskService,
                            RepositoryService repositoryService, HistoryService historyService,
-                           JdbcTemplate jdbcTemplate, AssigneeResolverRegistry assigneeResolvers) {
+                           JdbcTemplate jdbcTemplate, AssigneeResolverRegistry assigneeResolvers,
+                           WfPluginRegistry pluginRegistry) {
         this.runtimeService = runtimeService;
         this.taskService = taskService;
         this.repositoryService = repositoryService;
         this.historyService = historyService;
         this.jdbcTemplate = jdbcTemplate;
         this.assigneeResolvers = assigneeResolvers;
+        this.pluginRegistry = pluginRegistry;
     }
 
     /** 业务对象与流程实例的关联信息（用于把任务行补全为可展示的业务上下文）。 */
-    private record LinkInfo(String objectType, Long objectId, String code, String name) {
+    private record LinkInfo(String objectType, Long objectId, String code, String name, String processKey) {
     }
 
     // ------------------------------------------------------------------ 发起
@@ -108,6 +113,7 @@ public class WorkflowService {
                 IdWorker.getId(), req.objectType(), req.objectId(), instance.getId(), processKey,
                 businessKey, userId, OffsetDateTime.now());
         saveComment(instance.getId(), null, null, "START", req.remark(), userId);
+        firePlugin(instance.getId(), WfPluginContext.ACTION_STARTED, userId, null);
 
         return new WfDtos.StartResp(instance.getId(), processKey, businessKey, activeTasks(instance.getId()));
     }
@@ -160,7 +166,11 @@ public class WorkflowService {
         } else {
             taskService.complete(taskId);
         }
-        refreshLinkStatus(task.getProcessInstanceId());
+        String processInstanceId = task.getProcessInstanceId();
+        boolean running = refreshLinkStatus(processInstanceId);
+        if (!running) {
+            firePlugin(processInstanceId, WfPluginContext.ACTION_COMPLETED, userId, task.getTaskDefinitionKey());
+        }
     }
 
     /**
@@ -205,6 +215,7 @@ public class WorkflowService {
         saveComment(processInstanceId, null, null, "WITHDRAW", req == null ? null : req.reason(), userId);
         runtimeService.deleteProcessInstance(processInstanceId, "发起人撤回");
         markLink(processInstanceId, "TERMINATED");
+        firePlugin(processInstanceId, WfPluginContext.ACTION_TERMINATED, userId, null);
     }
 
     /**
@@ -612,7 +623,7 @@ public class WorkflowService {
         }
         String placeholders = String.join(",", Collections.nCopies(processInstanceIds.size(), "?"));
         String sql = """
-                SELECT l.process_instance_id, l.object_type, l.object_id, o.code, o.name
+                SELECT l.process_instance_id, l.object_type, l.object_id, l.process_key, o.code, o.name
                   FROM wf_instance_link l
                   LEFT JOIN plm_object o ON o.id = l.object_id
                  WHERE l.process_instance_id IN (%s)
@@ -621,7 +632,7 @@ public class WorkflowService {
         jdbcTemplate.query(sql, rs -> {
             result.put(rs.getString("process_instance_id"),
                     new LinkInfo(rs.getString("object_type"), rs.getLong("object_id"),
-                            rs.getString("code"), rs.getString("name")));
+                            rs.getString("code"), rs.getString("name"), rs.getString("process_key")));
         }, processInstanceIds.toArray());
         return result;
     }
@@ -651,7 +662,8 @@ public class WorkflowService {
                 userId, OffsetDateTime.now());
     }
 
-    private void refreshLinkStatus(String processInstanceId) {
+    /** 回写实例状态，返回是否仍在运行（供判断是否触发「流程完成」插件）。 */
+    private boolean refreshLinkStatus(String processInstanceId) {
         boolean running = runtimeService.createProcessInstanceQuery()
                 .processInstanceId(processInstanceId).count() > 0;
         if (running) {
@@ -659,6 +671,17 @@ public class WorkflowService {
         } else {
             markLink(processInstanceId, finalStatus(processInstanceId));
         }
+        return running;
+    }
+
+    /** 触发业务插件：事务内注册为提交后回调，异常与流程隔离。 */
+    private void firePlugin(String processInstanceId, String action, Long operatorId, String taskKey) {
+        LinkInfo info = loadLinks(List.of(processInstanceId)).get(processInstanceId);
+        if (info == null) {
+            return;
+        }
+        pluginRegistry.fire(new WfPluginContext(info.objectType(), info.objectId(), processInstanceId,
+                info.processKey(), action, operatorId, taskKey, Map.of()));
     }
 
     /** 已结束实例的终态：被删除的记为 TERMINATED，正常走到终点的记为 COMPLETED。 */

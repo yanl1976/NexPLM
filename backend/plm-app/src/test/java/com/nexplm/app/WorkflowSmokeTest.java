@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -59,6 +60,9 @@ class WorkflowSmokeTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void countersignPassesOnlyWhenAllApprove() throws Exception {
@@ -401,6 +405,38 @@ class WorkflowSmokeTest {
         JsonNode crossResult = call(post("/api/v1/workflow/tasks/batch-complete"), admin, json(crossBatch));
         assertThat(crossResult.path("succeeded").asInt()).isZero();
         assertThat(crossResult.path("failed").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    void lifecycleFollowsWorkflowTransitions() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long itemId = createItem(admin, "生命周期零件");
+        assertThat(stateOf(itemId)).isEqualTo("Draft");
+
+        // 1. 发起 → 插件把对象推进到「审批中」
+        JsonNode started = start(admin, itemId, adminId, List.of(adminId));
+        String pid = started.path("processInstanceId").asText();
+        assertThat(stateOf(itemId)).isEqualTo("InWorkflow");
+
+        // 2. 初审 + 会签全部通过 → 「已发布」
+        completeTaskOf(admin, pid, "admin");
+        completeTaskOf(admin, pid, "admin");
+        assertThat(stateOf(itemId)).isEqualTo("Released");
+
+        // 3. 撤回 → 回到「草稿」
+        long withdrawItem = createItem(admin, "撤回零件");
+        JsonNode withdrawFlow = start(admin, withdrawItem, adminId, List.of(adminId));
+        assertThat(stateOf(withdrawItem)).isEqualTo("InWorkflow");
+        call(post("/api/v1/workflow/instances/{id}/withdraw",
+                        withdrawFlow.path("processInstanceId").asText()),
+                admin, json(Map.of("reason", "需求取消")));
+        assertThat(stateOf(withdrawItem)).isEqualTo("Draft");
+    }
+
+    private String stateOf(long objectId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT lifecycle_state FROM plm_object WHERE id = ?", String.class, objectId);
     }
 
     // ------------------------------------------------------------ 工具
