@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,7 +36,8 @@ import java.util.Set;
 public class ProjectTaskService {
 
     private static final Set<String> TYPES = Set.of("TASK", "MILESTONE");
-    private static final Set<String> STATUSES = Set.of("NOT_STARTED", "IN_PROGRESS", "DONE", "BLOCKED");
+    private static final Set<String> STATUSES =
+            Set.of("NOT_STARTED", "IN_PROGRESS", "SUBMITTED", "DONE", "BLOCKED");
     private static final Set<String> DEP_TYPES = Set.of("FS", "SS", "FF", "SF");
 
     private final JdbcTemplate jdbcTemplate;
@@ -85,7 +87,12 @@ public class ProjectTaskService {
                         rs.getObject("actual_end", LocalDate.class),
                         (Integer) rs.getObject("duration_days"), rs.getInt("progress"),
                         (Long) rs.getObject("owner_id"), rs.getString("owner_name"), rs.getString("remark"),
-                        rs.getInt("child_count"), List.of()),
+                        rs.getInt("child_count"),
+                        rs.getObject("assigned_at", OffsetDateTime.class),
+                        rs.getObject("accepted_at", OffsetDateTime.class),
+                        rs.getObject("submitted_at", OffsetDateTime.class),
+                        rs.getObject("approved_at", OffsetDateTime.class),
+                        rs.getString("submit_note"), rs.getString("reject_reason"), List.of()),
                 projectId);
     }
 
@@ -107,7 +114,9 @@ public class ProjectTaskService {
                     task.wbsCode(), task.name(), task.type(), task.status(), task.sortNo(),
                     task.planStart(), task.planEnd(), task.actualStart(), task.actualEnd(),
                     task.durationDays(), task.progress(), task.ownerId(), task.ownerName(),
-                    task.remark(), task.childCount(), attachChildren(byParent, task.id())));
+                    task.remark(), task.childCount(), task.assignedAt(), task.acceptedAt(),
+                    task.submittedAt(), task.approvedAt(), task.submitNote(), task.rejectReason(),
+                    attachChildren(byParent, task.id())));
         }
         return nodes;
     }
@@ -386,6 +395,168 @@ public class ProjectTaskService {
         return 1;
     }
 
+    // ---------------------------------------------------------------- 执行闭环（P7-3）
+
+    /** 派工：把任务交给执行人。换人后接收/提交记录要重新走，所以清空 accepted_at。 */
+    @Transactional
+    public ProjectTaskDtos.TaskBoard assign(Long taskId, Long ownerId, Long companyId, Long userId) {
+        Map<String, Object> task = requireTask(taskId, companyId);
+        if ("DONE".equals(str(task.get("status")))) {
+            throw BizException.of(ErrorCode.PRJ_TASK_INVALID, "已完成的任务不能再改派执行人");
+        }
+        Integer exists = jdbcTemplate.queryForObject("""
+                SELECT COUNT(1) FROM sys_user WHERE id = ? AND deleted = false
+                """, Integer.class, ownerId);
+        if (exists == null || exists == 0) {
+            throw BizException.of(ErrorCode.PRJ_TASK_INVALID, "执行人不存在：" + ownerId);
+        }
+        jdbcTemplate.update("""
+                        UPDATE prj_task
+                           SET owner_id = ?, assigned_at = now(), accepted_at = NULL,
+                               updated_by = ?, updated_at = now()
+                         WHERE id = ? AND company_id = ?
+                        """, ownerId, userId, taskId, companyId);
+        return board(longOf(task.get("project_id")), companyId);
+    }
+
+    /** 接收：执行人确认接单（不改状态，只记时间戳；开始执行才是状态迁移）。 */
+    @Transactional
+    public ProjectTaskDtos.TaskBoard accept(Long taskId, Long companyId, Long userId, boolean canManage) {
+        Map<String, Object> task = requireTask(taskId, companyId);
+        requireOwnerOrManager(task, userId, canManage, "只有执行人或项目经理可以接收任务");
+        if (task.get("owner_id") == null) {
+            throw BizException.of(ErrorCode.PRJ_TASK_INVALID, "任务还没有派工，请先指定执行人");
+        }
+        String status = str(task.get("status"));
+        if ("DONE".equals(status) || "SUBMITTED".equals(status)) {
+            throw BizException.of(ErrorCode.PRJ_TASK_INVALID, "当前状态不允许接收：" + status);
+        }
+        jdbcTemplate.update("""
+                        UPDATE prj_task SET accepted_at = COALESCE(accepted_at, now()), updated_at = now()
+                         WHERE id = ? AND company_id = ?
+                        """, taskId, companyId);
+        return board(longOf(task.get("project_id")), companyId);
+    }
+
+    /** 开始执行：NOT_STARTED → IN_PROGRESS，并补实际开始日。 */
+    @Transactional
+    public ProjectTaskDtos.TaskBoard start(Long taskId, Long companyId, Long userId, boolean canManage) {
+        Map<String, Object> task = requireTask(taskId, companyId);
+        requireOwnerOrManager(task, userId, canManage, "只有执行人或项目经理可以开始任务");
+        if (!"NOT_STARTED".equals(str(task.get("status")))) {
+            throw BizException.of(ErrorCode.PRJ_TASK_INVALID,
+                    "只有未开始的任务可以开始（当前：" + str(task.get("status")) + "）");
+        }
+        jdbcTemplate.update("""
+                        UPDATE prj_task
+                           SET status = 'IN_PROGRESS', accepted_at = COALESCE(accepted_at, now()),
+                               actual_start = COALESCE(actual_start, CURRENT_DATE),
+                               updated_by = ?, updated_at = now()
+                         WHERE id = ? AND company_id = ?
+                        """, userId, taskId, companyId);
+        recalcProgress(longOf(task.get("project_id")));
+        return board(longOf(task.get("project_id")), companyId);
+    }
+
+    /** 提交审核：IN_PROGRESS / BLOCKED → SUBMITTED。 */
+    @Transactional
+    public ProjectTaskDtos.TaskBoard submit(Long taskId, String note, Long companyId,
+                                            Long userId, boolean canManage) {
+        Map<String, Object> task = requireTask(taskId, companyId);
+        requireOwnerOrManager(task, userId, canManage, "只有执行人或项目经理可以提交任务");
+        String status = str(task.get("status"));
+        if (!Set.of("IN_PROGRESS", "BLOCKED").contains(status)) {
+            throw BizException.of(ErrorCode.PRJ_TASK_INVALID, "当前状态不能提交审核：" + status);
+        }
+        jdbcTemplate.update("""
+                        UPDATE prj_task
+                           SET status = 'SUBMITTED', submitted_at = now(), submit_note = ?,
+                               reject_reason = NULL, updated_by = ?, updated_at = now()
+                         WHERE id = ? AND company_id = ?
+                        """, blankToNull(note), userId, taskId, companyId);
+        return board(longOf(task.get("project_id")), companyId);
+    }
+
+    /** 审核通过：SUBMITTED → DONE，进度拉满并补实际结束日，随后重算项目进度。 */
+    @Transactional
+    public ProjectTaskDtos.TaskBoard approve(Long taskId, Long companyId, Long userId) {
+        Map<String, Object> task = requireTask(taskId, companyId);
+        if (!"SUBMITTED".equals(str(task.get("status")))) {
+            throw BizException.of(ErrorCode.PRJ_TASK_INVALID,
+                    "只有已提交的任务可以审核通过（当前：" + str(task.get("status")) + "）");
+        }
+        jdbcTemplate.update("""
+                        UPDATE prj_task
+                           SET status = 'DONE', progress = 100, approved_at = now(),
+                               actual_end = COALESCE(actual_end, CURRENT_DATE),
+                               updated_by = ?, updated_at = now()
+                         WHERE id = ? AND company_id = ?
+                        """, userId, taskId, companyId);
+        recalcProgress(longOf(task.get("project_id")));
+        return board(longOf(task.get("project_id")), companyId);
+    }
+
+    /** 打回：SUBMITTED → IN_PROGRESS，记录原因，执行人返工后重新提交。 */
+    @Transactional
+    public ProjectTaskDtos.TaskBoard reject(Long taskId, String reason, Long companyId, Long userId) {
+        Map<String, Object> task = requireTask(taskId, companyId);
+        if (!"SUBMITTED".equals(str(task.get("status")))) {
+            throw BizException.of(ErrorCode.PRJ_TASK_INVALID,
+                    "只有已提交的任务可以打回（当前：" + str(task.get("status")) + "）");
+        }
+        jdbcTemplate.update("""
+                        UPDATE prj_task
+                           SET status = 'IN_PROGRESS', reject_reason = ?, approved_at = NULL,
+                               updated_by = ?, updated_at = now()
+                         WHERE id = ? AND company_id = ?
+                        """, reason.trim(), userId, taskId, companyId);
+        return board(longOf(task.get("project_id")), companyId);
+    }
+
+    /** 我的任务：按执行人跨项目查（status 为空则查未完成的）。 */
+    public List<ProjectTaskDtos.MyTaskRow> myTasks(Long companyId, Long userId, String status) {
+        StringBuilder where = new StringBuilder(" WHERE t.company_id = ? AND t.owner_id = ? AND t.deleted = false");
+        List<Object> args = new ArrayList<>();
+        args.add(companyId);
+        args.add(userId);
+        if (status != null && !status.isBlank()) {
+            String normalized = status.trim().toUpperCase();
+            if (!STATUSES.contains(normalized)) {
+                throw BizException.of(ErrorCode.PRJ_TASK_INVALID, "未知任务状态：" + status);
+            }
+            where.append(" AND t.status = ?");
+            args.add(normalized);
+        } else {
+            where.append(" AND t.status <> 'DONE'");
+        }
+        return jdbcTemplate.query("""
+                        SELECT t.id, t.project_id, p.code AS project_code, p.name AS project_name,
+                               t.wbs_code, t.name, t.status, t.plan_start, t.plan_end, t.progress,
+                               u.display_name AS owner_name
+                          FROM prj_task t
+                          JOIN prj_project p ON p.id = t.project_id AND p.deleted = false
+                          LEFT JOIN sys_user u ON u.id = t.owner_id
+                        """ + where + " ORDER BY t.plan_end NULLS LAST, t.plan_start, t.id",
+                (rs, rowNum) -> new ProjectTaskDtos.MyTaskRow(rs.getLong("id"), rs.getLong("project_id"),
+                        rs.getString("project_code"), rs.getString("project_name"), rs.getString("wbs_code"),
+                        rs.getString("name"), rs.getString("status"),
+                        rs.getObject("plan_start", LocalDate.class),
+                        rs.getObject("plan_end", LocalDate.class),
+                        rs.getInt("progress"), rs.getString("owner_name")),
+                args.toArray());
+    }
+
+    private void requireOwnerOrManager(Map<String, Object> task, Long userId, boolean canManage,
+                                       String message) {
+        Long ownerId = longOf(task.get("owner_id"));
+        if (canManage) {
+            return;
+        }
+        if (ownerId == null || !ownerId.equals(userId)) {
+            throw BizException.of(ErrorCode.PRJ_TASK_INVALID, message);
+        }
+    }
+
     // ---------------------------------------------------------------- 内部
 
     /** 父节点下最大序号 + 1（用编号而不是子节点个数，避免删中间节点后编码撞车）。 */
@@ -492,7 +663,8 @@ public class ProjectTaskService {
 
     private Map<String, Object> requireTask(Long taskId, Long companyId) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT id, project_id, parent_id, wbs_code, sort_no, progress, owner_id FROM prj_task
+                SELECT id, project_id, parent_id, wbs_code, sort_no, progress, status, owner_id
+                  FROM prj_task
                  WHERE id = ? AND company_id = ? AND deleted = false
                 """, taskId, companyId);
         if (rows.isEmpty()) {

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** WBS 任务与依赖（P7-2）。 */
@@ -89,5 +90,80 @@ public class ProjectTaskController {
     @Audit(module = "PRJ", action = "TASK_DEP_DELETE", objectType = "PrjTaskDep")
     public Result<ProjectTaskDtos.TaskBoard> deleteDependency(@PathVariable Long dependencyId) {
         return Result.ok(taskService.deleteDependency(dependencyId, CurrentUser.companyId()));
+    }
+
+    // ---------------------------------------------------------------- 执行闭环（P7-3）
+
+    @Operation(summary = "派工（设置执行人）")
+    @PostMapping("/prj/tasks/{taskId}/assign")
+    @PreAuthorize("hasAuthority('prj.project.write')")
+    @Audit(module = "PRJ", action = "TASK_ASSIGN", objectType = "PrjTask")
+    public Result<ProjectTaskDtos.TaskBoard> assign(@PathVariable Long taskId,
+                                                    @Valid @RequestBody ProjectTaskDtos.TaskAssignReq req) {
+        return Result.ok(taskService.assign(taskId, req.ownerId(), CurrentUser.companyId(),
+                CurrentUser.userId()));
+    }
+
+    @Operation(summary = "接收任务（执行人或项目经理）")
+    @PostMapping("/prj/tasks/{taskId}/accept")
+    @PreAuthorize("isAuthenticated()")
+    @Audit(module = "PRJ", action = "TASK_ACCEPT", objectType = "PrjTask")
+    public Result<ProjectTaskDtos.TaskBoard> accept(@PathVariable Long taskId) {
+        return Result.ok(taskService.accept(taskId, CurrentUser.companyId(), CurrentUser.userId(),
+                canManage()));
+    }
+
+    @Operation(summary = "开始执行（未开始 → 进行中）")
+    @PostMapping("/prj/tasks/{taskId}/start")
+    @PreAuthorize("isAuthenticated()")
+    @Audit(module = "PRJ", action = "TASK_START", objectType = "PrjTask")
+    public Result<ProjectTaskDtos.TaskBoard> start(@PathVariable Long taskId) {
+        return Result.ok(taskService.start(taskId, CurrentUser.companyId(), CurrentUser.userId(),
+                canManage()));
+    }
+
+    @Operation(summary = "提交审核（进行中 → 已提交）")
+    @PostMapping("/prj/tasks/{taskId}/submit")
+    @PreAuthorize("isAuthenticated()")
+    @Audit(module = "PRJ", action = "TASK_SUBMIT", objectType = "PrjTask")
+    public Result<ProjectTaskDtos.TaskBoard> submit(@PathVariable Long taskId,
+                                                    @Valid @RequestBody(required = false)
+                                                    ProjectTaskDtos.TaskSubmitReq req) {
+        return Result.ok(taskService.submit(taskId, req == null ? null : req.note(),
+                CurrentUser.companyId(), CurrentUser.userId(), canManage()));
+    }
+
+    @Operation(summary = "审核通过（已提交 → 已完成，进度 100%）")
+    @PostMapping("/prj/tasks/{taskId}/approve")
+    @PreAuthorize("hasAuthority('prj.project.write')")
+    @Audit(module = "PRJ", action = "TASK_APPROVE", objectType = "PrjTask")
+    public Result<ProjectTaskDtos.TaskBoard> approve(@PathVariable Long taskId) {
+        return Result.ok(taskService.approve(taskId, CurrentUser.companyId(), CurrentUser.userId()));
+    }
+
+    @Operation(summary = "打回（已提交 → 进行中，记录原因）")
+    @PostMapping("/prj/tasks/{taskId}/reject")
+    @PreAuthorize("hasAuthority('prj.project.write')")
+    @Audit(module = "PRJ", action = "TASK_REJECT", objectType = "PrjTask")
+    public Result<ProjectTaskDtos.TaskBoard> reject(@PathVariable Long taskId,
+                                                    @Valid @RequestBody ProjectTaskDtos.TaskRejectReq req) {
+        return Result.ok(taskService.reject(taskId, req.reason(), CurrentUser.companyId(),
+                CurrentUser.userId()));
+    }
+
+    @Operation(summary = "我的任务（按执行人跨项目，status 缺省查未完成）")
+    @GetMapping("/prj/my-tasks")
+    @PreAuthorize("isAuthenticated()")
+    public Result<java.util.List<ProjectTaskDtos.MyTaskRow>> myTasks(
+            @RequestParam(required = false) String status) {
+        return Result.ok(taskService.myTasks(CurrentUser.companyId(), CurrentUser.userId(), status));
+    }
+
+    /** 当前登录人是否具备项目经理权限（服务端据此放宽「只能操作自己任务」的限制）。 */
+    private boolean canManage() {
+        var authentication = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "prj.project.write".equals(authority.getAuthority()));
     }
 }

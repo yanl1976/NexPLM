@@ -171,6 +171,78 @@ class ProjectTaskSmokeTest {
         assertThat(depId).isPositive();
     }
 
+    /** P7-3 任务执行闭环：派工 → 接收 → 开始 → 提交 → 打回 → 再提交 → 通过；我的任务按未完成过滤。 */
+    @Test
+    void taskExecutionLoop() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long userId = call(get("/api/v1/auth/me"), admin, null).path("id").asLong();
+        long projectId = createProject(admin, "执行闭环测试项目");
+
+        JsonNode board = call(post("/api/v1/prj/projects/{id}/tasks", projectId), admin,
+                json(task("编制工艺", null, "2026-05-01", "2026-05-10", 0)));
+        long taskId = board.path("tasks").get(0).path("id").asLong();
+        assertThat(board.path("tasks").get(0).path("status").asText()).isEqualTo("NOT_STARTED");
+
+        // 创建时执行人默认落到创建人，派工只是「改派」
+        assertThat(board.path("tasks").get(0).path("ownerId").asLong()).isEqualTo(userId);
+
+        // 派工 → 接收 → 开始
+        JsonNode assigned = call(post("/api/v1/prj/tasks/{id}/assign", taskId), admin,
+                json(Map.of("ownerId", userId)));
+        JsonNode assignedTask = assigned.path("tasks").get(0);
+        assertThat(assignedTask.path("ownerName").asText()).isNotBlank();
+        assertThat(assignedTask.path("assignedAt").asText()).isNotBlank();
+
+        JsonNode accepted = call(post("/api/v1/prj/tasks/{id}/accept", taskId), admin, null);
+        assertThat(accepted.path("tasks").get(0).path("acceptedAt").asText()).isNotBlank();
+
+        JsonNode started = call(post("/api/v1/prj/tasks/{id}/start", taskId), admin, null);
+        assertThat(started.path("tasks").get(0).path("status").asText()).isEqualTo("IN_PROGRESS");
+        assertThat(started.path("tasks").get(0).path("actualStart").asText()).isNotBlank();
+
+        // 提交 → 打回（记录原因）→ 再提交 → 通过
+        JsonNode submitted = call(post("/api/v1/prj/tasks/{id}/submit", taskId), admin,
+                json(Map.of("note", "工艺已编制完成，含 5 道工序")));
+        assertThat(submitted.path("tasks").get(0).path("status").asText()).isEqualTo("SUBMITTED");
+        assertThat(submitted.path("tasks").get(0).path("submitNote").asText()).contains("5 道工序");
+
+        JsonNode rejected = call(post("/api/v1/prj/tasks/{id}/reject", taskId), admin,
+                json(Map.of("reason", "缺少热处理工序")));
+        JsonNode rejectedTask = rejected.path("tasks").get(0);
+        assertThat(rejectedTask.path("status").asText()).isEqualTo("IN_PROGRESS");
+        assertThat(rejectedTask.path("rejectReason").asText()).isEqualTo("缺少热处理工序");
+
+        call(post("/api/v1/prj/tasks/{id}/submit", taskId), admin, json(Map.of("note", "已补热处理")));
+        JsonNode approved = call(post("/api/v1/prj/tasks/{id}/approve", taskId), admin, null);
+        JsonNode approvedTask = approved.path("tasks").get(0);
+        assertThat(approvedTask.path("status").asText()).isEqualTo("DONE");
+        assertThat(approvedTask.path("progress").asInt()).isEqualTo(100);
+        assertThat(approvedTask.path("approvedAt").asText()).isNotBlank();
+        assertThat(approvedTask.path("actualEnd").asText()).isNotBlank();
+        assertThat(approved.path("projectProgress").asInt()).isEqualTo(100);
+
+        // 重复通过 / 对未开始的剧情报错
+        mockMvc.perform(post("/api/v1/prj/tasks/{id}/approve", taskId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isBadRequest());
+
+        JsonNode second = call(post("/api/v1/prj/projects/{id}/tasks", projectId), admin,
+                json(task("编写作业指导书", null, "2026-05-11", "2026-05-20", 0)));
+        long secondId = second.path("tasks").get(1).path("id").asLong();
+        mockMvc.perform(post("/api/v1/prj/tasks/{id}/submit", secondId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("note", "还没开始就提交"))))
+                .andExpect(status().isBadRequest());
+
+        // 我的任务：默认只查未完成（已通过的「编制工艺」不应出现）
+        call(post("/api/v1/prj/tasks/{id}/assign", secondId), admin, json(Map.of("ownerId", userId)));
+        JsonNode myTasks = call(get("/api/v1/prj/my-tasks"), admin, null);
+        assertThat(myTasks.findValuesAsText("name")).contains("编写作业指导书").doesNotContain("编制工艺");
+        assertThat(call(get("/api/v1/prj/my-tasks?status=DONE"), admin, null)
+                .findValuesAsText("name")).contains("编制工艺");
+    }
+
     // ------------------------------------------------------------------ 工具
 
     private Map<String, Object> task(String name, Long parentId, String planStart, String planEnd,

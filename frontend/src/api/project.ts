@@ -102,7 +102,7 @@ export interface ProjectSaveReq {
 // ---------------------------------------------------------------- WBS 任务（P7-2）
 
 export type TaskType = 'TASK' | 'MILESTONE'
-export type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED'
+export type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'SUBMITTED' | 'DONE' | 'BLOCKED'
 
 export const TASK_TYPE_LABEL: Record<string, string> = {
   TASK: '任务',
@@ -112,6 +112,7 @@ export const TASK_TYPE_LABEL: Record<string, string> = {
 export const TASK_STATUS_LABEL: Record<string, string> = {
   NOT_STARTED: '未开始',
   IN_PROGRESS: '进行中',
+  SUBMITTED: '待审核',
   DONE: '已完成',
   BLOCKED: '受阻'
 }
@@ -143,7 +144,29 @@ export interface ProjectTask {
   ownerName?: string | null
   remark?: string | null
   childCount: number
+  /** 执行闭环时间戳（P7-3）：派工 / 接收 / 提交 / 通过。 */
+  assignedAt?: string | null
+  acceptedAt?: string | null
+  submittedAt?: string | null
+  approvedAt?: string | null
+  submitNote?: string | null
+  rejectReason?: string | null
   children?: ProjectTask[]
+}
+
+/** 我的任务行（跨项目平铺）。 */
+export interface MyTaskRow {
+  id: string
+  projectId: string
+  projectCode: string
+  projectName: string
+  wbsCode: string
+  name: string
+  status: TaskStatus
+  planStart?: string | null
+  planEnd?: string | null
+  progress: number
+  ownerName?: string | null
 }
 
 export interface TaskDependency {
@@ -214,6 +237,34 @@ export const taskApi = {
   },
   removeDependency(dependencyId: string): Promise<TaskBoard> {
     return http.delete<TaskBoard>(`/prj/task-dependencies/${dependencyId}`)
+  },
+  /** 派工：把任务交给执行人（项目经理）。 */
+  assign(taskId: string, ownerId: string): Promise<TaskBoard> {
+    return http.post<TaskBoard>(`/prj/tasks/${taskId}/assign`, { ownerId })
+  },
+  /** 接收任务（执行人）。 */
+  accept(taskId: string): Promise<TaskBoard> {
+    return http.post<TaskBoard>(`/prj/tasks/${taskId}/accept`)
+  },
+  /** 开始执行（未开始 → 进行中）。 */
+  start(taskId: string): Promise<TaskBoard> {
+    return http.post<TaskBoard>(`/prj/tasks/${taskId}/start`)
+  },
+  /** 提交审核（进行中 → 已提交）。 */
+  submit(taskId: string, note?: string): Promise<TaskBoard> {
+    return http.post<TaskBoard>(`/prj/tasks/${taskId}/submit`, { note: note ?? null })
+  },
+  /** 审核通过（已提交 → 已完成，进度 100%）。 */
+  approve(taskId: string): Promise<TaskBoard> {
+    return http.post<TaskBoard>(`/prj/tasks/${taskId}/approve`)
+  },
+  /** 打回（已提交 → 进行中，必须写原因）。 */
+  reject(taskId: string, reason: string): Promise<TaskBoard> {
+    return http.post<TaskBoard>(`/prj/tasks/${taskId}/reject`, { reason })
+  },
+  /** 我的任务：默认只查未完成。 */
+  myTasks(status?: string): Promise<MyTaskRow[]> {
+    return http.get<MyTaskRow[]>('/prj/my-tasks', status ? { status } : undefined)
   }
 }
 

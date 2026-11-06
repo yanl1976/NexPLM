@@ -40,8 +40,29 @@
           <el-table-column label="负责人" width="110">
             <template #default="{ row }">{{ row.ownerName || '-' }}</template>
           </el-table-column>
-          <el-table-column v-if="canWrite" label="操作" width="220" fixed="right">
+          <el-table-column label="审核信息" min-width="170" show-overflow-tooltip>
             <template #default="{ row }">
+              <span v-if="row.rejectReason" class="reject-reason">打回：{{ row.rejectReason }}</span>
+              <span v-else-if="row.submitNote" class="sub">提交：{{ row.submitNote }}</span>
+              <span v-else class="sub">-</span>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="canWrite" label="操作" width="360" fixed="right">
+            <template #default="{ row }">
+              <el-button v-if="row.status === 'NOT_STARTED'" link type="success" @click="onStart(row)">开始</el-button>
+              <el-button
+                v-if="row.status === 'IN_PROGRESS' || row.status === 'BLOCKED'"
+                link
+                type="primary"
+                @click="onSubmit(row)"
+              >
+                提交
+              </el-button>
+              <template v-if="row.status === 'SUBMITTED'">
+                <el-button link type="success" @click="onApprove(row)">通过</el-button>
+                <el-button link type="danger" @click="onReject(row)">打回</el-button>
+              </template>
+              <el-button v-if="row.status !== 'DONE'" link type="warning" @click="openAssign(row)">派工</el-button>
               <el-button link type="primary" @click="openCreate(row)">加子任务</el-button>
               <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
               <el-button link type="danger" @click="onDeleteTask(row)">删除</el-button>
@@ -209,6 +230,38 @@
       <template #footer>
         <el-button @click="depDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="depSaving" @click="onSaveDep">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 派工 -->
+    <el-dialog v-model="assignVisible" title="派工（指定执行人）" width="480px" destroy-on-close>
+      <el-form label-width="90px">
+        <el-form-item label="任务">
+          <el-input :model-value="assignTarget ? `${assignTarget.wbsCode} ${assignTarget.name}` : ''" readonly />
+        </el-form-item>
+        <el-form-item label="执行人" required>
+          <el-select
+            v-model="assignOwnerId"
+            filterable
+            remote
+            reserve-keyword
+            placeholder="搜索用户"
+            :remote-method="searchUsers"
+            :loading="usersLoading"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="user in users"
+              :key="user.id"
+              :label="`${user.displayName}（${user.username}）`"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="assignVisible = false">取消</el-button>
+        <el-button type="primary" :loading="assigning" @click="onAssign">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -475,6 +528,108 @@ async function onResequence(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------- 执行闭环（P7-3）
+
+const assignVisible = ref(false)
+const assigning = ref(false)
+const assignTarget = ref<ProjectTask | null>(null)
+const assignOwnerId = ref('')
+
+function openAssign(task: ProjectTask): void {
+  assignTarget.value = task
+  assignOwnerId.value = task.ownerId ?? ''
+  assignVisible.value = true
+  searchUsers('')
+}
+
+async function onAssign(): Promise<void> {
+  if (!assignTarget.value) {
+    return
+  }
+  if (!assignOwnerId.value) {
+    ElMessage.warning('请选择执行人')
+    return
+  }
+  assigning.value = true
+  try {
+    board.value = await taskApi.assign(assignTarget.value.id, assignOwnerId.value)
+    ElMessage.success('已派工')
+    assignVisible.value = false
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '派工失败')
+  } finally {
+    assigning.value = false
+  }
+}
+
+async function onStart(task: ProjectTask): Promise<void> {
+  try {
+    board.value = await taskApi.start(task.id)
+    ElMessage.success('任务已开始')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '开始失败')
+  }
+}
+
+async function onSubmit(task: ProjectTask): Promise<void> {
+  let note = ''
+  try {
+    const result = await ElMessageBox.prompt('提交说明（可留空）', `提交审核 - ${task.name}`, {
+      inputValue: '',
+      confirmButtonText: '提交',
+      cancelButtonText: '取消'
+    })
+    note = (result as { value?: string }).value ?? ''
+  } catch {
+    return
+  }
+  try {
+    board.value = await taskApi.submit(task.id, note || undefined)
+    ElMessage.success('已提交审核')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '提交失败')
+  }
+}
+
+async function onApprove(task: ProjectTask): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`审核通过后任务进度置为 100%，确认通过「${task.name}」？`, '审核通过', {
+      confirmButtonText: '通过',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    board.value = await taskApi.approve(task.id)
+    ElMessage.success('已通过')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '审核失败')
+  }
+}
+
+async function onReject(task: ProjectTask): Promise<void> {
+  let reason = ''
+  try {
+    const result = await ElMessageBox.prompt('打回原因（必填，执行人据此返工）', `打回 - ${task.name}`, {
+      inputValue: '',
+      inputValidator: (value: string) => (value && value.trim() ? true : '请填写打回原因'),
+      confirmButtonText: '打回',
+      cancelButtonText: '取消'
+    })
+    reason = (result as { value?: string }).value?.trim() ?? ''
+  } catch {
+    return
+  }
+  try {
+    board.value = await taskApi.reject(task.id, reason)
+    ElMessage.success('已打回')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '打回失败')
+  }
+}
+
 function openDepCreate(): void {
   depForm.predTaskId = ''
   depForm.succTaskId = ''
@@ -604,5 +759,9 @@ function statusTagType(value: TaskStatus): 'success' | 'info' | 'warning' | 'dan
 .gantt-bar-done {
   height: 100%;
   background: var(--el-color-success);
+}
+
+.reject-reason {
+  color: var(--el-color-danger);
 }
 </style>

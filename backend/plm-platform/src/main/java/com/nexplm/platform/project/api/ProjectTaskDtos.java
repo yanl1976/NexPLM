@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /** P7-2 WBS 任务与依赖 DTO。 */
@@ -22,7 +23,29 @@ public final class ProjectTaskDtos {
                           LocalDate actualStart, LocalDate actualEnd,
                           Integer durationDays, int progress,
                           Long ownerId, String ownerName, String remark, int childCount,
+                          OffsetDateTime assignedAt, OffsetDateTime acceptedAt,
+                          OffsetDateTime submittedAt, OffsetDateTime approvedAt,
+                          String submitNote, String rejectReason,
                           List<TaskRow> children) {
+    }
+
+    /** 派工：把任务交给某个执行人。 */
+    public record TaskAssignReq(@NotNull Long ownerId) {
+    }
+
+    /** 提交审核：可附提交说明。 */
+    public record TaskSubmitReq(@Size(max = 500) String note) {
+    }
+
+    /** 打回：必须写清原因，执行人据此返工。 */
+    public record TaskRejectReq(@NotBlank @Size(max = 500) String reason) {
+    }
+
+    /** 我的任务（跨项目平铺，带项目编码/名称便于直接跳转）。 */
+    public record MyTaskRow(Long id, Long projectId, String projectCode, String projectName,
+                            String wbsCode, String name, String status,
+                            LocalDate planStart, LocalDate planEnd, int progress,
+                            String ownerName) {
     }
 
     /**
