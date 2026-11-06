@@ -50,7 +50,7 @@ public class AuthService {
         update.setId(user.getId());
         update.setLastLoginAt(OffsetDateTime.now());
         userMapper.updateById(update);
-        return buildToken(user);
+        return issueToken(user);
     }
 
     public AuthDtos.TokenResp refresh(String refreshToken) {
@@ -59,7 +59,7 @@ public class AuthService {
         if (user == null || !"ACTIVE".equals(user.getStatus())) {
             throw BizException.of(ErrorCode.AUTH_REFRESH_INVALID);
         }
-        return buildToken(user);
+        return issueToken(user);
     }
 
     public AuthDtos.UserBrief currentUser(UserPrincipal principal) {
@@ -72,7 +72,8 @@ public class AuthService {
                 user.getCompanyId(), principal.roles(), permissions, Boolean.TRUE.equals(user.getMustChangePwd()));
     }
 
-    private AuthDtos.TokenResp buildToken(SysUser user) {
+    /** 为已确认身份的账号签发本站令牌（本地登录、刷新、SSO 共用同一出口）。 */
+    public AuthDtos.TokenResp issueToken(SysUser user) {
         String access = jwtService.issueAccessToken(user.getId(), user.getUsername(), user.getCompanyId());
         String refresh = jwtService.issueRefreshToken(user.getId(), user.getUsername(), user.getCompanyId());
         List<String> roles = userMapper.selectRoleCodes(user.getId());

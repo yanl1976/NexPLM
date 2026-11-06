@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { authApi, type UserBrief } from '@/api/auth'
+import { authApi, type TokenResponse, type UserBrief } from '@/api/auth'
 import { clearTokens, getAccessToken, setTokens } from '@/api/http'
 
 export const useUserStore = defineStore('user', () => {
@@ -11,7 +11,11 @@ export const useUserStore = defineStore('user', () => {
   const displayName = computed(() => user.value?.displayName ?? '未登录')
 
   async function login(username: string, password: string): Promise<void> {
-    const res = await authApi.login(username, password)
+    applyToken(await authApi.login(username, password))
+  }
+
+  /** 本地登录与 SSO 回调共用：拿到后端签发的令牌后统一落盘并刷权限。 */
+  function applyToken(res: TokenResponse): void {
     setTokens(res.accessToken, res.refreshToken)
     user.value = res.user
     permissions.value = new Set(res.user.permissions)
@@ -33,5 +37,5 @@ export const useUserStore = defineStore('user', () => {
     return permissions.value.has(permission)
   }
 
-  return { user, permissions, isLoggedIn, displayName, login, loadMe, logout, can }
+  return { user, permissions, isLoggedIn, displayName, login, applyToken, loadMe, logout, can }
 })

@@ -17,6 +17,7 @@
           <el-menu-item index="/system/role">角色与授权</el-menu-item>
           <el-menu-item index="/system/meta">元数据建模</el-menu-item>
           <el-menu-item index="/system/security">安全策略</el-menu-item>
+          <el-menu-item index="/system/sso">单点登录</el-menu-item>
           <el-menu-item index="/system/lifecycle">生命周期</el-menu-item>
         </el-sub-menu>
         <el-sub-menu index="/doc-center">

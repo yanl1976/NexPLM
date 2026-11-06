@@ -260,6 +260,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '安全策略' }
       },
       {
+        path: 'system/sso',
+        name: 'system-sso',
+        component: () => import('@/views/system/SsoView.vue'),
+        meta: { title: '单点登录' }
+      },
+      {
         path: 'system/lifecycle',
         name: 'system-lifecycle',
         component: () => import('@/views/system/LifecycleView.vue'),
