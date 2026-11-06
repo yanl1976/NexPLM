@@ -20,6 +20,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '概览' }
       },
       {
+        path: 'report/dashboard',
+        name: 'report-dashboard',
+        component: () => import('@/views/report/DashboardView.vue'),
+        meta: { title: '统计看板' }
+      },
+      {
         path: 'item',
         name: 'item-list',
         component: () => import('@/views/item/ItemListView.vue'),

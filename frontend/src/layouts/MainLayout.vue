@@ -7,6 +7,10 @@
           <el-icon><HomeFilled /></el-icon>
           <span>概览</span>
         </el-menu-item>
+        <el-menu-item v-if="canReadDashboard" index="/report/dashboard">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>统计看板</span>
+        </el-menu-item>
         <el-sub-menu index="/system">
           <template #title>
             <el-icon><Setting /></el-icon>
@@ -126,6 +130,7 @@ import {
   Calendar,
   Checked,
   Connection,
+  DataAnalysis,
   Document,
   HomeFilled,
   OfficeBuilding,
@@ -142,6 +147,7 @@ const userStore = useUserStore()
 
 const canManageWorkflow = computed(() => userStore.can('wf.process.manage'))
 const canReadNotify = computed(() => userStore.can('sys.notify.read'))
+const canReadDashboard = computed(() => userStore.can('ana.dashboard.read'))
 
 const activeMenu = computed(() => {
   if (route.path === '/doc/class') {
