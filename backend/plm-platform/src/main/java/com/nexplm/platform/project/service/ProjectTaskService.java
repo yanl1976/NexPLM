@@ -41,9 +41,13 @@ public class ProjectTaskService {
     private static final Set<String> DEP_TYPES = Set.of("FS", "SS", "FF", "SF");
 
     private final JdbcTemplate jdbcTemplate;
+    /** 提交审核前的交付物齐套守卫（P7-4，只查表不反向依赖 TaskService，无循环依赖）。 */
+    private final ProjectDeliverableService deliverableService;
 
-    public ProjectTaskService(JdbcTemplate jdbcTemplate) {
+    public ProjectTaskService(JdbcTemplate jdbcTemplate,
+                              ProjectDeliverableService deliverableService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.deliverableService = deliverableService;
     }
 
     // ---------------------------------------------------------------- 查询
@@ -468,6 +472,8 @@ public class ProjectTaskService {
         if (!Set.of("IN_PROGRESS", "BLOCKED").contains(status)) {
             throw BizException.of(ErrorCode.PRJ_TASK_INVALID, "当前状态不能提交审核：" + status);
         }
+        // 齐套守卫：只有声明了必需输出交付物才校验（未声明 = 无要求，直接放行）
+        deliverableService.assertOutputsReady(taskId, companyId);
         jdbcTemplate.update("""
                         UPDATE prj_task
                            SET status = 'SUBMITTED', submitted_at = now(), submit_note = ?,

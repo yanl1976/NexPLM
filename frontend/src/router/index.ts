@@ -146,6 +146,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'WBS 任务' }
       },
       {
+        path: 'project/:id/deliverables',
+        name: 'project-deliverables',
+        component: () => import('@/views/project/ProjectDeliverableView.vue'),
+        meta: { title: '交付物与齐套' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),

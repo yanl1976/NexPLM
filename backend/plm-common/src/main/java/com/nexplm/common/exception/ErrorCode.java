@@ -79,7 +79,10 @@ public enum ErrorCode {
     PRJ_TASK_NOT_FOUND("PRJ.TASK.NOT_FOUND", "任务不存在", 404),
     PRJ_TASK_INVALID("PRJ.TASK.INVALID", "任务参数不合法", 400),
     PRJ_TASK_IN_USE("PRJ.TASK.IN_USE", "任务下还有子任务，不能删除", 409),
-    PRJ_TASK_DEP_INVALID("PRJ.TASK_DEP.INVALID", "任务依赖不合法", 400);
+    PRJ_TASK_DEP_INVALID("PRJ.TASK_DEP.INVALID", "任务依赖不合法", 400),
+    PRJ_DELIVERABLE_NOT_FOUND("PRJ.DELIVERABLE.NOT_FOUND", "任务交付物不存在", 404),
+    PRJ_DELIVERABLE_INVALID("PRJ.DELIVERABLE.INVALID", "任务交付物不合法", 400),
+    PRJ_DELIVERABLE_INCOMPLETE("PRJ.DELIVERABLE.INCOMPLETE", "任务必需交付物未齐套", 409);
 
     private final String code;
     private final String message;

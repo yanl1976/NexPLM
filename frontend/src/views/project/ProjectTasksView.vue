@@ -6,6 +6,7 @@
       <el-tag type="success" size="small">项目进度 {{ board?.projectProgress ?? 0 }}%</el-tag>
       <el-button v-if="canWrite" type="primary" plain @click="openCreate(null)">新增一级任务</el-button>
       <el-button v-if="canWrite" :loading="resequencing" @click="onResequence">WBS 编码重排</el-button>
+      <el-button type="success" plain @click="openDeliverables">交付物与齐套</el-button>
       <span class="hint">项目进度 = 叶子任务按工期加权汇总（父任务不重复计数）</span>
     </div>
 
@@ -408,6 +409,10 @@ async function load(): Promise<void> {
 
 function back(): void {
   router.push('/project')
+}
+
+function openDeliverables(): void {
+  router.push(`/project/${projectId}/deliverables`)
 }
 
 async function searchUsers(keywordText: string): Promise<void> {

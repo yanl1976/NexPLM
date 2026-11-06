@@ -283,6 +283,119 @@ export const epsApi = {
   }
 }
 
+// ---------------------------------------------------------------- 交付物与齐套（P7-4）
+
+export type DeliverableObjectType = 'DOC' | 'ITEM' | 'CAPP_CARD'
+export type DeliverableOutputType = 'INPUT' | 'OUTPUT'
+
+export const DELIVERABLE_OBJECT_LABEL: Record<string, string> = {
+  DOC: '图文档',
+  ITEM: '零部件',
+  CAPP_CARD: '工艺卡片'
+}
+
+export const DELIVERABLE_OUTPUT_LABEL: Record<string, string> = {
+  INPUT: '输入',
+  OUTPUT: '输出'
+}
+
+/** 对象状态：未发布只提醒，缺失/废弃才拦提交。 */
+export const DELIVERABLE_STATE_LABEL: Record<string, string> = {
+  OK: '可用',
+  UNRELEASED: '未发布',
+  MISSING: '缺失',
+  OBSOLETE: '已废弃'
+}
+
+export interface DeliverableRow {
+  id: string
+  taskId: string
+  taskWbsCode?: string | null
+  taskName?: string | null
+  outputType: DeliverableOutputType
+  objectType: DeliverableObjectType
+  objectId: string
+  code?: string | null
+  name?: string | null
+  lifecycleState?: string | null
+  state: 'OK' | 'UNRELEASED' | 'MISSING' | 'OBSOLETE'
+  required: boolean
+  ready: boolean
+  remark?: string | null
+}
+
+/** 任务齐套行：items 含输入与输出全部交付物。 */
+export interface TaskCompleteness {
+  taskId: string
+  wbsCode: string
+  taskName: string
+  status: TaskStatus
+  requiredCount: number
+  readyCount: number
+  missingCount: number
+  unreleasedCount: number
+  ready: boolean
+  items: DeliverableRow[]
+}
+
+export interface DeliverableBoard {
+  projectId: string
+  projectCode: string
+  projectName: string
+  requiredTotal: number
+  readyTotal: number
+  missingTotal: number
+  unreleasedTotal: number
+  /** 只把「必需输出缺失/废弃」当不齐套，未发布不算失败。 */
+  ready: boolean
+  tasks: TaskCompleteness[]
+}
+
+export interface DeliverableCandidate {
+  objectType: DeliverableObjectType
+  objectId: string
+  code: string
+  name?: string | null
+  lifecycleState?: string | null
+}
+
+export interface DeliverableSaveReq {
+  objectType: DeliverableObjectType
+  objectId: string
+  outputType?: DeliverableOutputType
+  required?: boolean
+  remark?: string | null
+}
+
+export interface DeliverableUpdateReq {
+  outputType?: DeliverableOutputType
+  required?: boolean
+  remark?: string | null
+}
+
+export const deliverableApi = {
+  board(projectId: string): Promise<DeliverableBoard> {
+    return http.get<DeliverableBoard>(`/prj/projects/${projectId}/deliverables`)
+  },
+  add(taskId: string, req: DeliverableSaveReq): Promise<DeliverableBoard> {
+    return http.post<DeliverableBoard>(`/prj/tasks/${taskId}/deliverables`, req)
+  },
+  update(outputId: string, req: DeliverableUpdateReq): Promise<DeliverableBoard> {
+    return http.put<DeliverableBoard>(`/prj/deliverables/${outputId}`, req)
+  },
+  remove(outputId: string): Promise<DeliverableBoard> {
+    return http.delete<DeliverableBoard>(`/prj/deliverables/${outputId}`)
+  },
+  /** 可选对象：只列文档/零部件最新版本与工艺卡片。 */
+  candidates(objectType: DeliverableObjectType, keyword?: string, limit?: number): Promise<DeliverableCandidate[]> {
+    return http.get<DeliverableCandidate[]>('/prj/deliverable-candidates', {
+      objectType,
+      keyword: keyword || undefined,
+      limit
+    })
+  }
+}
+
 export const projectApi = {
   list(params: {
     page?: number
