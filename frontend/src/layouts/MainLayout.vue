@@ -78,6 +78,8 @@
             <span>质量与体系</span>
           </template>
           <el-menu-item index="/quality/issues">质量问题</el-menu-item>
+          <el-menu-item index="/quality/templates">8D 模板</el-menu-item>
+          <el-menu-item index="/quality/dashboard">质量看板</el-menu-item>
         </el-sub-menu>
       </el-menu>
     </el-aside>

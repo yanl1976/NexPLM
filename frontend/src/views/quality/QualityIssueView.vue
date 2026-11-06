@@ -89,6 +89,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="登记人">{{ detail.issue.reportedByName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="关联对象" :span="2">{{ detail.issue.objectCode || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="8D 模板" :span="2">{{ detail.issue.templateCode || '未应用' }}</el-descriptions-item>
           <el-descriptions-item label="验证意见" :span="2">{{ detail.issue.verifyNote || '-' }}</el-descriptions-item>
         </el-descriptions>
 
@@ -122,6 +123,11 @@
             plain
             @click="openAddAction"
           >新增措施</el-button>
+          <el-button
+            v-if="canWrite && !['CLOSED', 'VERIFYING'].includes(detail.issue.status)"
+            size="small"
+            @click="openApplyTemplate"
+          >应用 8D 模板</el-button>
         </div>
 
         <div v-for="round in rounds" :key="round.roundNo" class="round-block">
@@ -229,6 +235,48 @@
         <el-button type="primary" :loading="actionSaving" @click="onAddAction">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 应用 8D 模板 -->
+    <el-dialog v-model="templateVisible" title="应用 8D 模板" width="680px">
+      <el-form label-width="90px">
+        <el-form-item label="模板" required>
+          <el-select
+            v-model="templateId"
+            filterable
+            placeholder="选择启用的模板"
+            style="width: 100%"
+            @change="onTemplateChange"
+          >
+            <el-option
+              v-for="item in templates"
+              :key="item.id"
+              :label="`${item.code} ${item.name}（${item.itemCount} 步）`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="应用后会在本轮生成对应数量的措施（内容预填模板提示语），再逐条补实际内容；同一轮只能应用同一模板一次。"
+      />
+      <el-table v-if="templateDetail" :data="templateDetail.items" border size="small" class="template-table">
+        <el-table-column prop="itemCode" label="编号" width="70" />
+        <el-table-column prop="name" label="步骤" min-width="150" show-overflow-tooltip />
+        <el-table-column label="措施类型" width="110">
+          <template #default="{ row }">{{ ACTION_TYPE_LABEL[row.actionType] ?? row.actionType }}</template>
+        </el-table-column>
+        <el-table-column prop="prompt" label="预填提示语" min-width="200" show-overflow-tooltip />
+      </el-table>
+      <template #footer>
+        <el-button @click="templateVisible = false">取消</el-button>
+        <el-button type="primary" :loading="applying" :disabled="!templateId" @click="onApplyTemplate">
+          应用并生成措施
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -237,6 +285,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   qualityIssueApi,
+  qualityTemplateApi,
   ACTION_TYPE_LABEL,
   ISSUE_SEVERITY_LABEL,
   ISSUE_SOURCE_LABEL,
@@ -245,7 +294,9 @@ import {
   type IssueDetail,
   type IssueRow,
   type IssueSeverity,
-  type IssueStatus
+  type IssueStatus,
+  type TemplateDetail,
+  type TemplateRow
 } from '@/api/quality'
 import { workflowApi, type ActorUserRow } from '@/api/workflow'
 import { useUserStore } from '@/stores/user'
@@ -306,6 +357,13 @@ const actionForm = reactive<{ actionType: string; content: string; ownerId: stri
   ownerId: null,
   dueDate: null
 })
+
+/** 应用 8D 模板：模板只给启用的，选中后先预览步骤再确认。 */
+const templateVisible = ref(false)
+const applying = ref(false)
+const templates = ref<TemplateRow[]>([])
+const templateId = ref('')
+const templateDetail = ref<TemplateDetail | null>(null)
 
 /** 按轮次分组（后端已按 round_no 排序）。 */
 const rounds = computed(() => {
@@ -467,6 +525,52 @@ async function onAddAction(): Promise<void> {
   }
 }
 
+async function openApplyTemplate(): Promise<void> {
+  if (!templates.value.length) {
+    try {
+      templates.value = (await qualityTemplateApi.page({ enabled: true, size: 100 })).items
+    } catch {
+      templates.value = []
+    }
+  }
+  if (!templates.value.length) {
+    ElMessage.warning('还没有启用的 8D 模板，请先到「8D 模板」页配置')
+    return
+  }
+  templateId.value = ''
+  templateDetail.value = null
+  templateVisible.value = true
+}
+
+async function onTemplateChange(value: string): Promise<void> {
+  templateDetail.value = null
+  if (!value) {
+    return
+  }
+  try {
+    templateDetail.value = await qualityTemplateApi.detail(value)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载模板失败')
+  }
+}
+
+async function onApplyTemplate(): Promise<void> {
+  if (!detail.value || !templateId.value) {
+    return
+  }
+  applying.value = true
+  try {
+    detail.value = await qualityIssueApi.applyTemplate(detail.value.issue.id, templateId.value)
+    templateVisible.value = false
+    ElMessage.success('已按模板生成本轮措施')
+    await reload()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '应用模板失败')
+  } finally {
+    applying.value = false
+  }
+}
+
 async function onToggle(item: IssueActionRow, done: boolean): Promise<void> {
   if (!detail.value) {
     return
@@ -624,6 +728,10 @@ function severityType(value: IssueSeverity): 'success' | 'info' | 'warning' | 'd
 .label-gap {
   margin: 0 8px;
   color: #606266;
+}
+
+.template-table {
+  margin-top: 12px;
 }
 
 .pager {

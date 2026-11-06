@@ -188,6 +188,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '质量问题' }
       },
       {
+        path: 'quality/templates',
+        name: 'quality-templates',
+        component: () => import('@/views/quality/QualityTemplateView.vue'),
+        meta: { title: '8D 模板' }
+      },
+      {
+        path: 'quality/dashboard',
+        name: 'quality-dashboard',
+        component: () => import('@/views/quality/QualityDashboardView.vue'),
+        meta: { title: '质量看板' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),

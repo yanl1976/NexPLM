@@ -50,6 +50,9 @@ export interface IssueRow {
   objectCode?: string | null
   projectId?: string | null
   supplierId?: string | null
+  /** 最近一次应用的 8D 模板（仅追溯用，删除模板不影响已生成措施）。 */
+  templateId?: string | null
+  templateCode?: string | null
   ownerId?: string | null
   ownerName?: string | null
   reportedByName?: string | null
@@ -104,6 +107,135 @@ export interface ActionSaveReq {
   dueDate?: string | null
 }
 
+/* ------------------------------------------------------------ P8-2 8D 模板 */
+
+export type TemplateType = '8D' | 'CUSTOM'
+
+export const TEMPLATE_TYPE_LABEL: Record<string, string> = {
+  '8D': '8D 八步法',
+  CUSTOM: '企业自定义'
+}
+
+export interface TemplateItemRow {
+  id: string
+  itemCode: string
+  name: string
+  actionType: ActionType
+  prompt?: string | null
+  required: boolean
+  sortNo: number
+}
+
+export interface TemplateRow {
+  id: string
+  code: string
+  name: string
+  templateType: string
+  enabled: boolean
+  remark?: string | null
+  /** 步骤数量，列表直接看模板厚薄。 */
+  itemCount: number
+  updatedAt?: string | null
+}
+
+export interface TemplateDetail {
+  id: string
+  code: string
+  name: string
+  templateType: string
+  enabled: boolean
+  remark?: string | null
+  items: TemplateItemRow[]
+}
+
+export interface TemplateSaveReq {
+  name: string
+  templateType?: string
+  enabled?: boolean
+  remark?: string | null
+}
+
+export interface TemplateItemSaveReq {
+  itemCode: string
+  name: string
+  actionType?: string
+  prompt?: string | null
+  required?: boolean
+  sortNo?: number
+}
+
+export const qualityTemplateApi = {
+  page(params: {
+    keyword?: string
+    enabled?: boolean
+    page?: number
+    size?: number
+  }) {
+    return http.get<{ items: TemplateRow[]; total: number; page: number; size: number }>(
+      '/qlt/templates',
+      params
+    )
+  },
+  detail(id: string): Promise<TemplateDetail> {
+    return http.get<TemplateDetail>(`/qlt/templates/${id}`)
+  },
+  create(req: TemplateSaveReq): Promise<TemplateDetail> {
+    return http.post<TemplateDetail>('/qlt/templates', req)
+  },
+  update(id: string, req: TemplateSaveReq): Promise<TemplateDetail> {
+    return http.put<TemplateDetail>(`/qlt/templates/${id}`, req)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/qlt/templates/${id}`)
+  },
+  /** 整表替换步骤（先删后插），顺序即执行顺序。 */
+  replaceItems(id: string, items: TemplateItemSaveReq[]): Promise<TemplateDetail> {
+    return http.put<TemplateDetail>(`/qlt/templates/${id}/items`, { items })
+  }
+}
+
+/* ------------------------------------------------------------ P8-2 质量看板 */
+
+export interface CountRow {
+  key: string
+  count: number
+}
+
+export interface TrendRow {
+  /** yyyy-MM */
+  month: string
+  created: number
+  closed: number
+}
+
+export interface OwnerLoadRow {
+  ownerId: string
+  ownerName?: string | null
+  openCount: number
+  overdueCount: number
+}
+
+export interface QualityDashboard {
+  total: number
+  open: number
+  closed: number
+  /** 关闭率（%），全量快照口径，不随期间变化。 */
+  closedRate: number
+  overdue: number
+  avgCloseDays: number
+  byStatus: CountRow[]
+  bySource: CountRow[]
+  bySeverity: CountRow[]
+  trend: TrendRow[]
+  topOwners: OwnerLoadRow[]
+}
+
+export const qualityDashboardApi = {
+  get(params?: { from?: string; to?: string }): Promise<QualityDashboard> {
+    return http.get<QualityDashboard>('/qlt/dashboard', params)
+  }
+}
+
 export const qualityIssueApi = {
   page(params: {
     keyword?: string
@@ -148,5 +280,9 @@ export const qualityIssueApi = {
   /** 验证：不通过会退回整改并开启下一轮。 */
   verify(id: string, passed: boolean, note?: string | null): Promise<IssueDetail> {
     return http.post<IssueDetail>(`/qlt/issues/${id}/verify`, { passed, note })
+  },
+  /** 应用 8D 模板：按步骤批量生成当前轮措施（同一轮同一模板只允许一次）。 */
+  applyTemplate(id: string, templateId: string): Promise<IssueDetail> {
+    return http.post<IssueDetail>(`/qlt/issues/${id}/apply-template`, { templateId })
   }
 }
