@@ -396,6 +396,159 @@ export const deliverableApi = {
   }
 }
 
+// ---------------------------------------------------------------- 工时填报与审批（P7-5）
+
+export type TimesheetStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED'
+export type TimesheetWorkType = 'NORMAL' | 'OVERTIME'
+
+export const TIMESHEET_STATUS_LABEL: Record<string, string> = {
+  DRAFT: '草稿',
+  SUBMITTED: '待审批',
+  APPROVED: '已通过',
+  REJECTED: '已打回'
+}
+
+export const TIMESHEET_WORK_TYPE_LABEL: Record<string, string> = {
+  NORMAL: '正常',
+  OVERTIME: '加班'
+}
+
+export interface TimesheetRow {
+  id: string
+  projectId: string
+  projectCode?: string | null
+  projectName?: string | null
+  taskId: string
+  taskWbsCode?: string | null
+  taskName?: string | null
+  userId: string
+  userName?: string | null
+  workDate: string
+  hours: number
+  workType: TimesheetWorkType
+  status: TimesheetStatus
+  remark?: string | null
+  submittedAt?: string | null
+  approverName?: string | null
+  approvedAt?: string | null
+  rejectReason?: string | null
+  createdAt?: string | null
+}
+
+export interface TimesheetPage {
+  items: TimesheetRow[]
+  total: number
+  page: number
+  size: number
+  totalHours: number
+}
+
+/** 填报入参：projectId 由服务端从任务反查，前端不用传。 */
+export interface TimesheetSaveReq {
+  taskId: string
+  workDate: string
+  hours: number
+  workType?: TimesheetWorkType
+  remark?: string | null
+}
+
+export interface UserHoursRow {
+  userId: string
+  userName?: string | null
+  approvedHours: number
+  pendingHours: number
+}
+
+export interface TaskHoursRow {
+  taskId: string
+  wbsCode?: string | null
+  taskName?: string | null
+  approvedHours: number
+  pendingHours: number
+}
+
+export interface WeekHoursRow {
+  weekStart: string
+  approvedHours: number
+}
+
+/** 汇总口径：实际工时只认 APPROVED，SUBMITTED 单列待审批。 */
+export interface TimesheetSummary {
+  projectId: string
+  projectCode?: string | null
+  projectName?: string | null
+  from: string
+  to: string
+  approvedHours: number
+  pendingHours: number
+  rejectedHours: number
+  approvedCount: number
+  pendingCount: number
+  byUser: UserHoursRow[]
+  byTask: TaskHoursRow[]
+  byWeek: WeekHoursRow[]
+}
+
+export interface ResourceLoadRow {
+  userId: string
+  userName?: string | null
+  approvedHours: number
+  weeks: WeekHoursRow[]
+}
+
+export interface ResourceLoad {
+  projectId: string
+  from: string
+  to: string
+  weekCount: number
+  /** 周容量 = 周数 × 40h（不接节假日日历，P7-7 再做真日历）。 */
+  capacityHours: number
+  rows: ResourceLoadRow[]
+}
+
+export const timesheetApi = {
+  /** 工时列表：没有 prj.project.write 的人只会拿到自己的。 */
+  page(params: {
+    projectId?: string
+    userId?: string
+    taskId?: string
+    status?: string
+    from?: string
+    to?: string
+    page?: number
+    size?: number
+  }): Promise<TimesheetPage> {
+    return http.get<TimesheetPage>('/prj/timesheets', params)
+  },
+  create(req: TimesheetSaveReq): Promise<TimesheetRow> {
+    return http.post<TimesheetRow>('/prj/timesheets', req)
+  },
+  update(id: string, req: TimesheetSaveReq): Promise<TimesheetRow> {
+    return http.put<TimesheetRow>(`/prj/timesheets/${id}`, req)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/prj/timesheets/${id}`)
+  },
+  submit(id: string): Promise<TimesheetRow> {
+    return http.post<TimesheetRow>(`/prj/timesheets/${id}/submit`)
+  },
+  approve(id: string): Promise<TimesheetRow> {
+    return http.post<TimesheetRow>(`/prj/timesheets/${id}/approve`)
+  },
+  batchApprove(ids: string[]): Promise<{ approved: number }> {
+    return http.post<{ approved: number }>('/prj/timesheets/batch-approve', { ids })
+  },
+  reject(id: string, reason: string): Promise<TimesheetRow> {
+    return http.post<TimesheetRow>(`/prj/timesheets/${id}/reject`, { reason })
+  },
+  summary(projectId: string, from?: string, to?: string): Promise<TimesheetSummary> {
+    return http.get<TimesheetSummary>(`/prj/projects/${projectId}/timesheet-summary`, { from, to })
+  },
+  resourceLoad(projectId: string, from?: string, to?: string): Promise<ResourceLoad> {
+    return http.get<ResourceLoad>(`/prj/projects/${projectId}/resource-load`, { from, to })
+  }
+}
+
 export const projectApi = {
   list(params: {
     page?: number

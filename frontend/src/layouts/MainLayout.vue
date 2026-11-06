@@ -68,6 +68,7 @@
           </template>
           <el-menu-item index="/project">项目列表</el-menu-item>
           <el-menu-item index="/project/my-tasks">我的任务</el-menu-item>
+          <el-menu-item index="/project/my-timesheets">我的工时</el-menu-item>
         </el-sub-menu>
       </el-menu>
     </el-aside>

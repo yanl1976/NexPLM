@@ -140,6 +140,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '我的任务' }
       },
       {
+        path: 'project/my-timesheets',
+        name: 'project-my-timesheets',
+        component: () => import('@/views/project/MyTimesheetsView.vue'),
+        meta: { title: '我的工时' }
+      },
+      {
         path: 'project/:id/tasks',
         name: 'project-tasks',
         component: () => import('@/views/project/ProjectTasksView.vue'),
@@ -150,6 +156,12 @@ const routes: RouteRecordRaw[] = [
         name: 'project-deliverables',
         component: () => import('@/views/project/ProjectDeliverableView.vue'),
         meta: { title: '交付物与齐套' }
+      },
+      {
+        path: 'project/:id/timesheets',
+        name: 'project-timesheets',
+        component: () => import('@/views/project/ProjectTimesheetsView.vue'),
+        meta: { title: '项目工时' }
       },
       {
         path: 'system/org',
