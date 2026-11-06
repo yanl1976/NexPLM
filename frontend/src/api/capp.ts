@@ -392,6 +392,11 @@ export const cardApi = {
   async exportExcel(id: string): Promise<void> {
     const { blob, fileName } = await downloadFile(`/capp/cards/${id}/export`)
     saveBlob(blob, fileName)
+  },
+  /** 导出 PDF（后端嵌入中文字体，版式与 xlsx 同源）。 */
+  async exportPdf(id: string): Promise<void> {
+    const { blob, fileName } = await downloadFile(`/capp/cards/${id}/export.pdf`)
+    saveBlob(blob, fileName)
   }
 }
 

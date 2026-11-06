@@ -45,6 +45,7 @@
             <template #default="{ row }">
               <el-button link type="primary" @click="openPreview(row)">预览</el-button>
               <el-button link type="primary" @click="onExport(row)">导出 Excel</el-button>
+              <el-button link type="primary" @click="onExportPdf(row)">导出 PDF</el-button>
               <el-button v-if="canWrite" link type="warning" @click="onRegenerate(row)">重新生成</el-button>
               <el-button v-if="canWrite" link type="danger" @click="onDeleteCard(row)">删除</el-button>
             </template>
@@ -318,7 +319,8 @@
       </div>
       <template #footer>
         <el-button @click="previewVisible = false">关闭</el-button>
-        <el-button v-if="previewCard" type="primary" @click="onExport(previewCard)">导出 Excel</el-button>
+        <el-button v-if="previewCard" @click="onExport(previewCard)">导出 Excel</el-button>
+        <el-button v-if="previewCard" type="primary" @click="onExportPdf(previewCard)">导出 PDF</el-button>
       </template>
     </el-dialog>
   </div>
@@ -545,6 +547,14 @@ async function onExport(row: CappCardRow): Promise<void> {
     await cardApi.exportExcel(row.id)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '导出失败')
+  }
+}
+
+async function onExportPdf(row: CappCardRow): Promise<void> {
+  try {
+    await cardApi.exportPdf(row.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出 PDF 失败')
   }
 }
 

@@ -4,6 +4,7 @@ import com.nexplm.common.api.PageResult;
 import com.nexplm.common.api.Result;
 import com.nexplm.common.audit.Audit;
 import com.nexplm.platform.capp.service.CappCardExcelService;
+import com.nexplm.platform.capp.service.CappCardPdfService;
 import com.nexplm.platform.capp.service.CappCardService;
 import com.nexplm.platform.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,10 +34,13 @@ public class CappCardController {
 
     private final CappCardService cardService;
     private final CappCardExcelService excelService;
+    private final CappCardPdfService pdfService;
 
-    public CappCardController(CappCardService cardService, CappCardExcelService excelService) {
+    public CappCardController(CappCardService cardService, CappCardExcelService excelService,
+                              CappCardPdfService pdfService) {
         this.cardService = cardService;
         this.excelService = excelService;
+        this.pdfService = pdfService;
     }
 
     @Operation(summary = "可用变量字典（明细列 / 表头字段 / 卡片类型），供模板编辑器选择")
@@ -174,6 +178,19 @@ public class CappCardController {
                         "attachment; filename=\"card-" + card.code() + ".xlsx\"")
                 .contentType(MediaType.parseMediaType(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(content);
+    }
+
+    @Operation(summary = "导出工艺卡片 PDF（嵌入中文字体；字体路径 nexplm.capp.pdf.font-path）")
+    @GetMapping("/capp/cards/{id}/export.pdf")
+    @PreAuthorize("hasAuthority('capp.card.read')")
+    public ResponseEntity<byte[]> exportPdf(@PathVariable Long id) {
+        CappCardDtos.CardDetail card = cardService.card(id, CurrentUser.companyId());
+        byte[] content = pdfService.export(card);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"card-" + card.code() + ".pdf\"")
+                .contentType(MediaType.APPLICATION_PDF)
                 .body(content);
     }
 }

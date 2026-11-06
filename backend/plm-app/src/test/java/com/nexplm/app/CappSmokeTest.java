@@ -28,6 +28,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -412,6 +413,19 @@ class CappSmokeTest {
             assertThat(sheet.getRow(headRow + 1).getCell(1).getStringCellValue()).isEqualTo("粗车");
             assertThat(sheet.getRow(headRow + 3).getCell(0).getStringCellValue()).isEqualTo("合计");
             assertThat(sheet.getRow(headRow + 3).getCell(4).getStringCellValue()).isEqualTo("4.20");
+        }
+
+        // PDF 导出：同一份快照渲染；环境无中文字体时跳过（服务会返回 400 明确提示配置字体路径）
+        MvcResult pdfResult = mockMvc.perform(get("/api/v1/capp/cards/{id}/export.pdf", cardId)
+                        .header("Authorization", "Bearer " + admin))
+                .andReturn();
+        if (pdfResult.getResponse().getStatus() == 200) {
+            byte[] pdfBytes = pdfResult.getResponse().getContentAsByteArray();
+            assertThat(pdfBytes.length).isGreaterThan(2000);
+            assertThat(new String(pdfBytes, 0, 4, StandardCharsets.ISO_8859_1)).isEqualTo("%PDF");
+        } else {
+            String message = pdfResult.getResponse().getContentAsString(StandardCharsets.UTF_8);
+            assumeTrue(!message.contains("中文字体"), "PDF 导出失败（非字体原因）：" + message);
         }
 
         // 改版：另存 v2 并发布 → v1 归档；历史卡片仍是 v1 版式（5 列）

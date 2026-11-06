@@ -47,3 +47,9 @@ npm run dev      # http://localhost:5173 ，/api 已代理到 8080
 3. 前置 Nginx 终止 TLS，开启 `X-Forwarded-For` 透传与限流；
 4. MinIO 使用纠删码集群（≥4 节点），桶 `plm-vault` 需提前创建并设置版本化；
 5. 备份：PostgreSQL `pg_basebackup` + WAL 归档；MinIO 站点复制；备份恢复每季度演练一次。
+6. **中文字体（工艺卡片 PDF 导出必需）**：PDF 必须嵌入中文字体，否则在其它机器上显示为方块。
+   镜像内安装字体（如 `fonts-noto-cjk`）或把 `.ttf` / `.ttc` 挂载进容器，然后用
+   `NEXPLM_CAPP_PDF_FONT_PATH`（对应配置 `nexplm.capp.pdf.font-path`）指定路径；
+   `.ttc` 需带索引，形如 `/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc,0`。
+   未配置时后端会按 Windows/Linux 常见路径探测；都找不到则导出接口返回 400 并提示配置该项
+   （不会生成乱码 PDF）。
