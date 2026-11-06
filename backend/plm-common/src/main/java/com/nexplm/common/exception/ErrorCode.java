@@ -92,7 +92,11 @@ public enum ErrorCode {
     QLT_ISSUE_INVALID("QLT.ISSUE.INVALID", "质量问题数据不合法", 400),
     QLT_ISSUE_STATE_INVALID("QLT.ISSUE.STATE.INVALID", "当前质量问题状态不允许该操作", 409),
     QLT_TEMPLATE_NOT_FOUND("QLT.TEMPLATE.NOT_FOUND", "质量模板不存在", 404),
-    QLT_TEMPLATE_INVALID("QLT.TEMPLATE.INVALID", "质量模板数据不合法", 400);
+    QLT_TEMPLATE_INVALID("QLT.TEMPLATE.INVALID", "质量模板数据不合法", 400),
+    SYSDOC_NOT_FOUND("SYSDOC.NOT_FOUND", "体系文件对象不存在", 404),
+    SYSDOC_INVALID("SYSDOC.INVALID", "体系文件数据不合法", 400),
+    SYSDOC_STATE_INVALID("SYSDOC.STATE.INVALID", "当前体系文件状态不允许该操作", 409),
+    SYSDOC_FOLDER_IN_USE("SYSDOC.FOLDER.IN_USE", "文件夹下还有子文件夹或文件，不能删除", 409);
 
     private final String code;
     private final String message;
