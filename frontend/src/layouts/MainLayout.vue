@@ -61,10 +61,13 @@
           <el-menu-item index="/capp/quality">质量规划</el-menu-item>
           <el-menu-item index="/capp/dispatch">ERP下发（预留）</el-menu-item>
         </el-sub-menu>
-        <el-menu-item index="/project" disabled>
-          <el-icon><Calendar /></el-icon>
-          <span>项目管理（P7）</span>
-        </el-menu-item>
+        <el-sub-menu index="/project">
+          <template #title>
+            <el-icon><Calendar /></el-icon>
+            <span>项目管理</span>
+          </template>
+          <el-menu-item index="/project">项目列表</el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
 

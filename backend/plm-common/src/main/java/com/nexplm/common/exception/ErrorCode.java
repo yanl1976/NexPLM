@@ -68,7 +68,14 @@ public enum ErrorCode {
     CAPP_TEMPLATE_STATE_INVALID("CAPP.TEMPLATE.STATE.INVALID", "当前模板状态不允许该操作", 409),
     CAPP_CARD_NOT_FOUND("CAPP.CARD.NOT_FOUND", "工艺卡片不存在", 404),
     CAPP_TIME_RULE_NOT_FOUND("CAPP.TIME_RULE.NOT_FOUND", "工时定额规则不存在", 404),
-    CAPP_CARD_INVALID("CAPP.CARD.INVALID", "工艺卡片不合法", 400);
+    CAPP_CARD_INVALID("CAPP.CARD.INVALID", "工艺卡片不合法", 400),
+
+    // 项目与任务（P7）
+    PRJ_NOT_FOUND("PRJ.NOT_FOUND", "项目不存在", 404),
+    PRJ_STATE_INVALID("PRJ.STATE.INVALID", "当前项目状态不允许该操作", 409),
+    PRJ_INVALID("PRJ.INVALID", "项目参数不合法", 400),
+    PRJ_EPS_NOT_FOUND("PRJ.EPS.NOT_FOUND", "EPS 节点不存在", 404),
+    PRJ_EPS_IN_USE("PRJ.EPS.IN_USE", "EPS 节点下还有子节点或项目，不能删除", 409);
 
     private final String code;
     private final String message;

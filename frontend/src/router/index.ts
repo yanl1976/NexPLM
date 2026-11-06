@@ -128,6 +128,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '流程定义' }
       },
       {
+        path: 'project',
+        name: 'project-list',
+        component: () => import('@/views/project/ProjectListView.vue'),
+        meta: { title: '项目管理' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),
