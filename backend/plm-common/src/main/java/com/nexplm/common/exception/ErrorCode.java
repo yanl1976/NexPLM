@@ -96,7 +96,10 @@ public enum ErrorCode {
     SYSDOC_NOT_FOUND("SYSDOC.NOT_FOUND", "体系文件对象不存在", 404),
     SYSDOC_INVALID("SYSDOC.INVALID", "体系文件数据不合法", 400),
     SYSDOC_STATE_INVALID("SYSDOC.STATE.INVALID", "当前体系文件状态不允许该操作", 409),
-    SYSDOC_FOLDER_IN_USE("SYSDOC.FOLDER.IN_USE", "文件夹下还有子文件夹或文件，不能删除", 409);
+    SYSDOC_FOLDER_IN_USE("SYSDOC.FOLDER.IN_USE", "文件夹下还有子文件夹或文件，不能删除", 409),
+    AUDIT_NOT_FOUND("AUDIT.NOT_FOUND", "审核对象不存在", 404),
+    AUDIT_INVALID("AUDIT.INVALID", "审核数据不合法", 400),
+    AUDIT_STATE_INVALID("AUDIT.STATE.INVALID", "当前审核状态不允许该操作", 409);
 
     private final String code;
     private final String message;
