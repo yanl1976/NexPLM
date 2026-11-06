@@ -40,9 +40,7 @@
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
-              {{ row.enabled ? '启用' : '停用' }}
-            </el-tag>
+            <StatusDot :tone="row.enabled ? 'ok' : 'muted'" :label="row.enabled ? '启用' : '停用'" />
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
@@ -108,6 +106,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { workflowApi, type ActorUserRow, type DelegateRow } from '@/api/workflow'
+import StatusDot from '@/components/StatusDot.vue'
 
 const router = useRouter()
 

@@ -15,7 +15,7 @@
         <el-descriptions :column="2" border>
           <el-descriptions-item label="流程定义">{{ detail.processKey }}</el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag size="small" :type="statusTag(detail.status)">{{ statusLabel(detail.status) }}</el-tag>
+            <StatusDot :tone="statusTone(detail.status)" :label="statusLabel(detail.status)" />
           </el-descriptions-item>
           <el-descriptions-item label="业务对象">
             {{ objectText(detail.objectCode, detail.objectName) }}
@@ -81,9 +81,7 @@
             </el-table-column>
             <el-table-column label="核验" width="130">
               <template #default="{ row }">
-                <el-tag size="small" :type="verifyTag(row.verifyResult)">
-                  {{ verifyLabel(row.verifyResult) }}
-                </el-tag>
+                <StatusDot :tone="verifyTone(row.verifyResult)" :label="verifyLabel(row.verifyResult)" />
               </template>
             </el-table-column>
             <template #empty>
@@ -101,6 +99,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { workflowApi, type InstanceDetail, type SignatureRow } from '@/api/workflow'
+import StatusDot from '@/components/StatusDot.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -144,16 +143,16 @@ function statusLabel(status: string): string {
   }
 }
 
-function statusTag(status: string): 'success' | 'info' | 'warning' | 'danger' {
+function statusTone(status: string): 'ok' | 'running' | 'danger' | 'muted' {
   switch (status) {
     case 'COMPLETED':
-      return 'success'
+      return 'ok'
     case 'RUNNING':
-      return 'warning'
+      return 'running'
     case 'TERMINATED':
       return 'danger'
     default:
-      return 'info'
+      return 'muted'
   }
 }
 
@@ -204,14 +203,14 @@ function verifyLabel(result: string): string {
   }
 }
 
-function verifyTag(result: string): 'success' | 'danger' | 'info' {
+function verifyTone(result: string): 'ok' | 'danger' | 'muted' {
   switch (result) {
     case 'VALID':
-      return 'success'
+      return 'ok'
     case 'CHANGED':
       return 'danger'
     default:
-      return 'info'
+      return 'muted'
   }
 }
 
