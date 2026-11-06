@@ -7,7 +7,6 @@ import com.nexplm.platform.file.service.FileService;
 import com.nexplm.platform.iam.api.SecurityDtos;
 import com.nexplm.platform.iam.service.AclService;
 import com.nexplm.platform.object.domain.PlmObject;
-import com.nexplm.platform.object.mapper.PlmObjectMapper;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
@@ -30,14 +29,14 @@ public class DocBatchService {
     private static final int MAX_IDS = 200;
     private static final String ILLEGAL_NAME = "[\\\\/:*?\"<>|]";
 
-    private final PlmObjectMapper objectMapper;
     private final FileService fileService;
     private final AclService aclService;
+    private final DocAccessGuard docAccessGuard;
 
-    public DocBatchService(PlmObjectMapper objectMapper, FileService fileService, AclService aclService) {
-        this.objectMapper = objectMapper;
+    public DocBatchService(FileService fileService, AclService aclService, DocAccessGuard docAccessGuard) {
         this.fileService = fileService;
         this.aclService = aclService;
+        this.docAccessGuard = docAccessGuard;
     }
 
     /** 打包下载：每个文档取主文件（无主文件取第一个文件），条目名为「编码_文件名」。 */
@@ -47,8 +46,9 @@ public class DocBatchService {
         Set<String> used = new HashSet<>();
         try (ZipOutputStream zip = new ZipOutputStream(buffer, StandardCharsets.UTF_8)) {
             for (Long id : targets) {
-                PlmObject object = objectMapper.selectById(id);
-                if (object == null || !DocService.OBJECT_TYPE.equals(object.getObjectType())) {
+                // 不可见/不存在/非文档一律跳过：批量接口不能成为绕过数据范围的通道
+                PlmObject object = docAccessGuard.find(id).orElse(null);
+                if (object == null) {
                     continue;
                 }
                 List<FileService.FileView> files = fileService.listByOwner(id, true);
@@ -77,6 +77,8 @@ public class DocBatchService {
         List<DocBatchDtos.BatchGrantResult> results = new ArrayList<>();
         for (Long id : targets) {
             try {
+                // 先过数据范围再做授权，避免对看不见的文档下发/覆盖 ACL
+                docAccessGuard.require(id);
                 aclService.grant(new SecurityDtos.AclGrantReq(id, req.actorType(), req.actorId(),
                         req.actions(), req.effect(), req.expireAt(), null), operatorId);
                 results.add(new DocBatchDtos.BatchGrantResult(id, true, "已授权"));

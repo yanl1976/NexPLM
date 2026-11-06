@@ -61,6 +61,7 @@ public class DocService {
     private final MetaService metaService;
     private final LifecycleService lifecycleService;
     private final DocClassService docClassService;
+    private final DocAccessGuard docAccessGuard;
     private final ScopeApplier scopeApplier;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper jsonMapper;
@@ -68,7 +69,8 @@ public class DocService {
     public DocService(PlmObjectMapper objectMapper, DocMasterMapper docMapper, FileService fileService,
                       CheckoutService checkoutService, MetaService metaService,
                       LifecycleService lifecycleService, DocClassService docClassService,
-                      ScopeApplier scopeApplier, JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper) {
+                      DocAccessGuard docAccessGuard, ScopeApplier scopeApplier,
+                      JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper) {
         this.objectMapper = objectMapper;
         this.docMapper = docMapper;
         this.fileService = fileService;
@@ -76,6 +78,7 @@ public class DocService {
         this.metaService = metaService;
         this.lifecycleService = lifecycleService;
         this.docClassService = docClassService;
+        this.docAccessGuard = docAccessGuard;
         this.scopeApplier = scopeApplier;
         this.jdbcTemplate = jdbcTemplate;
         this.jsonMapper = jsonMapper;
@@ -98,8 +101,8 @@ public class DocService {
         object.setMasterId(id);
         object.setCode(resolveCode(req.code()));
         object.setName(req.name().trim());
-        object.setCompanyId(companyId(userId));
-        object.setOrgId(req.orgId());
+        object.setCompanyId(requireCompanyId(userId));
+        object.setOrgId(resolveOrgId(userId, req.orgId()));
         object.setOwnerId(userId);
         object.setSecurityLevel(req.securityLevel() == null ? 0 : req.securityLevel());
         object.setLifecycleState(lifecycleService.definitionForType(OBJECT_TYPE).initial());
@@ -143,7 +146,8 @@ public class DocService {
         update.setId(id);
         update.setVersion(object.getVersion());
         update.setName(req.name().trim());
-        update.setOrgId(req.orgId());
+        // 请求未指定组织时保留原归属，避免前端不传字段把已有 org_id 冲成 NULL
+        update.setOrgId(req.orgId() == null ? object.getOrgId() : req.orgId());
         update.setSecurityLevel(req.securityLevel() == null ? 0 : req.securityLevel());
         update.setExtJson(buildExt(docType, source, req.keyword(), req.description(),
                 req.classId(), classAttrs));
@@ -452,20 +456,9 @@ public class DocService {
         });
     }
 
+    /** 按 id 直取的统一校验（类型 + 数据范围），与列表过滤同语义。 */
     private PlmObject requireObject(Long id) {
-        if (id == null) {
-            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "文档标识不能为空");
-        }
-        PlmObject object = objectMapper.selectById(id);
-        if (object == null || !OBJECT_TYPE.equals(object.getObjectType())) {
-            throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "文档不存在：" + id);
-        }
-        // 按 id 直取同样要过数据作用域，否则列表里看不到的文档能被拼 id 拿到；
-        // 越权时也按"不存在"返回，不暴露对象是否存在。
-        if (!scopeApplier.isVisible(object.getCompanyId(), object.getOrgId(), object.getOwnerId())) {
-            throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "文档不存在：" + id);
-        }
-        return object;
+        return docAccessGuard.require(id);
     }
 
     private String requireEnum(String enumCode, String value, String label) {
@@ -498,6 +491,36 @@ public class DocService {
     private Long companyId(Long userId) {
         return jdbcTemplate.query("SELECT company_id FROM sys_user WHERE id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, userId);
+    }
+
+    /**
+     * 公司归属必填：{@code plm_object.company_id} 为 NOT NULL，
+     * 用户缺失公司时直接给业务提示，而不是让数据库抛 SQL 异常变成 500。
+     */
+    private Long requireCompanyId(Long userId) {
+        Long companyId = companyId(userId);
+        if (companyId == null) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "当前用户未归属任何公司，无法创建文档：" + userId);
+        }
+        return companyId;
+    }
+
+    /**
+     * 组织归属：请求未指定时回落到用户主组织（{@code sys_user_org.is_primary} 优先）。
+     * <p>此前前端新建表单没有组织字段，落库 org_id 恒为 NULL，ORG 数据范围的用户
+     * 创建成功后连详情都读不到（作用域按 org_id IN (...) 过滤，NULL 不命中）。</p>
+     */
+    private Long resolveOrgId(Long userId, Long requested) {
+        if (requested != null) {
+            return requested;
+        }
+        return jdbcTemplate.query("""
+                        SELECT org_id FROM sys_user_org
+                         WHERE user_id = ?
+                         ORDER BY is_primary DESC, org_id
+                         LIMIT 1
+                        """, rs -> rs.next() ? rs.getLong(1) : null, userId);
     }
 
     private Map<String, String> resolveClassAttrs(Long classId, Map<String, String> attrs) {

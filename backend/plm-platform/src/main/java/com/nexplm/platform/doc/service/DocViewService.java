@@ -1,12 +1,8 @@
 package com.nexplm.platform.doc.service;
 
-import com.nexplm.common.exception.BizException;
-import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.doc.api.DocDtos;
 import com.nexplm.platform.iam.api.SecurityDtos;
 import com.nexplm.platform.iam.service.AclService;
-import com.nexplm.platform.object.domain.PlmObject;
-import com.nexplm.platform.object.mapper.PlmObjectMapper;
 import com.nexplm.platform.object.version.VersionFormatter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -24,14 +20,14 @@ public class DocViewService {
     private static final int DEFAULT_LOG_LIMIT = 100;
     private static final int MAX_LOG_LIMIT = 500;
 
-    private final PlmObjectMapper objectMapper;
     private final AclService aclService;
     private final JdbcTemplate jdbcTemplate;
+    private final DocAccessGuard docAccessGuard;
 
-    public DocViewService(PlmObjectMapper objectMapper, AclService aclService, JdbcTemplate jdbcTemplate) {
-        this.objectMapper = objectMapper;
+    public DocViewService(AclService aclService, JdbcTemplate jdbcTemplate, DocAccessGuard docAccessGuard) {
         this.aclService = aclService;
         this.jdbcTemplate = jdbcTemplate;
+        this.docAccessGuard = docAccessGuard;
     }
 
     /**
@@ -124,13 +120,11 @@ public class DocViewService {
         return aclService.list(docId);
     }
 
+    /**
+     * 关联对象/操作日志/实例权限都是按文档 id 直取的旁路接口，
+     * 必须与列表同一套数据范围，否则拼 id 就能读到看不到的文档。
+     */
     private void requireDoc(Long docId) {
-        if (docId == null) {
-            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "文档标识不能为空");
-        }
-        PlmObject object = objectMapper.selectById(docId);
-        if (object == null || !DocService.OBJECT_TYPE.equals(object.getObjectType())) {
-            throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "文档不存在：" + docId);
-        }
+        docAccessGuard.require(docId);
     }
 }

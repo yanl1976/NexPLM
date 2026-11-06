@@ -11,8 +11,6 @@ import com.nexplm.platform.doc.preview.PreviewConverter;
 import com.nexplm.platform.doc.preview.PreviewOutput;
 import com.nexplm.platform.doc.preview.PreviewUnavailableException;
 import com.nexplm.platform.file.service.FileService;
-import com.nexplm.platform.object.domain.PlmObject;
-import com.nexplm.platform.object.mapper.PlmObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -41,20 +39,21 @@ public class PreviewService {
     private static final int MESSAGE_MAX = 500;
 
     private final DocPreviewMapper previewMapper;
-    private final PlmObjectMapper objectMapper;
+    private final DocAccessGuard docAccessGuard;
     private final FileService fileService;
     private final List<PreviewConverter> converters;
 
-    public PreviewService(DocPreviewMapper previewMapper, PlmObjectMapper objectMapper,
+    public PreviewService(DocPreviewMapper previewMapper, DocAccessGuard docAccessGuard,
                           FileService fileService, List<PreviewConverter> converters) {
         this.previewMapper = previewMapper;
-        this.objectMapper = objectMapper;
+        this.docAccessGuard = docAccessGuard;
         this.fileService = fileService;
         this.converters = converters;
     }
 
     /** 预览状态（取该文档最近一次记录；无记录返回 NONE）。 */
     public DocPreviewDtos.PreviewStatus status(Long objectId) {
+        docAccessGuard.require(objectId);
         DocPreview record = latest(objectId);
         if (record == null) {
             return new DocPreviewDtos.PreviewStatus(null, objectId, null, null, null, "NONE",
@@ -66,10 +65,7 @@ public class PreviewService {
     /** 生成/重新生成预览。fileId 为空时取主文件（无主文件取排序第一的文件）。 */
     @Transactional
     public DocPreviewDtos.PreviewStatus generate(Long objectId, Long fileId, Long userId) {
-        PlmObject object = objectMapper.selectById(objectId);
-        if (object == null || !DocService.OBJECT_TYPE.equals(object.getObjectType())) {
-            throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "文档不存在：" + objectId);
-        }
+        docAccessGuard.require(objectId);
         FileService.FileView source = resolveSource(objectId, fileId);
         String ext = source.ext() == null ? "" : source.ext().toLowerCase(Locale.ROOT);
         DocPreview record = findOrCreate(objectId, source.fileId(), userId);
