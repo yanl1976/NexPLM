@@ -16,13 +16,16 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.zip.ZipInputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -163,6 +166,64 @@ class SecurityHardeningTest {
         // 全控制字符的文件名退化时回退到按 sha256 生成的名字，而不是空文件名
         String controlOnly = downloadDisposition(fileId, "\r\n\t", admin);
         assertThat(controlOnly).contains("filename=\"file-");
+
+        // ---- 8. 旁路接口同样受数据范围约束：关联/日志/预览/批量下载不能凭 id 越权
+        mockMvc.perform(get("/api/v1/docs/{id}/relations", 94_000_000_001L)
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/docs/{id}/logs", 94_000_000_001L)
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/docs/{id}/preview", 94_000_000_001L)
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/docs/{id}/preview", 94_000_000_001L)
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
+
+        // 批量打包下载：看不见的文档直接被跳过，不能把内容装进 zip
+        MvcResult zip = mockMvc.perform(post("/api/v1/docs/batch/download")
+                        .header("Authorization", "Bearer " + companyUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("ids", java.util.List.of(94_000_000_001L)))))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertThat(zipEntryCount(zip.getResponse().getContentAsByteArray())).isZero();
+
+        // ---- 9. 文件旁路：挂文件/列文件/下载内容/解绑都不能绕过对象数据范围
+        MockMultipartFile probe = new MockMultipartFile("file", "probe.txt", "text/plain",
+                "probe".getBytes(StandardCharsets.UTF_8));
+        mockMvc.perform(multipart("/api/v1/files").file(probe)
+                        .param("ownerObjectId", String.valueOf(94_000_000_001L))
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/files")
+                        .param("ownerObjectId", String.valueOf(94_000_000_001L))
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
+
+        // 管理员（作用域 ALL）把文件挂到跨公司文档上，普通用户仍不能下载、也不能解绑
+        String foreignFileId = uploadToObject("foreign.txt", 94_000_000_001L, admin);
+        mockMvc.perform(get("/api/v1/files/{id}/content", foreignFileId)
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
+        Long foreignLinkId = jdbcTemplate.queryForObject(
+                "SELECT id FROM file_link WHERE file_id = ?", Long.class, Long.valueOf(foreignFileId));
+        mockMvc.perform(delete("/api/v1/files/links/{id}", foreignLinkId)
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
+
+        // ---- 10. 组织归属兜底：请求不传 orgId 时落库要取用户主组织，否则 ORG 范围用户读不到自己建的对象
+        Long adminId = jdbcTemplate.queryForObject(
+                "SELECT id FROM sys_user WHERE username = 'admin'", Long.class);
+        jdbcTemplate.update("""
+                        INSERT INTO sys_user_org (user_id, org_id, is_primary) VALUES (?, ?, true)
+                        ON CONFLICT (user_id, org_id) DO UPDATE SET is_primary = true
+                        """, adminId, 77_000_001L);
+        JsonNode ownDoc = call(post("/api/v1/docs"), admin, json(Map.of(
+                "name", "组织归属兜底", "docType", "DESIGN", "source", "NORMAL")));
+        assertThat(jdbcTemplate.queryForObject("SELECT org_id FROM plm_object WHERE id = ?",
+                Long.class, ownDoc.path("id").asLong())).isEqualTo(77_000_001L);
     }
 
     // ------------------------------------------------------------------ 工具
@@ -197,6 +258,29 @@ class SecurityHardeningTest {
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8))
                 .path("data").path("fileId").asText();
+    }
+
+    /** 上传并直接绑定到指定对象（用于构造"别人的文件"场景）。 */
+    private String uploadToObject(String fileName, Long ownerObjectId, String token) throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", fileName, "text/plain",
+                ("content-" + fileName).getBytes(StandardCharsets.UTF_8));
+        MvcResult result = mockMvc.perform(multipart("/api/v1/files").file(file)
+                        .param("ownerObjectId", String.valueOf(ownerObjectId))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        return body(result).path("data").path("fileId").asText();
+    }
+
+    /** zip 内条目数：用于断言批量下载没有把无权对象装进去。 */
+    private int zipEntryCount(byte[] zipBytes) throws IOException {
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+            int count = 0;
+            while (zip.getNextEntry() != null) {
+                count++;
+            }
+            return count;
+        }
     }
 
     private String downloadDisposition(String fileId, String name, String token) throws Exception {
