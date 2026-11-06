@@ -80,6 +80,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '变更管理' }
       },
       {
+        path: 'capp/routing',
+        name: 'capp-routing',
+        component: () => import('@/views/capp/RoutingListView.vue'),
+        meta: { title: '工艺路线' }
+      },
+      {
         path: 'workflow/definitions',
         name: 'workflow-definitions',
         component: () => import('@/views/workflow/DefinitionView.vue'),

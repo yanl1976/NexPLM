@@ -48,10 +48,13 @@
           <el-icon><Refresh /></el-icon>
           <span>变更管理</span>
         </el-menu-item>
-        <el-menu-item index="/capp" disabled>
-          <el-icon><Operation /></el-icon>
-          <span>工艺管理（P6）</span>
-        </el-menu-item>
+        <el-sub-menu index="/capp">
+          <template #title>
+            <el-icon><Operation /></el-icon>
+            <span>工艺管理</span>
+          </template>
+          <el-menu-item index="/capp/routing">工艺路线</el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/project" disabled>
           <el-icon><Calendar /></el-icon>
           <span>项目管理（P7）</span>
