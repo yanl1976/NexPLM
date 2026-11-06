@@ -115,6 +115,7 @@
       <el-header class="header">
         <div class="header-left">元数据驱动 · API 优先 · 可私有化部署</div>
         <div class="header-right">
+          <el-button link type="primary" @click="goMobile">移动版</el-button>
           <span class="user">{{ userStore.displayName }}</span>
           <el-button link type="primary" @click="onLogout">退出</el-button>
         </div>
@@ -176,6 +177,10 @@ const activeMenu = computed(() => {
   }
   return route.path
 })
+
+function goMobile(): void {
+  router.push('/m/todo')
+}
 
 function onLogout(): void {
   userStore.logout()
@@ -246,5 +251,23 @@ function onLogout(): void {
 
 .main {
   background: #f4f6fa;
+}
+
+/*
+ * 小屏收起侧栏：桌面端这些页面（宽表格、双栏表单）在手机上本来就挤不下，
+ * 与其做半套响应式不如把入口交给移动版（/m，独立 layout + 底部 tabbar）。
+ */
+@media (max-width: 768px) {
+  .aside {
+    display: none;
+  }
+
+  .header-left {
+    display: none;
+  }
+
+  .main {
+    padding: 8px;
+  }
 }
 </style>

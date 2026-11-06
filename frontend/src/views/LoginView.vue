@@ -197,11 +197,18 @@ onMounted(async () => {
 }
 
 .login-card {
-  width: 360px;
+  /* 小屏不溢出的关键：固定 360px 在 320~375px 视口会贴边，用 min() 取窄屏 92vw */
+  width: min(360px, 92vw);
   padding: 32px 32px 24px;
   background: #fff;
   border-radius: 10px;
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 24px 18px 18px;
+  }
 }
 
 .title {

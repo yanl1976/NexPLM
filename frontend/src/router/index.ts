@@ -10,6 +10,31 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true, title: '登录' }
   },
   {
+    path: '/m',
+    component: () => import('@/layouts/MobileLayout.vue'),
+    children: [
+      { path: '', redirect: '/m/todo' },
+      {
+        path: 'todo',
+        name: 'm-todo',
+        component: () => import('@/views/mobile/MobileTodoView.vue'),
+        meta: { title: '待办审批' }
+      },
+      {
+        path: 'doc',
+        name: 'm-doc',
+        component: () => import('@/views/mobile/MobileDocView.vue'),
+        meta: { title: '文档查看' }
+      },
+      {
+        path: 'scan',
+        name: 'm-scan',
+        component: () => import('@/views/mobile/MobileScanView.vue'),
+        meta: { title: '扫码查对象' }
+      }
+    ]
+  },
+  {
     path: '/',
     component: () => import('@/layouts/MainLayout.vue'),
     children: [
