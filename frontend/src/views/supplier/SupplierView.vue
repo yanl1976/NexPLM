@@ -281,6 +281,40 @@
           </el-table-column>
         </el-table>
         <el-empty v-if="!admissions.length" description="还没有准入评审" :image-size="50" />
+
+        <div class="section-title">数据发放（{{ issuances.length }}）</div>
+        <div class="action-bar">
+          <el-button v-if="canWrite" size="small" type="primary" plain @click="openIssuanceDialog">
+            新建发放单
+          </el-button>
+          <span class="hint">发放单固定清单快照（编码/名称/版本）；导出为 manifest.csv + 零件主文件</span>
+        </div>
+        <el-table :data="issuances" border size="small">
+          <el-table-column prop="code" label="单号" width="130" />
+          <el-table-column prop="title" label="标题" min-width="150" show-overflow-tooltip />
+          <el-table-column label="类型" width="100" align="center">
+            <template #default="{ row }">{{ ISSUANCE_TYPE_LABEL[row.type] ?? row.type }}</template>
+          </el-table-column>
+          <el-table-column prop="itemCount" label="零件" width="70" align="center" />
+          <el-table-column label="状态" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag :type="issuanceStatusType(row.status)" size="small">
+                {{ ISSUANCE_STATUS_LABEL[row.status] ?? row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="230" align="center">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openIssuanceDetail(row.id)">明细</el-button>
+              <el-button link type="primary" @click="onExportIssuance(row)">导出</el-button>
+              <template v-if="canWrite && row.status === 'DRAFT'">
+                <el-button link type="success" @click="onSendIssuance(row)">发出</el-button>
+                <el-button link type="danger" @click="onRemoveIssuance(row)">删除</el-button>
+              </template>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!issuances.length" description="还没有发放单" :image-size="50" />
       </div>
     </el-drawer>
 
@@ -526,17 +560,112 @@
         <el-table-column prop="evidence" label="证据/说明" min-width="180" show-overflow-tooltip />
       </el-table>
     </el-dialog>
+
+    <!-- 新建发放单 -->
+    <el-dialog v-model="issuanceVisible" title="新建数据发放单" width="760px" destroy-on-close>
+      <el-form label-width="96px">
+        <el-form-item label="标题" required>
+          <el-input v-model="issuanceForm.title" maxlength="200" style="width: 380px" />
+          <span class="label-gap">类型</span>
+          <el-select v-model="issuanceForm.type" style="width: 130px">
+            <el-option
+              v-for="(label, value) in ISSUANCE_TYPE_LABEL"
+              :key="value"
+              :label="label"
+              :value="value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="发放零件" required>
+          <el-select
+            v-model="issuanceForm.objectIds"
+            multiple
+            filterable
+            remote
+            clearable
+            :remote-method="searchIssuanceItems"
+            :loading="issuanceItemLoading"
+            placeholder="输入编码/名称搜索，可多选"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="option in issuanceItemOptions"
+              :key="option.id"
+              :label="`${option.code} ${option.name}`"
+              :value="option.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="issuanceForm.remark" type="textarea" :rows="2" maxlength="1000" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="issuanceVisible = false">取消</el-button>
+        <el-button type="primary" :loading="issuanceSaving" @click="onSaveIssuance">
+          保存草稿
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 发放单明细 -->
+    <el-dialog v-model="issuanceDetailVisible" title="发放单明细" width="780px" destroy-on-close>
+      <el-descriptions v-if="issuanceDetail" :column="3" border size="small">
+        <el-descriptions-item label="单号">{{ issuanceDetail.code }}</el-descriptions-item>
+        <el-descriptions-item label="类型">
+          {{ ISSUANCE_TYPE_LABEL[issuanceDetail.type] ?? issuanceDetail.type }}
+        </el-descriptions-item>
+        <el-descriptions-item label="状态">
+          <el-tag :type="issuanceStatusType(issuanceDetail.status)" size="small">
+            {{ ISSUANCE_STATUS_LABEL[issuanceDetail.status] ?? issuanceDetail.status }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="发放时间">
+          {{ formatTime(issuanceDetail.sentAt) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="回执时间">
+          {{ formatTime(issuanceDetail.receivedAt) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="回执文件">
+          {{ issuanceDetail.receiptFileName || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="回执说明" :span="3">
+          {{ issuanceDetail.receiptNote || '-' }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-table
+        v-if="issuanceDetail"
+        :data="issuanceDetail.items"
+        border
+        size="small"
+        class="rating-items"
+      >
+        <el-table-column prop="itemCode" label="零件编码" width="140" />
+        <el-table-column prop="itemName" label="零件名称" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="revision" label="版本" width="80" align="center" />
+      </el-table>
+      <div v-if="canWrite && issuanceDetail?.status === 'SENT'" class="receipt-bar">
+        <el-upload :show-file-list="false" :http-request="onReceiptUpload">
+          <el-button size="small" type="primary" plain>上传回执（对方签收单）</el-button>
+        </el-upload>
+        <span class="hint">登记后发放单置为「已回执」；文件存文件中心，仅登记 fileId</span>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { UploadRequestOptions } from 'element-plus'
 import {
   admissionApi,
   ADMISSION_RESULT_LABEL,
   ADMISSION_STATUS_LABEL,
   ADMISSION_TYPE_LABEL,
+  issuanceApi,
+  ISSUANCE_STATUS_LABEL,
+  ISSUANCE_TYPE_LABEL,
   ratingApi,
   RATING_STATUS_LABEL,
   supplierApi,
@@ -546,6 +675,8 @@ import {
   type AdmissionDetail,
   type AdmissionRow,
   type GradeBand,
+  type IssuanceDetail,
+  type IssuanceRow,
   type RatingSchemeDetail,
   type RatingSchemeRow,
   type SupplierDetail,
@@ -684,6 +815,22 @@ const admissionForm = reactive({
   items: [] as AdmissionItemDraft[]
 })
 
+/* ------------------------------------------------------------ 数据发放（P8-5-3） */
+
+const issuances = ref<IssuanceRow[]>([])
+const issuanceVisible = ref(false)
+const issuanceSaving = ref(false)
+const issuanceItemLoading = ref(false)
+const issuanceItemOptions = ref<ItemSummary[]>([])
+const issuanceDetailVisible = ref(false)
+const issuanceDetail = ref<IssuanceDetail | null>(null)
+const issuanceForm = reactive({
+  title: '',
+  type: 'DESIGN',
+  remark: '',
+  objectIds: [] as string[]
+})
+
 onMounted(async () => {
   await loadOrgs()
   await reload()
@@ -810,6 +957,7 @@ async function openDetail(id: string): Promise<void> {
     detailVisible.value = true
     await loadRatings(id)
     await loadAdmissions(id)
+    await loadIssuances(id)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载详情失败')
   }
@@ -828,6 +976,14 @@ async function loadAdmissions(supplierId: string): Promise<void> {
     admissions.value = await admissionApi.bySupplier(supplierId)
   } catch {
     admissions.value = []
+  }
+}
+
+async function loadIssuances(supplierId: string): Promise<void> {
+  try {
+    issuances.value = await issuanceApi.bySupplier(supplierId)
+  } catch {
+    issuances.value = []
   }
 }
 
@@ -1243,7 +1399,175 @@ async function openAdmissionDetail(id: string): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------ 数据发放操作 */
+
+function openIssuanceDialog(): void {
+  issuanceForm.title = ''
+  issuanceForm.type = 'DESIGN'
+  issuanceForm.remark = ''
+  issuanceForm.objectIds = []
+  issuanceItemOptions.value = []
+  issuanceVisible.value = true
+}
+
+async function searchIssuanceItems(keywordText: string): Promise<void> {
+  if (!keywordText) {
+    return
+  }
+  issuanceItemLoading.value = true
+  try {
+    const result = await itemApi.list({ keyword: keywordText, page: 1, size: 20 })
+    const existing = new Set(issuanceItemOptions.value.map((option) => option.id))
+    result.items.forEach((item) => {
+      if (!existing.has(item.id)) {
+        issuanceItemOptions.value.push(item)
+      }
+    })
+  } catch {
+    // 搜索失败保持已有选项
+  } finally {
+    issuanceItemLoading.value = false
+  }
+}
+
+async function onSaveIssuance(): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  if (!issuanceForm.title.trim()) {
+    ElMessage.warning('请填写发放标题')
+    return
+  }
+  if (!issuanceForm.objectIds.length) {
+    ElMessage.warning('请选择要发放的零件')
+    return
+  }
+  issuanceSaving.value = true
+  try {
+    await issuanceApi.create({
+      supplierId: detail.value.id,
+      title: issuanceForm.title.trim(),
+      type: issuanceForm.type,
+      remark: issuanceForm.remark.trim() || null,
+      items: issuanceForm.objectIds.map((objectId) => ({ objectType: 'PdmItem', objectId }))
+    })
+    ElMessage.success('发放单草稿已保存')
+    issuanceVisible.value = false
+    await loadIssuances(detail.value.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存发放单失败')
+  } finally {
+    issuanceSaving.value = false
+  }
+}
+
+async function onExportIssuance(row: IssuanceRow): Promise<void> {
+  try {
+    await issuanceApi.exportZip(row.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出失败')
+  }
+}
+
+async function onSendIssuance(row: IssuanceRow): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `发出发放单 ${row.code}？发出后清单冻结，不能再修改或删除。`,
+      '发出发放单',
+      { confirmButtonText: '发出', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    await issuanceApi.send(row.id)
+    ElMessage.success('已发出')
+    await loadIssuances(detail.value.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '发出失败')
+  }
+}
+
+async function onRemoveIssuance(row: IssuanceRow): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确认删除发放单草稿 ${row.code}？`, '删除发放单', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    await issuanceApi.remove(row.id)
+    ElMessage.success('已删除')
+    await loadIssuances(detail.value.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除失败')
+  }
+}
+
+async function openIssuanceDetail(id: string): Promise<void> {
+  try {
+    issuanceDetail.value = await issuanceApi.detail(id)
+    issuanceDetailVisible.value = true
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载发放单失败')
+  }
+}
+
+async function onReceiptUpload(options: UploadRequestOptions): Promise<void> {
+  if (!issuanceDetail.value) {
+    return
+  }
+  try {
+    const uploaded = await issuanceApi.uploadReceipt(options.file as File)
+    let note = ''
+    try {
+      const result = await ElMessageBox.prompt('回执说明（可选）', '登记回执', {
+        confirmButtonText: '登记',
+        cancelButtonText: '取消',
+        inputPlaceholder: '例如：已签收，版本确认无误'
+      })
+      note = result.value ?? ''
+    } catch {
+      return
+    }
+    issuanceDetail.value = await issuanceApi.receipt(issuanceDetail.value.id, {
+      fileId: uploaded.fileId,
+      fileName: uploaded.fileName,
+      note: note.trim() || null
+    })
+    ElMessage.success('回执已登记')
+    if (detail.value) {
+      await loadIssuances(detail.value.id)
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '登记回执失败')
+  }
+}
+
 /* ------------------------------------------------------------ 展示辅助 */
+
+function formatTime(value?: string | null): string {
+  return value ? value.substring(0, 16).replace('T', ' ') : '-'
+}
+
+function issuanceStatusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
+  if (value === 'RECEIVED') {
+    return 'success'
+  }
+  if (value === 'SENT') {
+    return 'warning'
+  }
+  return 'info'
+}
 
 function gradeType(grade: string): 'success' | 'primary' | 'info' | 'warning' | 'danger' {
   if (grade === 'A') {

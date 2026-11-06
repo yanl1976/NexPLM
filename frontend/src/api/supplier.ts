@@ -1,4 +1,4 @@
-import { http } from './http'
+import { downloadFileByPost, http, saveBlob, uploadFile } from './http'
 
 /** P8-4 供应商主数据与零件-供应商关系。 */
 
@@ -383,6 +383,111 @@ export const admissionApi = {
   },
   bySupplier(supplierId: string): Promise<AdmissionRow[]> {
     return http.get<AdmissionRow[]>(`/sup/suppliers/${supplierId}/admissions`)
+  }
+}
+
+/* ------------------------------------------------------------ P8-5-3 数据发放 */
+
+export const ISSUANCE_TYPE_LABEL: Record<string, string> = {
+  DESIGN: '设计资料',
+  QUALITY: '质量要求',
+  OTHER: '其它'
+}
+
+export const ISSUANCE_STATUS_LABEL: Record<string, string> = {
+  DRAFT: '草稿',
+  SENT: '已发放',
+  RECEIVED: '已回执',
+  CANCELLED: '已取消'
+}
+
+export interface IssuanceItemRow {
+  id: string
+  objectType: string
+  objectId: string
+  itemCode?: string | null
+  itemName?: string | null
+  revision?: string | null
+  sortNo: number
+}
+
+export interface IssuanceRow {
+  id: string
+  code: string
+  supplierId: string
+  supplierCode?: string | null
+  supplierName?: string | null
+  title: string
+  type: string
+  status: string
+  itemCount: number
+  sentAt?: string | null
+  receivedAt?: string | null
+  receiptFileName?: string | null
+  updatedAt?: string | null
+}
+
+export interface IssuanceDetail extends IssuanceRow {
+  remark?: string | null
+  receiptFileId?: string | null
+  receiptNote?: string | null
+  items: IssuanceItemRow[]
+}
+
+export interface IssuanceSaveReq {
+  supplierId: string
+  title: string
+  type?: string
+  remark?: string | null
+  items: { objectType?: string; objectId: string }[]
+}
+
+export const issuanceApi = {
+  page(params: {
+    supplierId?: string
+    status?: string
+    type?: string
+    page?: number
+    size?: number
+  }): Promise<{ items: IssuanceRow[]; total: number; page: number; size: number }> {
+    return http.get('/sup/issuances', params)
+  },
+  detail(id: string): Promise<IssuanceDetail> {
+    return http.get<IssuanceDetail>(`/sup/issuances/${id}`)
+  },
+  create(req: IssuanceSaveReq): Promise<IssuanceDetail> {
+    return http.post<IssuanceDetail>('/sup/issuances', req)
+  },
+  update(id: string, req: IssuanceSaveReq): Promise<IssuanceDetail> {
+    return http.put<IssuanceDetail>(`/sup/issuances/${id}`, req)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/sup/issuances/${id}`)
+  },
+  send(id: string): Promise<IssuanceDetail> {
+    return http.post<IssuanceDetail>(`/sup/issuances/${id}/send`)
+  },
+  receipt(
+    id: string,
+    req: { fileId: string; fileName?: string | null; note?: string | null }
+  ): Promise<IssuanceDetail> {
+    return http.post<IssuanceDetail>(`/sup/issuances/${id}/receipt`, req)
+  },
+  bySupplier(supplierId: string): Promise<IssuanceRow[]> {
+    return http.get<IssuanceRow[]>(`/sup/suppliers/${supplierId}/issuances`)
+  },
+  /** 上传回执文件（不绑对象，文件中心只存内容），返回 fileId 供登记。 */
+  async uploadReceipt(file: File): Promise<{ fileId: string; fileName: string }> {
+    const uploaded = await uploadFile<{ fileId: number | string; fileName: string }>(
+      '/files',
+      file
+    )
+    return { fileId: String(uploaded.fileId), fileName: uploaded.fileName }
+  },
+  /** 打包导出：manifest.csv + 零件主文件，直接触发浏览器下载。 */
+  async exportZip(id: string): Promise<void> {
+    const { blob, fileName } = await downloadFileByPost(`/sup/issuances/${id}/export`, {})
+    saveBlob(blob, fileName)
   }
 }
 
