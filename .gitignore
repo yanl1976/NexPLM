@@ -36,3 +36,6 @@ data/files/
 
 # 临时提交说明
 .gitmsg
+
+# 后端运行时文件落盘（测试/本地上传产生）
+backend/plm-app/data/
