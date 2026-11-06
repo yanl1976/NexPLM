@@ -116,7 +116,8 @@ public class SupplierService {
                 str(text.get("email")), str(text.get("address")), str(text.get("tax_no")),
                 str(text.get("currency")), str(text.get("payment_terms")),
                 full.orgId(), full.orgName(), str(text.get("remark")),
-                full.partCount(), full.preferredCount(), parts(id, companyId));
+                full.partCount(), full.preferredCount(), full.grade(), full.ratingScore(),
+                full.ratedAt(), parts(id, companyId));
     }
 
     @Transactional
@@ -320,7 +321,8 @@ public class SupplierService {
                 rs.getString("name"), rs.getString("short_name"), rs.getString("category"),
                 rs.getString("status"), rs.getString("contact"), rs.getString("phone"),
                 (Long) rs.getObject("org_id"), rs.getString("org_name"),
-                rs.getInt("part_count"), rs.getInt("preferred_count"),
+                rs.getInt("part_count"), rs.getInt("preferred_count"), rs.getString("grade"),
+                rs.getBigDecimal("rating_score"), rs.getObject("rated_at", OffsetDateTime.class),
                 rs.getObject("updated_at", OffsetDateTime.class));
     }
 

@@ -7,17 +7,17 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
-
 /** P8-4 供应商主数据与零件-供应商关系。 */
 public final class SupSupplierDtos {
 
     private SupSupplierDtos() {
     }
 
-    /** 列表行：带零件关系计数，列表页不必逐条查。 */
+    /** 列表行：带零件关系计数与最近评级结果，列表页不必逐条查。 */
     public record SupplierRow(Long id, String code, String name, String shortName, String category,
                               String status, String contact, String phone, Long orgId,
-                              String orgName, int partCount, int preferredCount,
+                              String orgName, int partCount, int preferredCount, String grade,
+                              BigDecimal ratingScore, OffsetDateTime ratedAt,
                               OffsetDateTime updatedAt) {
     }
 
@@ -25,7 +25,9 @@ public final class SupSupplierDtos {
                                  String category, String status, String contact, String phone,
                                  String email, String address, String taxNo, String currency,
                                  String paymentTerms, Long orgId, String orgName, String remark,
-                                 int partCount, int preferredCount, List<PartRow> parts) {
+                                 int partCount, int preferredCount, String grade,
+                                 BigDecimal ratingScore, OffsetDateTime ratedAt,
+                                 List<PartRow> parts) {
     }
 
     /** {@code code} 由系统取号（SUP-000001），保存接口不接受编码。 */
