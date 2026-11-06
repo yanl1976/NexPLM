@@ -4,24 +4,32 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.workflow.api.WfDtos;
+import com.nexplm.platform.workflow.service.assignee.AssigneeContext;
+import com.nexplm.platform.workflow.service.assignee.AssigneeResolverRegistry;
 import org.flowable.bpmn.model.BpmnModel;
+import org.flowable.bpmn.model.FlowElement;
+import org.flowable.bpmn.model.UserTask;
 import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.repository.ProcessDefinition;
 import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.task.api.Task;
+import org.flowable.task.api.TaskQuery;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -45,13 +53,16 @@ public class WorkflowService {
     private final TaskService taskService;
     private final RepositoryService repositoryService;
     private final JdbcTemplate jdbcTemplate;
+    private final AssigneeResolverRegistry assigneeResolvers;
 
     public WorkflowService(RuntimeService runtimeService, TaskService taskService,
-                           RepositoryService repositoryService, JdbcTemplate jdbcTemplate) {
+                           RepositoryService repositoryService, JdbcTemplate jdbcTemplate,
+                           AssigneeResolverRegistry assigneeResolvers) {
         this.runtimeService = runtimeService;
         this.taskService = taskService;
         this.repositoryService = repositoryService;
         this.jdbcTemplate = jdbcTemplate;
+        this.assigneeResolvers = assigneeResolvers;
     }
 
     /** 业务对象与流程实例的关联信息（用于把任务行补全为可展示的业务上下文）。 */
@@ -69,13 +80,14 @@ public class WorkflowService {
         if (definition == null) {
             throw BizException.of(ErrorCode.WF_DEFINITION_NOT_FOUND, "流程定义未部署：" + processKey);
         }
-        List<String> approvers = req.approverIds().stream().distinct().map(String::valueOf).toList();
-        if (approvers.isEmpty()) {
-            throw BizException.of(ErrorCode.WF_VARIABLE_INVALID, "会签人不能为空");
-        }
+        Map<String, Object> variables = req.variables() == null ? new HashMap<>() : new HashMap<>(req.variables());
+        AssigneeContext context = new AssigneeContext(req.objectType(), req.objectId(), userId, variables);
 
-        Map<String, Object> variables = new HashMap<>();
-        variables.put("approver", String.valueOf(req.approverId()));
+        Long initialApprover = resolveInitialApprover(req, context);
+        List<String> approvers = resolveCountersignApprovers(req, context).stream()
+                .map(String::valueOf).toList();
+
+        variables.put("approver", String.valueOf(initialApprover));
         variables.put("approvers", approvers);
         variables.put("initiator", String.valueOf(userId));
         variables.put("objectType", req.objectType());
@@ -101,21 +113,44 @@ public class WorkflowService {
     public WfDtos.PageResult<WfDtos.TaskRow> myTasks(Long userId, int page, int size) {
         int pageNo = Math.max(page, 1);
         int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-        String assignee = String.valueOf(userId);
-        long total = taskService.createTaskQuery().taskAssignee(assignee).count();
-        List<Task> tasks = taskService.createTaskQuery().taskAssignee(assignee)
+        List<String> assignees = taskAssignees(userId);
+        long total = assigneeQuery(assignees).count();
+        List<Task> tasks = assigneeQuery(assignees)
                 .orderByTaskCreateTime().desc()
                 .listPage((pageNo - 1) * pageSize, pageSize);
         return new WfDtos.PageResult<>(total, toRows(tasks));
+    }
+
+    /** 待办范围：本人 + 生效委托给我的 owner（代办理，assignee 不变）。 */
+    private List<String> taskAssignees(Long userId) {
+        List<Long> owners = jdbcTemplate.queryForList("""
+                SELECT owner_id FROM wf_delegate
+                 WHERE delegate_id = ? AND enabled = true AND start_at <= now() AND end_at >= now()
+                """, Long.class, userId);
+        LinkedHashSet<String> assignees = new LinkedHashSet<>();
+        assignees.add(String.valueOf(userId));
+        owners.forEach(owner -> assignees.add(String.valueOf(owner)));
+        return List.copyOf(assignees);
+    }
+
+    private TaskQuery assigneeQuery(List<String> assignees) {
+        if (assignees.size() == 1) {
+            return taskService.createTaskQuery().taskAssignee(assignees.get(0));
+        }
+        TaskQuery query = taskService.createTaskQuery().or();
+        for (String assignee : assignees) {
+            query = query.taskAssignee(assignee);
+        }
+        return query.endOr();
     }
 
     // ------------------------------------------------------------------ 办理
 
     @Transactional
     public void complete(String taskId, WfDtos.CompleteReq req, Long userId) {
-        Task task = requireOwnTask(taskId, userId);
+        Task task = requireOperableTask(taskId, userId);
         saveComment(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(), "APPROVE",
-                req == null ? null : req.comment(), userId);
+                delegateNote(task, userId, req == null ? null : req.comment()), userId);
         if (req != null && req.variables() != null && !req.variables().isEmpty()) {
             taskService.complete(taskId, req.variables());
         } else {
@@ -130,7 +165,7 @@ public class WorkflowService {
      */
     @Transactional
     public void reject(String taskId, WfDtos.RejectReq req, Long userId) {
-        Task task = requireOwnTask(taskId, userId);
+        Task task = requireOperableTask(taskId, userId);
         BpmnModel model = repositoryService.getBpmnModel(task.getProcessDefinitionId());
         if (model == null || model.getFlowElement(req.targetActivityId()) == null) {
             throw BizException.of(ErrorCode.WF_VARIABLE_INVALID, "驳回目标节点不存在：" + req.targetActivityId());
@@ -139,7 +174,7 @@ public class WorkflowService {
             throw BizException.of(ErrorCode.WF_VARIABLE_INVALID, "不能驳回当前节点自身");
         }
         saveComment(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(), "REJECT",
-                req.comment(), userId);
+                delegateNote(task, userId, req.comment()), userId);
         runtimeService.createChangeActivityStateBuilder()
                 .processInstanceId(task.getProcessInstanceId())
                 .moveActivityIdTo(task.getTaskDefinitionKey(), req.targetActivityId())
@@ -166,6 +201,129 @@ public class WorkflowService {
         saveComment(processInstanceId, null, null, "WITHDRAW", req == null ? null : req.reason(), userId);
         runtimeService.deleteProcessInstance(processInstanceId, "发起人撤回");
         markLink(processInstanceId, "TERMINATED");
+    }
+
+    /**
+     * 加签：给会签（多实例）节点追加一名审批人。
+     * <p>走引擎运行时 API {@code addMultiInstanceExecution}，父执行取当前任务执行的上级（多实例根执行）。</p>
+     */
+    @Transactional
+    public void addSigner(String taskId, WfDtos.AddSignerReq req, Long userId) {
+        Task task = requireOperableTask(taskId, userId);
+        BpmnModel model = repositoryService.getBpmnModel(task.getProcessDefinitionId());
+        FlowElement element = model == null ? null : model.getFlowElement(task.getTaskDefinitionKey());
+        if (!(element instanceof UserTask userTask) || userTask.getLoopCharacteristics() == null) {
+            throw BizException.of(ErrorCode.WF_OPERATION_DENIED, "只有会签（多实例）节点可以加签");
+        }
+        requireUser(req.signerId(), "加签人不存在");
+        runtimeService.addMultiInstanceExecution(task.getTaskDefinitionKey(), multiInstanceRootParent(task),
+                Map.of("countersigner", String.valueOf(req.signerId())));
+        saveComment(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(), "ADD_SIGNER",
+                req.comment(), userId);
+    }
+
+    /**
+     * 求「多实例根执行的父执行」id。
+     *
+     * <p>引擎的 {@code AddMultiInstanceExecutionCmd.searchForMultiInstanceActivity} 是
+     * <b>从传入执行的子执行里</b>递归找 {@code isMultiInstanceRoot} 的执行，所以必须传多实例根的
+     * <b>父执行</b>（通常是流程实例执行），传实例执行或根本身都会报
+     * 「No multi instance execution found for activity id」。</p>
+     *
+     * <p>用 {@code act_ru_execution} 沿 parent 链上溯定位，兼容子流程内嵌套会签。</p>
+     */
+    private String multiInstanceRootParent(Task task) {
+        String current = task.getExecutionId();
+        for (int depth = 0; depth < 10 && current != null; depth++) {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    "SELECT parent_id_, is_mi_root_ FROM act_ru_execution WHERE id_ = ?", current);
+            if (rows.isEmpty()) {
+                break;
+            }
+            Object parent = rows.get(0).get("parent_id_");
+            Object miRoot = rows.get(0).get("is_mi_root_");
+            if (Boolean.TRUE.equals(miRoot) || Boolean.valueOf(String.valueOf(miRoot))) {
+                return parent == null ? task.getProcessInstanceId() : String.valueOf(parent);
+            }
+            current = parent == null ? null : String.valueOf(parent);
+        }
+        return task.getProcessInstanceId();
+    }
+
+    // ------------------------------------------------------------------ 委托
+
+    @Transactional
+    public WfDtos.DelegateRow createDelegate(WfDtos.DelegateReq req, Long userId) {
+        Long ownerId = req.ownerId() == null ? userId : req.ownerId();
+        if (!ownerId.equals(userId)) {
+            throw BizException.of(ErrorCode.WF_OPERATION_DENIED, "只能设置自己的委托");
+        }
+        if (ownerId.equals(req.delegateId())) {
+            throw BizException.of(ErrorCode.WF_VARIABLE_INVALID, "不能把待办委托给自己");
+        }
+        if (!req.endAt().isAfter(req.startAt())) {
+            throw BizException.of(ErrorCode.WF_VARIABLE_INVALID, "失效时间必须晚于生效时间");
+        }
+        requireUser(req.delegateId(), "受托人不存在");
+        long id = IdWorker.getId();
+        String processKey = req.processKey() == null || req.processKey().isBlank()
+                ? null : req.processKey().trim();
+        jdbcTemplate.update("""
+                        INSERT INTO wf_delegate (id, owner_id, delegate_id, start_at, end_at,
+                                                 process_key, enabled, remark, created_by)
+                        VALUES (?, ?, ?, ?, ?, ?, true, ?, ?)
+                        """,
+                id, ownerId, req.delegateId(), req.startAt(), req.endAt(), processKey,
+                req.remark(), userId);
+        return delegateById(id);
+    }
+
+    /** 我设置的 + 我收到的委托。 */
+    public List<WfDtos.DelegateRow> delegates(Long userId) {
+        return jdbcTemplate.query("""
+                        SELECT d.id, d.owner_id, ou.display_name AS owner_name, d.delegate_id,
+                               du.display_name AS delegate_name, d.start_at, d.end_at,
+                               d.process_key, d.enabled, d.remark
+                          FROM wf_delegate d
+                          LEFT JOIN sys_user ou ON ou.id = d.owner_id
+                          LEFT JOIN sys_user du ON du.id = d.delegate_id
+                         WHERE d.owner_id = ? OR d.delegate_id = ?
+                         ORDER BY d.start_at DESC
+                        """,
+                (rs, rowNum) -> delegateRow(rs),
+                userId, userId);
+    }
+
+    @Transactional
+    public void removeDelegate(Long id, Long userId) {
+        int rows = jdbcTemplate.update("DELETE FROM wf_delegate WHERE id = ? AND owner_id = ?", id, userId);
+        if (rows == 0) {
+            throw BizException.of(ErrorCode.WF_OPERATION_DENIED, "委托不存在或无权删除：" + id);
+        }
+    }
+
+    private WfDtos.DelegateRow delegateById(Long id) {
+        List<WfDtos.DelegateRow> rows = jdbcTemplate.query("""
+                        SELECT d.id, d.owner_id, ou.display_name AS owner_name, d.delegate_id,
+                               du.display_name AS delegate_name, d.start_at, d.end_at,
+                               d.process_key, d.enabled, d.remark
+                          FROM wf_delegate d
+                          LEFT JOIN sys_user ou ON ou.id = d.owner_id
+                          LEFT JOIN sys_user du ON du.id = d.delegate_id
+                         WHERE d.id = ?
+                        """,
+                (rs, rowNum) -> delegateRow(rs), id);
+        if (rows.isEmpty()) {
+            throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "委托不存在：" + id);
+        }
+        return rows.get(0);
+    }
+
+    private WfDtos.DelegateRow delegateRow(ResultSet rs) throws SQLException {
+        return new WfDtos.DelegateRow(rs.getLong("id"), rs.getLong("owner_id"),
+                rs.getString("owner_name"), rs.getLong("delegate_id"), rs.getString("delegate_name"),
+                rs.getObject("start_at", OffsetDateTime.class), rs.getObject("end_at", OffsetDateTime.class),
+                rs.getString("process_key"), rs.getBoolean("enabled"), rs.getString("remark"));
     }
 
     // ------------------------------------------------------------------ 查询
@@ -216,17 +374,111 @@ public class WorkflowService {
                 rs.getBoolean("enabled")), args.toArray());
     }
 
+    // ------------------------------------------------------------------ 执行人
+
+    /** 已注册的执行人解析类型（前端选择器用）。 */
+    public List<WfDtos.AssigneeTypeRow> assigneeTypes() {
+        return assigneeResolvers.supported().stream()
+                .map(info -> new WfDtos.AssigneeTypeRow(info.type(), info.label()))
+                .toList();
+    }
+
+    /** 初审人：优先执行人声明（必须解析为唯一用户），否则用显式 approverId。 */
+    private Long resolveInitialApprover(WfDtos.StartReq req, AssigneeContext context) {
+        if (req.initialAssignees() != null && !req.initialAssignees().isEmpty()) {
+            List<Long> users = assigneeResolvers.resolve(req.initialAssignees(), context);
+            if (users.size() != 1) {
+                throw BizException.of(ErrorCode.WF_VARIABLE_INVALID,
+                        "初审人必须解析为唯一用户，当前解析出 " + users.size() + " 人");
+            }
+            return users.get(0);
+        }
+        if (req.approverId() == null) {
+            throw BizException.of(ErrorCode.WF_VARIABLE_INVALID,
+                    "请指定初审人（approverId 或 initialAssignees）");
+        }
+        return req.approverId();
+    }
+
+    /** 会签人：优先执行人声明（可解析出多人），否则用显式 approverIds。 */
+    private List<Long> resolveCountersignApprovers(WfDtos.StartReq req, AssigneeContext context) {
+        if (req.countersignAssignees() != null && !req.countersignAssignees().isEmpty()) {
+            return assigneeResolvers.resolve(req.countersignAssignees(), context);
+        }
+        if (req.approverIds() == null || req.approverIds().isEmpty()) {
+            throw BizException.of(ErrorCode.WF_VARIABLE_INVALID,
+                    "请指定会签人（approverIds 或 countersignAssignees）");
+        }
+        return req.approverIds().stream().distinct().toList();
+    }
+
     // ------------------------------------------------------------------ 内部
 
-    private Task requireOwnTask(String taskId, Long userId) {
+    /**
+     * 校验任务可办理：本人，或在本人的生效委托区间内代 owner 办理。
+     * <p>委托不改 assignee，只在权限层放行，避免引擎数据被改写后无法回退。</p>
+     */
+    private Task requireOperableTask(String taskId, Long userId) {
         Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
         if (task == null) {
             throw BizException.of(ErrorCode.WF_TASK_NOT_FOUND, "任务不存在或已被处理：" + taskId);
         }
-        if (!String.valueOf(userId).equals(task.getAssignee())) {
-            throw BizException.of(ErrorCode.WF_TASK_NOT_ASSIGNEE, "任务不属于当前用户：" + taskId);
+        if (String.valueOf(userId).equals(task.getAssignee())) {
+            return task;
         }
-        return task;
+        if (task.getAssignee() != null && hasActiveDelegate(task, userId)) {
+            return task;
+        }
+        throw BizException.of(ErrorCode.WF_TASK_NOT_ASSIGNEE, "任务不属于当前用户：" + taskId);
+    }
+
+    private boolean hasActiveDelegate(Task task, Long delegateId) {
+        long ownerId;
+        try {
+            ownerId = Long.parseLong(task.getAssignee());
+        } catch (NumberFormatException ex) {
+            return false;
+        }
+        List<Long> hit = jdbcTemplate.queryForList("""
+                SELECT COUNT(1) FROM wf_delegate
+                 WHERE owner_id = ? AND delegate_id = ? AND enabled = true
+                   AND start_at <= now() AND end_at >= now()
+                   AND (process_key IS NULL OR process_key = ?)
+                """, Long.class, ownerId, delegateId, processKeyOf(task));
+        return !hit.isEmpty() && hit.get(0) > 0;
+    }
+
+    private String processKeyOf(Task task) {
+        ProcessDefinition definition = repositoryService.createProcessDefinitionQuery()
+                .processDefinitionId(task.getProcessDefinitionId()).singleResult();
+        return definition == null ? null : definition.getKey();
+    }
+
+    /** 代办时在意见前加「代 XXX 办理」标记，便于审计区分。 */
+    private String delegateNote(Task task, Long userId, String comment) {
+        if (String.valueOf(userId).equals(task.getAssignee())) {
+            return comment;
+        }
+        String prefix = "[代 " + displayName(task.getAssignee()) + " 办理]";
+        return comment == null || comment.isBlank() ? prefix : prefix + " " + comment;
+    }
+
+    private String displayName(String assignee) {
+        try {
+            List<String> names = jdbcTemplate.queryForList(
+                    "SELECT display_name FROM sys_user WHERE id = ?", String.class, Long.parseLong(assignee));
+            return names.isEmpty() ? assignee : names.get(0);
+        } catch (NumberFormatException ex) {
+            return assignee;
+        }
+    }
+
+    private void requireUser(Long userId, String message) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM sys_user WHERE id = ? AND deleted = false", Long.class, userId);
+        if (count == null || count == 0) {
+            throw BizException.of(ErrorCode.WF_VARIABLE_INVALID, message + "：" + userId);
+        }
     }
 
     private List<WfDtos.TaskRow> activeTasks(String processInstanceId) {

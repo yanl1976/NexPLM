@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -89,5 +90,45 @@ public class WorkflowController {
     @PreAuthorize("hasAuthority('wf.process.manage')")
     public Result<List<WfDtos.BindingRow>> bindings(@RequestParam(required = false) String objectType) {
         return Result.ok(workflowService.bindings(objectType));
+    }
+
+    @Operation(summary = "执行人解析类型（用户/角色/组织/组/组+角色/发起人/表单字段/项目角色）")
+    @GetMapping("/assignee-types")
+    @PreAuthorize("hasAuthority('wf.task.read')")
+    public Result<List<WfDtos.AssigneeTypeRow>> assigneeTypes() {
+        return Result.ok(workflowService.assigneeTypes());
+    }
+
+    @Operation(summary = "加签（给会签节点追加审批人）")
+    @PostMapping("/tasks/{taskId}/add-signer")
+    @PreAuthorize("hasAuthority('wf.task.audit')")
+    @Audit(module = "WF", action = "TASK_ADD_SIGNER", objectType = "WfTask")
+    public Result<Void> addSigner(@PathVariable String taskId, @Valid @RequestBody WfDtos.AddSignerReq req) {
+        workflowService.addSigner(taskId, req, CurrentUser.userId());
+        return Result.ok();
+    }
+
+    @Operation(summary = "新建委托（生效区间内代办理）")
+    @PostMapping("/delegates")
+    @PreAuthorize("hasAuthority('wf.task.read')")
+    @Audit(module = "WF", action = "DELEGATE_CREATE", objectType = "WfDelegate")
+    public Result<WfDtos.DelegateRow> createDelegate(@Valid @RequestBody WfDtos.DelegateReq req) {
+        return Result.ok(workflowService.createDelegate(req, CurrentUser.userId()));
+    }
+
+    @Operation(summary = "我的委托（我设置的 + 我收到的）")
+    @GetMapping("/delegates")
+    @PreAuthorize("hasAuthority('wf.task.read')")
+    public Result<List<WfDtos.DelegateRow>> delegates() {
+        return Result.ok(workflowService.delegates(CurrentUser.userId()));
+    }
+
+    @Operation(summary = "删除委托")
+    @DeleteMapping("/delegates/{id}")
+    @PreAuthorize("hasAuthority('wf.task.read')")
+    @Audit(module = "WF", action = "DELEGATE_DELETE", objectType = "WfDelegate")
+    public Result<Void> removeDelegate(@PathVariable Long id) {
+        workflowService.removeDelegate(id, CurrentUser.userId());
+        return Result.ok();
     }
 }

@@ -15,11 +15,13 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.io.IOException;
+import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -186,6 +188,169 @@ class WorkflowSmokeTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("comment", "越权办理"))))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void assigneeResolversExpandRoleStarterAndFormField() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long roleMemberA = createUser(admin, "wf_role_a", "角色甲");
+        long roleMemberB = createUser(admin, "wf_role_b", "角色乙");
+        long formApprover = createUser(admin, "wf_form_user", "表单审批人");
+        long itemId = createItem(admin, "解析零件");
+
+        // 1. 类型清单：8 种解析器已注册
+        JsonNode types = call(get("/api/v1/workflow/assignee-types"), admin, null);
+        assertThat(types.findValuesAsText("type")).contains(
+                "USER", "ROLE", "ORG", "GROUP", "ROLE_GROUP", "STARTER", "FORM_FIELD", "PROJECT_ROLE");
+
+        // 2. 初审=发起人（STARTER）；会签=业务角色成员（ROLE）— 后者用户数不固定，用包含关系断言
+        Map<String, Object> byRole = new HashMap<>();
+        byRole.put("objectType", "PdmItem");
+        byRole.put("objectId", itemId);
+        byRole.put("initialAssignees", List.of(Map.of("type", "STARTER")));
+        byRole.put("countersignAssignees",
+                List.of(Map.of("type", "ROLE", "ids", List.of(businessRoleId(admin)))));
+        JsonNode started = call(post("/api/v1/workflow/instances"), admin, json(byRole));
+        String pid = started.path("processInstanceId").asText();
+        assertThat(started.path("activeTasks").get(0).path("assignee").asText())
+                .isEqualTo(String.valueOf(adminId));
+
+        call(post("/api/v1/workflow/tasks/{taskId}/complete",
+                        started.path("activeTasks").get(0).path("taskId").asText()),
+                admin, json(Map.of("comment", "初审通过")));
+        JsonNode countersign = call(get("/api/v1/workflow/instances/{id}", pid), admin, null);
+        assertThat(countersign.path("activeTasks").size()).isGreaterThanOrEqualTo(2);
+        assertThat(countersign.path("activeTasks").findValuesAsText("assignee"))
+                .contains(String.valueOf(roleMemberA), String.valueOf(roleMemberB));
+
+        // 3. 表单字段：初审人取流程变量里的用户
+        Map<String, Object> byForm = new HashMap<>();
+        byForm.put("objectType", "PdmItem");
+        byForm.put("objectId", itemId);
+        byForm.put("initialAssignees", List.of(Map.of("type", "FORM_FIELD", "expression", "nextApprover")));
+        byForm.put("countersignAssignees", List.of(Map.of("type", "USER", "ids", List.of(adminId))));
+        byForm.put("variables", Map.of("nextApprover", String.valueOf(formApprover)));
+        JsonNode formStarted = call(post("/api/v1/workflow/instances"), admin, json(byForm));
+        assertThat(formStarted.path("activeTasks").get(0).path("assignee").asText())
+                .isEqualTo(String.valueOf(formApprover));
+
+        // 4. 角色下无人 → 400
+        Map<String, Object> emptyRole = new HashMap<>();
+        emptyRole.put("objectType", "PdmItem");
+        emptyRole.put("objectId", itemId);
+        emptyRole.put("approverId", adminId);
+        emptyRole.put("countersignAssignees", List.of(Map.of("type", "ROLE", "ids", List.of(999999L))));
+        mockMvc.perform(post("/api/v1/workflow/instances")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(emptyRole)))
+                .andExpect(status().isBadRequest());
+
+        // 5. 项目角色未接入 → 400 且提示明确
+        Map<String, Object> projectRole = new HashMap<>();
+        projectRole.put("objectType", "PdmItem");
+        projectRole.put("objectId", itemId);
+        projectRole.put("initialAssignees", List.of(Map.of("type", "PROJECT_ROLE", "ids", List.of(1L))));
+        projectRole.put("approverIds", List.of(adminId));
+        MvcResult projectRoleResult = mockMvc.perform(post("/api/v1/workflow/instances")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(projectRole)))
+                .andExpect(status().isBadRequest())
+                .andReturn();
+        assertThat(projectRoleResult.getResponse().getContentAsString()).contains("未接入");
+    }
+
+    @Test
+    void addSignerAndDelegateWork() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long signerId = createUser(admin, "wf_signer", "被加签人");
+        long ownerId = createUser(admin, "wf_owner", "委托人");
+        long delegateId = createUser(admin, "wf_proxy", "受托人");
+        String owner = login("wf_owner", "Passw0rd!");
+        String proxy = login("wf_proxy", "Passw0rd!");
+        long itemId = createItem(admin, "加签零件");
+
+        // 1. 会签 2 人（admin + owner），admin 加签 signer → 3 个任务
+        JsonNode started = start(admin, itemId, adminId, List.of(adminId, ownerId));
+        String pid = started.path("processInstanceId").asText();
+        String initialTaskId = started.path("activeTasks").get(0).path("taskId").asText();
+        call(post("/api/v1/workflow/tasks/{taskId}/complete", initialTaskId), admin,
+                json(Map.of("comment", "初审通过")));
+
+        JsonNode countersign = call(get("/api/v1/workflow/instances/{id}", pid), admin, null);
+        assertThat(countersign.path("activeTasks").size()).isEqualTo(2);
+        String adminCountersignTask = findTaskOfAssignee(countersign.path("activeTasks"), adminId)
+                .path("taskId").asText();
+        call(post("/api/v1/workflow/tasks/{taskId}/add-signer", adminCountersignTask), admin,
+                json(Map.of("signerId", signerId, "comment", "追加技术审核")));
+
+        JsonNode afterSign = call(get("/api/v1/workflow/instances/{id}", pid), admin, null);
+        assertThat(afterSign.path("activeTasks").size()).isEqualTo(3);
+        assertThat(afterSign.path("activeTasks").findValuesAsText("assignee"))
+                .contains(String.valueOf(signerId));
+        assertThat(afterSign.path("comments").findValuesAsText("action")).contains("ADD_SIGNER");
+
+        // 2. 非会签节点（初审）加签 → 409
+        JsonNode reviewOnly = start(admin, itemId, adminId, List.of(adminId));
+        String reviewTaskId = reviewOnly.path("activeTasks").get(0).path("taskId").asText();
+        mockMvc.perform(post("/api/v1/workflow/tasks/{taskId}/add-signer", reviewTaskId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("signerId", signerId, "comment", "初审加签"))))
+                .andExpect(status().isConflict());
+
+        // 3. 委托：owner 在生效区间内委托给 proxy
+        Map<String, Object> delegateReq = new HashMap<>();
+        delegateReq.put("delegateId", delegateId);
+        delegateReq.put("startAt", OffsetDateTime.now().minusHours(1).toString());
+        delegateReq.put("endAt", OffsetDateTime.now().plusHours(2).toString());
+        delegateReq.put("remark", "出差期间代理");
+        JsonNode created = call(post("/api/v1/workflow/delegates"), owner, json(delegateReq));
+        assertThat(created.path("ownerId").asLong()).isEqualTo(ownerId);
+        assertThat(created.path("delegateName").asText()).isEqualTo("受托人");
+
+        // 4. 受托人待办里能看到 owner 的任务，并可代办理（意见带「代 XXX 办理」标记）
+        JsonNode ownerFlow = start(admin, itemId, ownerId, List.of(ownerId));
+        String ownerPid = ownerFlow.path("processInstanceId").asText();
+        JsonNode proxyTodos = call(get("/api/v1/workflow/tasks?page=1&size=100"), proxy, null);
+        JsonNode ownerTask = findTaskByPid(proxyTodos.path("items"), ownerPid);
+        assertThat(ownerTask).isNotNull();
+        assertThat(ownerTask.path("assignee").asText()).isEqualTo(String.valueOf(ownerId));
+
+        call(post("/api/v1/workflow/tasks/{taskId}/complete", ownerTask.path("taskId").asText()), proxy,
+                json(Map.of("comment", "代理人同意")));
+        JsonNode afterProxy = call(get("/api/v1/workflow/instances/{id}", ownerPid), admin, null);
+        assertThat(afterProxy.path("comments").findValuesAsText("comment"))
+                .anyMatch(text -> text.contains("[代 委托人 办理]"));
+
+        // 5. 删除委托后列表清空
+        call(delete("/api/v1/workflow/delegates/{id}", created.path("id").asLong()), owner, null);
+        JsonNode emptyDelegates = call(get("/api/v1/workflow/delegates"), owner, null);
+        assertThat(emptyDelegates.size()).isZero();
+
+        // 6. 参数校验：委托给自己 400、时间倒置 400
+        Map<String, Object> selfDelegate = new HashMap<>();
+        selfDelegate.put("delegateId", ownerId);
+        selfDelegate.put("startAt", OffsetDateTime.now().toString());
+        selfDelegate.put("endAt", OffsetDateTime.now().plusHours(1).toString());
+        mockMvc.perform(post("/api/v1/workflow/delegates")
+                        .header("Authorization", "Bearer " + owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(selfDelegate)))
+                .andExpect(status().isBadRequest());
+
+        Map<String, Object> reversedRange = new HashMap<>();
+        reversedRange.put("delegateId", delegateId);
+        reversedRange.put("startAt", OffsetDateTime.now().plusHours(2).toString());
+        reversedRange.put("endAt", OffsetDateTime.now().plusHours(1).toString());
+        mockMvc.perform(post("/api/v1/workflow/delegates")
+                        .header("Authorization", "Bearer " + owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(reversedRange)))
+                .andExpect(status().isBadRequest());
     }
 
     // ------------------------------------------------------------ 工具
