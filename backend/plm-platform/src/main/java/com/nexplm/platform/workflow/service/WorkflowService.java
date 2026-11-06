@@ -36,6 +36,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 工作流服务：BPMN 流程的发起、待办、办理、驳回、撤回与详情。
@@ -161,6 +162,7 @@ public class WorkflowService {
         Task task = requireOperableTask(taskId, userId);
         saveComment(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(), "APPROVE",
                 delegateNote(task, userId, req == null ? null : req.comment()), userId);
+        signTask(task, userId, "APPROVE", req == null ? null : req.comment());
         if (req != null && req.variables() != null && !req.variables().isEmpty()) {
             taskService.complete(taskId, req.variables());
         } else {
@@ -189,6 +191,7 @@ public class WorkflowService {
         }
         saveComment(task.getProcessInstanceId(), taskId, task.getTaskDefinitionKey(), "REJECT",
                 delegateNote(task, userId, req.comment()), userId);
+        signTask(task, userId, "REJECT", req.comment());
         runtimeService.createChangeActivityStateBuilder()
                 .processInstanceId(task.getProcessInstanceId())
                 .moveActivityIdTo(task.getTaskDefinitionKey(), req.targetActivityId())
@@ -648,6 +651,113 @@ public class WorkflowService {
                         rs.getString("action"), rs.getString("comment_text"), rs.getLong("user_id"),
                         rs.getObject("created_at", OffsetDateTime.class)),
                 processInstanceId);
+    }
+
+    /**
+     * 电子签名留痕：办理时记录 who/when/what/meaning 与当时主文件摘要。
+     * <p>只增不改；文件摘要用于事后核验「签名后文件是否被替换」。</p>
+     */
+    private void signTask(Task task, Long userId, String meaning, String remark) {
+        LinkInfo info = loadLinks(List.of(task.getProcessInstanceId())).get(task.getProcessInstanceId());
+        if (info == null) {
+            return;
+        }
+        Long fileId = null;
+        String fileSha = null;
+        try {
+            List<Map<String, Object>> files = jdbcTemplate.queryForList("""
+                    SELECT d.main_file_id AS file_id, f.sha256 AS sha256
+                      FROM doc_master d
+                      LEFT JOIN file_object f ON f.id = d.main_file_id
+                     WHERE d.object_id = ?
+                    """, info.objectId());
+            if (!files.isEmpty() && files.get(0).get("file_id") != null) {
+                fileId = ((Number) files.get(0).get("file_id")).longValue();
+                Object sha = files.get(0).get("sha256");
+                fileSha = sha == null ? null : String.valueOf(sha).trim();
+            }
+        } catch (RuntimeException ex) {
+            // 非文档对象、无主文件或表结构差异时不做文件绑定，不影响办理
+            fileId = null;
+            fileSha = null;
+        }
+        jdbcTemplate.update("""
+                        INSERT INTO wf_signature (id, object_type, object_id, revision_label, task_id, task_key,
+                                                  process_instance_id, signer_id, signer_name, sign_meaning,
+                                                  file_id, file_sha256, sign_time, remark)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                IdWorker.getId(), info.objectType(), info.objectId(),
+                revisionLabel(info.objectId()), task.getId(), task.getTaskDefinitionKey(),
+                task.getProcessInstanceId(), userId, displayName(String.valueOf(userId)), meaning,
+                fileId, fileSha, OffsetDateTime.now(),
+                remark == null ? null : remark.substring(0, Math.min(remark.length(), 500)));
+    }
+
+    private String revisionLabel(Long objectId) {
+        try {
+            List<String> labels = jdbcTemplate.queryForList(
+                    "SELECT revision || '.' || iteration FROM plm_object WHERE id = ?", String.class, objectId);
+            return labels.isEmpty() ? null : labels.get(0);
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    /** 查询对象签名记录，并实时比对主文件摘要给出核验结果（VALID/CHANGED/UNKNOWN）。 */
+    public List<WfDtos.SignatureRow> signatures(String objectType, Long objectId) {
+        List<WfDtos.SignatureRow> rows = jdbcTemplate.query("""
+                        SELECT id, object_type, object_id, revision_label, task_id, task_key,
+                               process_instance_id, signer_id, signer_name, sign_meaning,
+                               file_id, file_sha256, sign_time
+                          FROM wf_signature
+                         WHERE object_type = ? AND object_id = ?
+                         ORDER BY sign_time DESC, id DESC
+                        """,
+                (rs, rowNum) -> new WfDtos.SignatureRow(rs.getLong("id"), rs.getString("object_type"),
+                        rs.getLong("object_id"), rs.getString("revision_label"), rs.getString("task_id"),
+                        rs.getString("task_key"), rs.getString("process_instance_id"),
+                        rs.getLong("signer_id"), rs.getString("signer_name"), rs.getString("sign_meaning"),
+                        rs.getObject("file_id", Long.class),
+                        rs.getString("file_sha256") == null ? null : rs.getString("file_sha256").trim(),
+                        rs.getObject("sign_time", OffsetDateTime.class), "UNKNOWN"),
+                objectType, objectId);
+        if (rows.isEmpty()) {
+            return rows;
+        }
+        Map<Long, String> currentShas = currentFileShas(rows);
+        return rows.stream().map(row -> {
+            String current = row.fileId() == null ? null : currentShas.get(row.fileId());
+            return new WfDtos.SignatureRow(row.id(), row.objectType(), row.objectId(),
+                    row.revisionLabel(), row.taskId(), row.taskKey(), row.processInstanceId(),
+                    row.signerId(), row.signerName(), row.meaning(), row.fileId(), row.fileSha256(),
+                    row.signTime(), verifySignature(row.fileSha256(), current));
+        }).toList();
+    }
+
+    private Map<Long, String> currentFileShas(List<WfDtos.SignatureRow> rows) {
+        List<Long> fileIds = rows.stream().map(WfDtos.SignatureRow::fileId)
+                .filter(Objects::nonNull).distinct().toList();
+        if (fileIds.isEmpty()) {
+            return new HashMap<>();
+        }
+        String placeholders = String.join(",", Collections.nCopies(fileIds.size(), "?"));
+        Map<Long, String> result = new HashMap<>();
+        jdbcTemplate.query("SELECT id, sha256 FROM file_object WHERE id IN (" + placeholders + ")", rs -> {
+            String sha = rs.getString("sha256");
+            result.put(rs.getLong("id"), sha == null ? null : sha.trim());
+        }, fileIds.toArray());
+        return result;
+    }
+
+    private String verifySignature(String recorded, String current) {
+        if (recorded == null || recorded.isBlank()) {
+            return "UNKNOWN";
+        }
+        if (current == null) {
+            return "CHANGED";
+        }
+        return recorded.equalsIgnoreCase(current) ? "VALID" : "CHANGED";
     }
 
     private void saveComment(String processInstanceId, String taskId, String taskKey,

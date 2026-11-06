@@ -434,6 +434,43 @@ class WorkflowSmokeTest {
         assertThat(stateOf(withdrawItem)).isEqualTo("Draft");
     }
 
+    @Test
+    void signaturesAreRecordedOnApprovalAndReject() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long itemId = createItem(admin, "签名零件");
+
+        // 1. 初审 + 会签各留一条签名
+        JsonNode started = start(admin, itemId, adminId, List.of(adminId));
+        String pid = started.path("processInstanceId").asText();
+        completeTaskOf(admin, pid, "admin");
+        completeTaskOf(admin, pid, "admin");
+
+        JsonNode signatures = call(get("/api/v1/workflow/signatures?objectType=PdmItem&objectId=" + itemId),
+                admin, null);
+        assertThat(signatures.size()).isEqualTo(2);
+        assertThat(signatures.findValuesAsText("meaning")).containsOnly("APPROVE");
+        assertThat(signatures.findValuesAsText("signerName")).allMatch(name -> !name.isBlank());
+        assertThat(signatures.findValuesAsText("verifyResult")).containsOnly("UNKNOWN");
+        assertThat(signatures.findValuesAsText("taskKey")).contains("initialReview", "countersign");
+        assertThat(signatures.get(0).path("revisionLabel").asText()).isNotBlank();
+
+        // 2. 驳回也留痕，语义为 REJECT
+        long rejectItem = createItem(admin, "签名驳回零件");
+        JsonNode flow = start(admin, rejectItem, adminId, List.of(adminId));
+        String rejectPid = flow.path("processInstanceId").asText();
+        completeTaskOf(admin, rejectPid, "admin");
+        JsonNode detail = call(get("/api/v1/workflow/instances/{id}", rejectPid), admin, null);
+        String countersignTask = findTaskOfAssignee(detail.path("activeTasks"), adminId)
+                .path("taskId").asText();
+        call(post("/api/v1/workflow/tasks/{taskId}/reject", countersignTask), admin,
+                json(Map.of("targetActivityId", "initialReview", "comment", "资料不全")));
+
+        JsonNode rejectSignatures = call(
+                get("/api/v1/workflow/signatures?objectType=PdmItem&objectId=" + rejectItem), admin, null);
+        assertThat(rejectSignatures.findValuesAsText("meaning")).contains("APPROVE", "REJECT");
+    }
+
     private String stateOf(long objectId) {
         return jdbcTemplate.queryForObject(
                 "SELECT lifecycle_state FROM plm_object WHERE id = ?", String.class, objectId);

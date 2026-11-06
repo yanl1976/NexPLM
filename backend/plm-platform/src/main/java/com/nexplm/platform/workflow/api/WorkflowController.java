@@ -117,6 +117,14 @@ public class WorkflowController {
         return Result.ok(workflowService.bindings(objectType));
     }
 
+    @Operation(summary = "对象电子签名记录（含主文件摘要核验结果）")
+    @GetMapping("/signatures")
+    @PreAuthorize("hasAuthority('wf.task.read')")
+    public Result<List<WfDtos.SignatureRow>> signatures(@RequestParam String objectType,
+                                                        @RequestParam Long objectId) {
+        return Result.ok(workflowService.signatures(objectType, objectId));
+    }
+
     @Operation(summary = "执行人解析类型（用户/角色/组织/组/组+角色/发起人/表单字段/项目角色）")
     @GetMapping("/assignee-types")
     @PreAuthorize("hasAuthority('wf.task.read')")

@@ -76,6 +76,18 @@ public final class WfDtos {
     public record BatchResult(int total, int succeeded, int failed, List<String> messages) {
     }
 
+    /**
+     * 电子签名记录。
+     * <p>{@code verifyResult} 为查询时实时比对主文件摘要的结果：
+     * VALID=一致、CHANGED=签名后文件已改、UNKNOWN=无文件摘要可比对。</p>
+     */
+    public record SignatureRow(Long id, String objectType, Long objectId, String revisionLabel,
+                               String taskId, String taskKey, String processInstanceId,
+                               Long signerId, String signerName, String meaning,
+                               Long fileId, String fileSha256, OffsetDateTime signTime,
+                               String verifyResult) {
+    }
+
     /** 加签：给当前会签节点再追加一名审批人（只对多实例节点有效）。 */
     public record AddSignerReq(@NotNull(message = "加签人不能为空") Long signerId,
                                @Size(max = 2000) String comment) {
