@@ -11,6 +11,10 @@
           <el-icon><DataAnalysis /></el-icon>
           <span>统计看板</span>
         </el-menu-item>
+        <el-menu-item v-if="canReadBoard" index="/report/boards">
+          <el-icon><Grid /></el-icon>
+          <span>自定义看板</span>
+        </el-menu-item>
         <el-sub-menu index="/system">
           <template #title>
             <el-icon><Setting /></el-icon>
@@ -132,6 +136,7 @@ import {
   Connection,
   DataAnalysis,
   Document,
+  Grid,
   HomeFilled,
   OfficeBuilding,
   Operation,
@@ -148,6 +153,7 @@ const userStore = useUserStore()
 const canManageWorkflow = computed(() => userStore.can('wf.process.manage'))
 const canReadNotify = computed(() => userStore.can('sys.notify.read'))
 const canReadDashboard = computed(() => userStore.can('ana.dashboard.read'))
+const canReadBoard = computed(() => userStore.can('ana.board.read'))
 
 const activeMenu = computed(() => {
   if (route.path === '/doc/class') {

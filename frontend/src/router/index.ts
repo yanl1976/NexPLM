@@ -26,6 +26,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '统计看板' }
       },
       {
+        path: 'report/boards',
+        name: 'report-boards',
+        component: () => import('@/views/report/BoardView.vue'),
+        meta: { title: '自定义看板' }
+      },
+      {
         path: 'item',
         name: 'item-list',
         component: () => import('@/views/item/ItemListView.vue'),
