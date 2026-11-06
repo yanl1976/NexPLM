@@ -6,8 +6,10 @@ import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.file.domain.FileLink;
 import com.nexplm.platform.file.domain.FileObject;
+import com.nexplm.platform.file.mapper.FileLinkMapper;
 import com.nexplm.platform.file.service.FileService;
 import com.nexplm.platform.file.service.MultipartUploadService;
+import com.nexplm.platform.object.service.ObjectAccessGuard;
 import com.nexplm.platform.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -60,10 +62,15 @@ public class FileController {
 
     private final FileService fileService;
     private final MultipartUploadService multipartUploadService;
+    private final FileLinkMapper fileLinkMapper;
+    private final ObjectAccessGuard objectAccessGuard;
 
-    public FileController(FileService fileService, MultipartUploadService multipartUploadService) {
+    public FileController(FileService fileService, MultipartUploadService multipartUploadService,
+                          FileLinkMapper fileLinkMapper, ObjectAccessGuard objectAccessGuard) {
         this.fileService = fileService;
         this.multipartUploadService = multipartUploadService;
+        this.fileLinkMapper = fileLinkMapper;
+        this.objectAccessGuard = objectAccessGuard;
     }
 
     public record LinkReq(@NotNull(message = "归属对象不能为空") Long ownerObjectId,
@@ -84,6 +91,8 @@ public class FileController {
         if (file == null || file.isEmpty()) {
             throw BizException.of(ErrorCode.FILE_UPLOAD_EMPTY);
         }
+        // 绑定归属对象时校验其可见性与可写性，避免绕过领域服务的写校验给他人对象挂文件
+        requireWritableOwner(ownerObjectId);
         String name = (fileName == null || fileName.isBlank()) ? file.getOriginalFilename() : fileName;
         try (InputStream in = file.getInputStream()) {
             return Result.ok(fileService.upload(ownerObjectId, fileRole, sort, name,
@@ -104,6 +113,7 @@ public class FileController {
     @GetMapping("/{fileId}")
     @PreAuthorize("hasAuthority('file.download')")
     public Result<FileObject> meta(@PathVariable Long fileId) {
+        requireFileReadable(fileId);
         return Result.ok(fileService.meta(fileId));
     }
 
@@ -112,6 +122,7 @@ public class FileController {
     @PreAuthorize("hasAuthority('file.download')")
     public Result<List<FileService.FileView>> list(@RequestParam("ownerObjectId") Long ownerObjectId,
                                                    @RequestParam(value = "latestOnly", defaultValue = "true") boolean latestOnly) {
+        objectAccessGuard.require(ownerObjectId);
         return Result.ok(fileService.listByOwner(ownerObjectId, latestOnly));
     }
 
@@ -123,6 +134,7 @@ public class FileController {
             @PathVariable Long fileId,
             @RequestParam(value = "name", required = false) String name,
             @RequestHeader(value = HttpHeaders.RANGE, required = false) String range) {
+        requireFileReadable(fileId);
         FileObject file = fileService.meta(fileId);
         long total = file.getSize() == null ? 0L : file.getSize();
 
@@ -180,6 +192,8 @@ public class FileController {
     public Result<FileService.DownloadUrl> downloadUrl(
             @PathVariable Long fileId,
             @RequestParam(value = "ttlSeconds", required = false) Long ttlSeconds) {
+        // 预签名直链一旦下发即无法再鉴权，必须在此之前完成可见性校验
+        requireFileReadable(fileId);
         long ttl = ttlSeconds == null ? 3600L : Math.max(60L, Math.min(ttlSeconds, 604800L));
         return Result.ok(fileService.downloadUrl(fileId, Duration.ofSeconds(ttl)));
     }
@@ -195,6 +209,7 @@ public class FileController {
             @RequestParam(value = "ownerObjectId", required = false) Long ownerObjectId,
             @RequestParam(value = "fileRole", required = false) String fileRole,
             @RequestParam(value = "sort", required = false) Integer sort) {
+        requireWritableOwner(ownerObjectId);
         return Result.ok(multipartUploadService.create(fileName, totalSize, chunkSize, mime,
                 ownerObjectId, fileRole, sort, CurrentUser.userId()));
     }
@@ -265,6 +280,7 @@ public class FileController {
     @PreAuthorize("hasAuthority('file.upload')")
     @Audit(module = "FILE", action = "FILE_LINK", objectType = "FileLink")
     public Result<FileLink> link(@PathVariable Long fileId, @Valid @RequestBody LinkReq req) {
+        requireWritableOwner(req.ownerObjectId());
         return Result.ok(fileService.attach(req.ownerObjectId(), fileId, req.fileName(),
                 req.fileRole(), req.sort(), CurrentUser.userId()));
     }
@@ -274,11 +290,40 @@ public class FileController {
     @PreAuthorize("hasAuthority('file.upload')")
     @Audit(module = "FILE", action = "FILE_UNLINK", objectType = "FileLink")
     public Result<Void> unlink(@PathVariable Long linkId) {
+        FileLink link = fileLinkMapper.selectById(linkId);
+        if (link == null) {
+            throw BizException.of(ErrorCode.FILE_LINK_NOT_FOUND);
+        }
+        // 解绑等同于修改归属对象的附件，须与对象写权限一致
+        requireWritableOwner(link.getOwnerObjectId());
         fileService.detach(linkId);
         return Result.ok();
     }
 
     // ---------------------------------------------------------------- 内部工具
+
+    /** 归属对象为空表示"暂存上传"，不做校验；否则要求对象可见且可写。 */
+    private void requireWritableOwner(Long ownerObjectId) {
+        if (ownerObjectId == null) {
+            return;
+        }
+        objectAccessGuard.requireWritable(ownerObjectId, CurrentUser.userId(), "归属对象");
+    }
+
+    /**
+     * 文件可读：物理文件可能被多个对象共享（内容寻址秒传），任一归属对象对当前用户可见即可；
+     * 尚未绑定任何对象的暂存文件不做拦截，避免打断「先上传、后绑定」的流程。
+     */
+    private void requireFileReadable(Long fileId) {
+        List<Long> ownerIds = fileLinkMapper.ownerIds(fileId);
+        if (ownerIds.isEmpty()) {
+            return;
+        }
+        boolean visible = ownerIds.stream().anyMatch(id -> objectAccessGuard.find(id).isPresent());
+        if (!visible) {
+            throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "文件不存在：" + fileId);
+        }
+    }
 
     private void skipFully(InputStream in, long offset) throws IOException {
         long remaining = offset;

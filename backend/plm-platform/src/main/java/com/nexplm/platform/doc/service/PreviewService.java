@@ -6,11 +6,13 @@ import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.doc.api.DocPreviewDtos;
 import com.nexplm.platform.doc.domain.DocPreview;
+import com.nexplm.platform.doc.mapper.DocMasterMapper;
 import com.nexplm.platform.doc.mapper.DocPreviewMapper;
 import com.nexplm.platform.doc.preview.PreviewConverter;
 import com.nexplm.platform.doc.preview.PreviewOutput;
 import com.nexplm.platform.doc.preview.PreviewUnavailableException;
 import com.nexplm.platform.file.service.FileService;
+import com.nexplm.platform.object.service.ObjectAccessGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -39,21 +41,24 @@ public class PreviewService {
     private static final int MESSAGE_MAX = 500;
 
     private final DocPreviewMapper previewMapper;
-    private final DocAccessGuard docAccessGuard;
+    private final DocMasterMapper docMasterMapper;
+    private final ObjectAccessGuard objectAccessGuard;
     private final FileService fileService;
     private final List<PreviewConverter> converters;
 
-    public PreviewService(DocPreviewMapper previewMapper, DocAccessGuard docAccessGuard,
+    public PreviewService(DocPreviewMapper previewMapper, DocMasterMapper docMasterMapper,
+                          ObjectAccessGuard objectAccessGuard,
                           FileService fileService, List<PreviewConverter> converters) {
         this.previewMapper = previewMapper;
-        this.docAccessGuard = docAccessGuard;
+        this.docMasterMapper = docMasterMapper;
+        this.objectAccessGuard = objectAccessGuard;
         this.fileService = fileService;
         this.converters = converters;
     }
 
     /** 预览状态（取该文档最近一次记录；无记录返回 NONE）。 */
     public DocPreviewDtos.PreviewStatus status(Long objectId) {
-        docAccessGuard.require(objectId);
+        objectAccessGuard.requireType(objectId, DocService.OBJECT_TYPE, "文档");
         DocPreview record = latest(objectId);
         if (record == null) {
             return new DocPreviewDtos.PreviewStatus(null, objectId, null, null, null, "NONE",
@@ -65,7 +70,7 @@ public class PreviewService {
     /** 生成/重新生成预览。fileId 为空时取主文件（无主文件取排序第一的文件）。 */
     @Transactional
     public DocPreviewDtos.PreviewStatus generate(Long objectId, Long fileId, Long userId) {
-        docAccessGuard.require(objectId);
+        objectAccessGuard.requireType(objectId, DocService.OBJECT_TYPE, "文档");
         FileService.FileView source = resolveSource(objectId, fileId);
         String ext = source.ext() == null ? "" : source.ext().toLowerCase(Locale.ROOT);
         DocPreview record = findOrCreate(objectId, source.fileId(), userId);
@@ -98,6 +103,9 @@ public class PreviewService {
                     mimeOf(output.format()),
                     new ByteArrayInputStream(output.content()), userId);
             record.setFormat(output.format());
+            // 预览产物是 VIEW 角色的文件链接，落库后同步子表统计，
+            // 否则详情/列表的文件数会与真实链接数不一致（上传时统计含 VIEW）
+            refreshFileStats(objectId);
             return toStatus(mark(record, "READY", converter.name(), uploaded.fileId(), userId,
                     output.pageCount()));
         } catch (PreviewUnavailableException ex) {
@@ -239,6 +247,17 @@ public class PreviewService {
             case "WEBP" -> "image/webp";
             default -> "application/octet-stream";
         };
+    }
+
+    /** 与 DocService.refreshFileStats 同口径：文件数 + 主文件（无 MAIN 时取排序第一）。 */
+    private void refreshFileStats(Long docId) {
+        List<FileService.FileView> files = fileService.listByOwner(docId, true);
+        FileService.FileView main = files.stream()
+                .filter(file -> FileService.ROLE_MAIN.equals(file.fileRole()))
+                .findFirst()
+                .orElse(files.isEmpty() ? null : files.get(0));
+        docMasterMapper.updateFileStats(docId, files.size(),
+                main == null ? null : main.fileId(), main == null ? null : main.ext());
     }
 
     private String truncate(String message) {

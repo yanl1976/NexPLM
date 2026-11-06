@@ -3,6 +3,7 @@ package com.nexplm.platform.doc.service;
 import com.nexplm.platform.doc.api.DocDtos;
 import com.nexplm.platform.iam.api.SecurityDtos;
 import com.nexplm.platform.iam.service.AclService;
+import com.nexplm.platform.object.service.ObjectAccessGuard;
 import com.nexplm.platform.object.version.VersionFormatter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -22,12 +23,13 @@ public class DocViewService {
 
     private final AclService aclService;
     private final JdbcTemplate jdbcTemplate;
-    private final DocAccessGuard docAccessGuard;
+    private final ObjectAccessGuard objectAccessGuard;
 
-    public DocViewService(AclService aclService, JdbcTemplate jdbcTemplate, DocAccessGuard docAccessGuard) {
+    public DocViewService(AclService aclService, JdbcTemplate jdbcTemplate,
+                          ObjectAccessGuard objectAccessGuard) {
         this.aclService = aclService;
         this.jdbcTemplate = jdbcTemplate;
-        this.docAccessGuard = docAccessGuard;
+        this.objectAccessGuard = objectAccessGuard;
     }
 
     /**
@@ -125,6 +127,6 @@ public class DocViewService {
      * 必须与列表同一套数据范围，否则拼 id 就能读到看不到的文档。
      */
     private void requireDoc(Long docId) {
-        docAccessGuard.require(docId);
+        objectAccessGuard.requireType(docId, DocService.OBJECT_TYPE, "文档");
     }
 }

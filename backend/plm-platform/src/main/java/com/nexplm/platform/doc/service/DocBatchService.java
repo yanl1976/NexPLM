@@ -7,6 +7,7 @@ import com.nexplm.platform.file.service.FileService;
 import com.nexplm.platform.iam.api.SecurityDtos;
 import com.nexplm.platform.iam.service.AclService;
 import com.nexplm.platform.object.domain.PlmObject;
+import com.nexplm.platform.object.service.ObjectAccessGuard;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
@@ -31,12 +32,13 @@ public class DocBatchService {
 
     private final FileService fileService;
     private final AclService aclService;
-    private final DocAccessGuard docAccessGuard;
+    private final ObjectAccessGuard objectAccessGuard;
 
-    public DocBatchService(FileService fileService, AclService aclService, DocAccessGuard docAccessGuard) {
+    public DocBatchService(FileService fileService, AclService aclService,
+                           ObjectAccessGuard objectAccessGuard) {
         this.fileService = fileService;
         this.aclService = aclService;
-        this.docAccessGuard = docAccessGuard;
+        this.objectAccessGuard = objectAccessGuard;
     }
 
     /** 打包下载：每个文档取主文件（无主文件取第一个文件），条目名为「编码_文件名」。 */
@@ -47,7 +49,7 @@ public class DocBatchService {
         try (ZipOutputStream zip = new ZipOutputStream(buffer, StandardCharsets.UTF_8)) {
             for (Long id : targets) {
                 // 不可见/不存在/非文档一律跳过：批量接口不能成为绕过数据范围的通道
-                PlmObject object = docAccessGuard.find(id).orElse(null);
+                PlmObject object = objectAccessGuard.findType(id, DocService.OBJECT_TYPE).orElse(null);
                 if (object == null) {
                     continue;
                 }
@@ -78,7 +80,7 @@ public class DocBatchService {
         for (Long id : targets) {
             try {
                 // 先过数据范围再做授权，避免对看不见的文档下发/覆盖 ACL
-                docAccessGuard.require(id);
+                objectAccessGuard.requireType(id, DocService.OBJECT_TYPE, "文档");
                 aclService.grant(new SecurityDtos.AclGrantReq(id, req.actorType(), req.actorId(),
                         req.actions(), req.effect(), req.expireAt(), null), operatorId);
                 results.add(new DocBatchDtos.BatchGrantResult(id, true, "已授权"));

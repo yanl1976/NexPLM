@@ -7,8 +7,14 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import java.util.List;
+
 @Mapper
 public interface FileLinkMapper extends BaseMapper<FileLink> {
+
+    /** 物理文件被哪些对象引用（内容寻址共享同一份物理文件时可能有多个）。 */
+    @Select("SELECT DISTINCT owner_object_id FROM file_link WHERE file_id = #{fileId}")
+    List<Long> ownerIds(@Param("fileId") Long fileId);
 
     @Update("""
             UPDATE file_link SET is_latest = false

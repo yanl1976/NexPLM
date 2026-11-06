@@ -35,6 +35,10 @@ public class DocPreviewController {
         return Result.ok(previewService.status(id));
     }
 
+    /**
+     * 生成/重试预览：产物是系统派生的 VIEW 文件，不改变文档业务属性与生命周期，
+     * 因此沿用读权限（只读用户浏览时也要能触发），但必须对文档有数据范围可见性。
+     */
     @Operation(summary = "生成或重试预览（产物为 PDF/PNG，存文件仓 VIEW 角色）")
     @PostMapping
     @PreAuthorize("hasAuthority('pdm.doc.read')")

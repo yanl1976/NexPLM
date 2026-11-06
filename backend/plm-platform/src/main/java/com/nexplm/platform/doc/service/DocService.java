@@ -16,6 +16,7 @@ import com.nexplm.platform.lifecycle.service.LifecycleService;
 import com.nexplm.platform.metadata.service.MetaService;
 import com.nexplm.platform.object.domain.PlmObject;
 import com.nexplm.platform.object.mapper.PlmObjectMapper;
+import com.nexplm.platform.object.service.ObjectAccessGuard;
 import com.nexplm.platform.object.version.VersionFormatter;
 import com.nexplm.platform.security.scope.ScopeApplier;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -61,7 +62,7 @@ public class DocService {
     private final MetaService metaService;
     private final LifecycleService lifecycleService;
     private final DocClassService docClassService;
-    private final DocAccessGuard docAccessGuard;
+    private final ObjectAccessGuard objectAccessGuard;
     private final ScopeApplier scopeApplier;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper jsonMapper;
@@ -69,7 +70,7 @@ public class DocService {
     public DocService(PlmObjectMapper objectMapper, DocMasterMapper docMapper, FileService fileService,
                       CheckoutService checkoutService, MetaService metaService,
                       LifecycleService lifecycleService, DocClassService docClassService,
-                      DocAccessGuard docAccessGuard, ScopeApplier scopeApplier,
+                      ObjectAccessGuard objectAccessGuard, ScopeApplier scopeApplier,
                       JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper) {
         this.objectMapper = objectMapper;
         this.docMapper = docMapper;
@@ -78,7 +79,7 @@ public class DocService {
         this.metaService = metaService;
         this.lifecycleService = lifecycleService;
         this.docClassService = docClassService;
-        this.docAccessGuard = docAccessGuard;
+        this.objectAccessGuard = objectAccessGuard;
         this.scopeApplier = scopeApplier;
         this.jdbcTemplate = jdbcTemplate;
         this.jsonMapper = jsonMapper;
@@ -458,7 +459,7 @@ public class DocService {
 
     /** 按 id 直取的统一校验（类型 + 数据范围），与列表过滤同语义。 */
     private PlmObject requireObject(Long id) {
-        return docAccessGuard.require(id);
+        return objectAccessGuard.requireType(id, OBJECT_TYPE, "文档");
     }
 
     private String requireEnum(String enumCode, String value, String label) {
