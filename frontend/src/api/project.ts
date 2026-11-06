@@ -215,9 +215,41 @@ export interface DependencySaveReq {
   lagDays?: number
 }
 
+/** 日历事件（扁平，前端按月网格展开到每一天）。 */
+export interface TaskCalendarRow {
+  id: string
+  parentId?: string | null
+  wbsCode: string
+  name: string
+  type: string
+  status: string
+  planStart: string
+  planEnd: string
+  durationDays: number
+  progress: number
+  ownerName?: string | null
+}
+
+export interface CalendarBoard {
+  projectId: string
+  projectCode?: string | null
+  projectName?: string | null
+  from: string
+  to: string
+  tasks: TaskCalendarRow[]
+}
+
 export const taskApi = {
   board(projectId: string): Promise<TaskBoard> {
     return http.get<TaskBoard>(`/prj/projects/${projectId}/tasks`)
+  },
+  /** 日历：只返回与区间相交且已排期的任务。 */
+  calendar(projectId: string, from: string, to: string): Promise<CalendarBoard> {
+    return http.get<CalendarBoard>(`/prj/projects/${projectId}/calendar`, { from, to })
+  },
+  /** 拖拽改期：级联平移子树，不动祖先与依赖。 */
+  reschedule(taskId: string, planStart: string, planEnd: string): Promise<TaskBoard> {
+    return http.post<TaskBoard>(`/prj/tasks/${taskId}/reschedule`, { planStart, planEnd })
   },
   create(projectId: string, req: TaskSaveReq): Promise<TaskBoard> {
     return http.post<TaskBoard>(`/prj/projects/${projectId}/tasks`, req)

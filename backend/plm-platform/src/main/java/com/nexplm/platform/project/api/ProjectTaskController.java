@@ -7,6 +7,7 @@ import com.nexplm.platform.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,7 +19,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** WBS 任务与依赖（P7-2）。 */
+import java.time.LocalDate;
+
+/** WBS 任务与依赖（P7-2）、日历与拖拽排期（P7-7）。 */
 @Tag(name = "项目-WBS 任务")
 @RestController
 @RequestMapping("/api/v1")
@@ -35,6 +38,29 @@ public class ProjectTaskController {
     @PreAuthorize("hasAuthority('prj.project.read')")
     public Result<ProjectTaskDtos.TaskBoard> board(@PathVariable Long projectId) {
         return Result.ok(taskService.board(projectId, CurrentUser.companyId()));
+    }
+
+    @Operation(summary = "项目日历（与区间相交的已排期任务）")
+    @GetMapping("/prj/projects/{projectId}/calendar")
+    @PreAuthorize("hasAuthority('prj.project.read')")
+    public Result<ProjectTaskDtos.CalendarBoard> calendar(
+            @PathVariable Long projectId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate to) {
+        return Result.ok(taskService.calendar(projectId, from, to, CurrentUser.companyId()));
+    }
+
+    @Operation(summary = "拖拽改期（级联平移子树，不动祖先与依赖）")
+    @PostMapping("/prj/tasks/{taskId}/reschedule")
+    @PreAuthorize("hasAuthority('prj.project.write')")
+    @Audit(module = "PRJ", action = "TASK_RESCHEDULE", objectType = "PrjTask")
+    public Result<ProjectTaskDtos.TaskBoard> reschedule(
+            @PathVariable Long taskId,
+            @Valid @RequestBody ProjectTaskDtos.TaskRescheduleReq req) {
+        return Result.ok(taskService.reschedule(taskId, req, CurrentUser.companyId(),
+                CurrentUser.userId()));
     }
 
     @Operation(summary = "新建任务（WBS 编码服务端生成）")

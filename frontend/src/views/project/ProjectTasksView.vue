@@ -8,6 +8,7 @@
       <el-button v-if="canWrite" :loading="resequencing" @click="onResequence">WBS 编码重排</el-button>
       <el-button type="success" plain @click="openDeliverables">交付物与齐套</el-button>
       <el-button type="warning" plain @click="openTimesheets">项目工时</el-button>
+      <el-button type="info" plain @click="openCalendar">日历排期</el-button>
       <span class="hint">项目进度 = 叶子任务按工期加权汇总（父任务不重复计数）</span>
     </div>
 
@@ -418,6 +419,10 @@ function openDeliverables(): void {
 
 function openTimesheets(): void {
   router.push(`/project/${projectId}/timesheets`)
+}
+
+function openCalendar(): void {
+  router.push(`/project/${projectId}/calendar`)
 }
 
 async function searchUsers(keywordText: string): Promise<void> {

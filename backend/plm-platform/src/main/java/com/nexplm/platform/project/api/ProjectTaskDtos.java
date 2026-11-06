@@ -48,6 +48,27 @@ public final class ProjectTaskDtos {
                             String ownerName) {
     }
 
+    /** 日历事件（扁平，前端按月网格自己展开到每一天）。 */
+    public record TaskCalendarRow(Long id, Long parentId, String wbsCode, String name, String type,
+                                  String status, LocalDate planStart, LocalDate planEnd,
+                                  int durationDays, int progress, String ownerName) {
+    }
+
+    /** 日历看板：{@code from/to} 回显实际查询区间，便于前端确认。 */
+    public record CalendarBoard(Long projectId, String projectCode, String projectName,
+                                LocalDate from, LocalDate to,
+                                List<TaskCalendarRow> tasks) {
+    }
+
+    /**
+     * 拖拽改期：只传新的计划起止。
+     *
+     * <p>服务端按 {@code planStart} 的差值级联平移整棵子树（父任务移动，子任务跟着走），
+     * 工期按 {@code planEnd - planStart} 重算；不动祖先区间、不动依赖关系。</p>
+     */
+    public record TaskRescheduleReq(@NotNull LocalDate planStart, @NotNull LocalDate planEnd) {
+    }
+
     /**
      * 任务保存入参。
      *

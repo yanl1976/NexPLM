@@ -170,6 +170,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '项目工时' }
       },
       {
+        path: 'project/:id/calendar',
+        name: 'project-calendar',
+        component: () => import('@/views/project/ProjectCalendarView.vue'),
+        meta: { title: '项目日历' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),

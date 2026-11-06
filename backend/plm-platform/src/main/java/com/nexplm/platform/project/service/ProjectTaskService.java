@@ -143,6 +143,111 @@ public class ProjectTaskService {
                 projectId);
     }
 
+    // ---------------------------------------------------------------- 日历与拖拽排期（P7-7）
+
+    /**
+     * 日历：只返回与区间相交且已排期（有起止）的任务。
+     *
+     * <p>未排期任务不进日历——日历上没日期就没位置可放，强行画在"今天"会误导；
+     * 需要看未排期任务用 WBS 看板。</p>
+     */
+    public ProjectTaskDtos.CalendarBoard calendar(Long projectId, java.time.LocalDate from,
+                                                  java.time.LocalDate to, Long companyId) {
+        Map<String, Object> project = requireProject(projectId, companyId);
+        java.time.LocalDate start = from != null ? from : java.time.LocalDate.now().withDayOfMonth(1);
+        java.time.LocalDate end = to != null ? to : start.plusMonths(1).minusDays(1);
+        if (end.isBefore(start)) {
+            throw BizException.of(ErrorCode.PRJ_TASK_INVALID, "结束日期不能早于开始日期");
+        }
+        List<ProjectTaskDtos.TaskCalendarRow> tasks = jdbcTemplate.query("""
+                        SELECT t.id, t.parent_id, t.wbs_code, t.name, t.type, t.status,
+                               t.plan_start, t.plan_end, COALESCE(t.duration_days, 1) AS duration_days,
+                               t.progress, u.display_name AS owner_name
+                          FROM prj_task t
+                          LEFT JOIN sys_user u ON u.id = t.owner_id
+                         WHERE t.project_id = ? AND t.deleted = false
+                           AND t.plan_start IS NOT NULL AND t.plan_end IS NOT NULL
+                           AND t.plan_start <= ? AND t.plan_end >= ?
+                         ORDER BY t.plan_start, t.wbs_code
+                        """,
+                (rs, rowNum) -> new ProjectTaskDtos.TaskCalendarRow(rs.getLong("id"),
+                        (Long) rs.getObject("parent_id"), rs.getString("wbs_code"),
+                        rs.getString("name"), rs.getString("type"), rs.getString("status"),
+                        rs.getObject("plan_start", java.time.LocalDate.class),
+                        rs.getObject("plan_end", java.time.LocalDate.class),
+                        rs.getInt("duration_days"), rs.getInt("progress"),
+                        rs.getString("owner_name")),
+                projectId, end, start);
+        return new ProjectTaskDtos.CalendarBoard(projectId, str(project.get("code")),
+                str(project.get("name")), start, end, tasks);
+    }
+
+    /**
+     * 拖拽改期：改自身起止 + 按 {@code planStart} 的差值级联平移整棵子树。
+     *
+     * <p>为什么不改祖先：父任务的计划条是"承诺"，子任务是"执行"，拖子任务顺手改父承诺
+     * 会让上周确认过的计划悄悄变形。也不动依赖边：改期只改时间，语义关系（FS/SS…）不变。</p>
+     */
+    @Transactional
+    public ProjectTaskDtos.TaskBoard reschedule(Long taskId,
+                                                ProjectTaskDtos.TaskRescheduleReq req,
+                                                Long companyId, Long userId) {
+        // 注意：必须用 RowMapper 取 LocalDate——queryForList 会把 date 列给成 java.sql.Date，
+        // 再 instanceof LocalDate 就是 false，delta 会静默变 0，子树不动（联调时踩过）。
+        Map<String, Object> task = jdbcTemplate.query("""
+                        SELECT id, project_id, plan_start, plan_end FROM prj_task
+                         WHERE id = ? AND company_id = ? AND deleted = false
+                        """,
+                rs -> {
+                    if (!rs.next()) {
+                        return null;
+                    }
+                    Map<String, Object> row = new java.util.HashMap<>();
+                    row.put("project_id", rs.getLong("project_id"));
+                    row.put("plan_start", rs.getObject("plan_start", java.time.LocalDate.class));
+                    return row;
+                },
+                taskId, companyId);
+        if (task == null) {
+            throw BizException.of(ErrorCode.PRJ_TASK_NOT_FOUND, "任务不存在：" + taskId);
+        }
+        Long projectId = longOf(task.get("project_id"));
+        requireProject(projectId, companyId);
+        if (req.planEnd().isBefore(req.planStart())) {
+            throw BizException.of(ErrorCode.PRJ_TASK_INVALID, "计划结束日期不能早于开始日期");
+        }
+        java.time.LocalDate oldStart = (java.time.LocalDate) task.get("plan_start");
+        int delta = oldStart == null ? 0
+                : (int) java.time.temporal.ChronoUnit.DAYS.between(oldStart, req.planStart());
+        int duration = (int) (java.time.temporal.ChronoUnit.DAYS
+                .between(req.planStart(), req.planEnd()) + 1);
+        jdbcTemplate.update("""
+                        UPDATE prj_task
+                           SET plan_start = ?, plan_end = ?, duration_days = ?,
+                               updated_by = ?, updated_at = now()
+                         WHERE id = ? AND company_id = ?
+                        """, req.planStart(), req.planEnd(), duration, userId, taskId, companyId);
+        if (delta != 0) {
+            jdbcTemplate.update("""
+                            WITH RECURSIVE subtree(id) AS (
+                                SELECT id FROM prj_task
+                                 WHERE parent_id = ? AND deleted = false
+                                UNION ALL
+                                SELECT c.id FROM prj_task c
+                                  JOIN subtree s ON c.parent_id = s.id
+                                 WHERE c.deleted = false
+                            )
+                            UPDATE prj_task t
+                               SET plan_start = t.plan_start + ?,
+                                   plan_end = t.plan_end + ?,
+                                   updated_by = ?, updated_at = now()
+                             WHERE t.id IN (SELECT id FROM subtree)
+                               AND t.plan_start IS NOT NULL AND t.plan_end IS NOT NULL
+                            """, taskId, delta, delta, userId);
+        }
+        return board(projectId, companyId);
+    }
+
     // ---------------------------------------------------------------- 任务写
 
     @Transactional
