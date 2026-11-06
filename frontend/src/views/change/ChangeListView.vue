@@ -80,6 +80,7 @@
           <div class="actions">
             <el-button v-if="detail.status === 'DRAFT'" size="small" @click="openEdit">编辑</el-button>
             <el-button v-if="detail.status === 'DRAFT'" size="small" type="primary" @click="onSubmit">提交评审</el-button>
+            <el-button v-if="detail.objects.length" size="small" @click="openImpact">影响分析</el-button>
             <el-button v-if="EXECUTABLE.includes(detail.status)" size="small" type="success" @click="onExecute">
               执行变更
             </el-button>
@@ -276,6 +277,49 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="impactVisible" title="影响分析（BOM）" width="840px">
+      <div class="add-object">
+        <span class="label">展开层数</span>
+        <el-select v-model="impactDepth" style="width: 110px" @change="loadImpact">
+          <el-option :value="1" label="1 层" />
+          <el-option :value="2" label="2 层" />
+          <el-option :value="3" label="3 层" />
+          <el-option :value="5" label="5 层" />
+        </el-select>
+        <span class="hint">从「受影响」对象出发：向下=组成件，向上=被哪些装配使用</span>
+      </div>
+      <el-table v-loading="impactLoading" :data="impactRows" border size="small" style="margin-top: 10px">
+        <el-table-column label="方向" width="90">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.direction === 'DOWN' ? 'info' : 'warning'">
+              {{ row.direction === 'DOWN' ? '向下' : '向上' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="depth" label="层级" width="70" align="center" />
+        <el-table-column prop="objectType" label="类型" width="110" />
+        <el-table-column label="对象" min-width="200">
+          <template #default="{ row }">{{ row.code }} {{ row.name }}</template>
+        </el-table-column>
+        <el-table-column prop="lifecycleState" label="状态" width="110" />
+        <el-table-column label="版本" width="80">
+          <template #default="{ row }">v{{ row.revision }}.{{ row.iteration }}</template>
+        </el-table-column>
+        <el-table-column label="已关联" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.linked" size="small" type="success">是</el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="该对象没有 BOM 关联件" />
+        </template>
+      </el-table>
+      <template #footer>
+        <el-button @click="impactVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="formVisible" :title="editing ? '编辑变更申请' : '新建变更申请'" width="640px">
       <el-form label-width="96px">
         <el-form-item label="标题" required>
@@ -325,6 +369,7 @@ import {
   type EcrDetail,
   type EcrRow,
   type EcrSaveReq,
+  type ImpactRow,
   type ProblemRow
 } from '@/api/change'
 
@@ -394,6 +439,10 @@ const problemForm = reactive<{ description: string; dueDate: string | null }>({
   description: '',
   dueDate: null
 })
+const impactVisible = ref(false)
+const impactLoading = ref(false)
+const impactDepth = ref(3)
+const impactRows = ref<ImpactRow[]>([])
 
 function formatTime(value?: string | null): string {
   return value ? value.replace('T', ' ').slice(0, 19) : '-'
@@ -718,6 +767,25 @@ async function onCloseProblem(row: ProblemRow): Promise<void> {
   }
 }
 
+async function openImpact(): Promise<void> {
+  impactVisible.value = true
+  await loadImpact()
+}
+
+async function loadImpact(): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  impactLoading.value = true
+  try {
+    impactRows.value = await changeApi.impact(detail.value.id, impactDepth.value)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '影响分析失败')
+  } finally {
+    impactLoading.value = false
+  }
+}
+
 async function onExecute(): Promise<void> {
   if (!detail.value) {
     return
@@ -803,6 +871,16 @@ onMounted(load)
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.label {
+  color: #606266;
+  font-size: 13px;
+}
+
+.hint {
+  color: #909399;
+  font-size: 12px;
 }
 
 .add-object {

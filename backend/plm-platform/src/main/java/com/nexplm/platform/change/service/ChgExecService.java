@@ -283,6 +283,111 @@ public class ChgExecService {
                 """.formatted(timeColumn), state, userId, objectId);
     }
 
+    // ------------------------------------------------------------------ 影响分析
+
+    /** 向下展开（父 → 子件）：从根对象查到其组成件。 */
+    private static final String DOWN_SQL = """
+            WITH RECURSIVE walk AS (
+                SELECT b.child_object_id AS id, 1 AS depth,
+                       ARRAY[b.parent_object_id, b.child_object_id] AS path
+                  FROM bom_line b
+                 WHERE b.parent_object_id = ? AND b.deleted = false AND b.view_type = ?
+                UNION ALL
+                SELECT b.child_object_id, w.depth + 1, w.path || b.child_object_id
+                  FROM bom_line b
+                  JOIN walk w ON b.parent_object_id = w.id
+                 WHERE b.deleted = false AND b.view_type = ? AND w.depth < ?
+                   AND NOT b.child_object_id = ANY (w.path)
+            )
+            SELECT id, MIN(depth) AS depth FROM walk GROUP BY id
+            """;
+
+    /** 向上展开（子件 → 父件）：反查被哪些上层装配使用（where-used）。 */
+    private static final String UP_SQL = """
+            WITH RECURSIVE walk AS (
+                SELECT b.parent_object_id AS id, 1 AS depth,
+                       ARRAY[b.child_object_id, b.parent_object_id] AS path
+                  FROM bom_line b
+                 WHERE b.child_object_id = ? AND b.deleted = false AND b.view_type = ?
+                UNION ALL
+                SELECT b.parent_object_id, w.depth + 1, w.path || b.parent_object_id
+                  FROM bom_line b
+                  JOIN walk w ON b.child_object_id = w.id
+                 WHERE b.deleted = false AND b.view_type = ? AND w.depth < ?
+                   AND NOT b.parent_object_id = ANY (w.path)
+            )
+            SELECT id, MIN(depth) AS depth FROM walk GROUP BY id
+            """;
+
+    /**
+     * 影响分析：从 ECR 的「受影响」对象出发，按 BOM 向上/向下展开指定层数。
+     *
+     * <p>用 PG 递归 CTE 实现，path 数组负责防环（自引用或环形 BOM 不会死循环）。
+     * 同一对象若既被向下也被向上命中，保留首次写入的方向（先 DOWN 后 UP）。</p>
+     */
+    public List<ChgDtos.ImpactRow> impact(Long ecrId, Long companyId, int depth, String viewType) {
+        String view = viewType == null || viewType.isBlank() ? "DESIGN" : viewType.trim();
+        int maxDepth = Math.min(Math.max(depth, 1), 10);
+        List<Long> roots = jdbcTemplate.query("""
+                        SELECT object_id FROM chg_object
+                         WHERE ecr_id = ? AND company_id = ? AND relation = 'AFFECTED'
+                        """,
+                (rs, rowNum) -> rs.getLong(1), ecrId, companyId);
+        if (roots.isEmpty()) {
+            return List.of();
+        }
+        List<Long> linkedIds = jdbcTemplate.query(
+                "SELECT object_id FROM chg_object WHERE ecr_id = ?",
+                (rs, rowNum) -> rs.getLong(1), ecrId);
+        Map<String, Integer> depths = new java.util.LinkedHashMap<>();
+        Map<Long, String> directions = new java.util.HashMap<>();
+        for (Long root : roots) {
+            collect(DOWN_SQL, root, view, maxDepth, "DOWN", depths, directions);
+            collect(UP_SQL, root, view, maxDepth, "UP", depths, directions);
+        }
+        if (depths.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = new ArrayList<>(directions.keySet());
+        String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+        List<ChgDtos.ImpactRow> rows = new ArrayList<>();
+        jdbcTemplate.query("SELECT id, object_type, code, name, lifecycle_state, revision, iteration "
+                        + "FROM plm_object WHERE id IN (" + placeholders + ") AND deleted = false",
+                rs -> {
+                    long id = rs.getLong("id");
+                    String direction = directions.get(id);
+                    Integer level = depths.get(direction + "|" + id);
+                    if (direction == null || level == null) {
+                        return;
+                    }
+                    rows.add(new ChgDtos.ImpactRow(direction, level, rs.getString("object_type"), id,
+                            rs.getString("code"), rs.getString("name"), rs.getString("lifecycle_state"),
+                            rs.getInt("revision"), rs.getInt("iteration"), linkedIds.contains(id)));
+                }, ids.toArray());
+        rows.sort(java.util.Comparator
+                .comparing(ChgDtos.ImpactRow::direction)
+                .thenComparingInt(ChgDtos.ImpactRow::depth)
+                .thenComparing(ChgDtos.ImpactRow::code));
+        return rows;
+    }
+
+    private void collect(String sql, Long root, String view, int maxDepth, String direction,
+                         Map<String, Integer> depths, Map<Long, String> directions) {
+        jdbcTemplate.query(sql, rs -> {
+            long id = rs.getLong("id");
+            if (id == root) {
+                return;
+            }
+            int level = rs.getInt("depth");
+            String key = direction + "|" + id;
+            Integer existing = depths.get(key);
+            if (existing == null || level < existing) {
+                depths.put(key, level);
+                directions.putIfAbsent(id, direction);
+            }
+        }, root, view, view, maxDepth);
+    }
+
     private String ecrStatus(Long ecrId, Long companyId) {
         List<String> status = jdbcTemplate.query(
                 "SELECT status FROM chg_ecr WHERE id = ? AND company_id = ? AND deleted = false",

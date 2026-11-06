@@ -216,6 +216,57 @@ class ChangeSmokeTest {
         assertThat(newCount).isEqualTo(1);
     }
 
+    /** 影响分析：3 层 BOM 的向上/向下展开。 */
+    @Test
+    void impactAnalysisWalksBomBothDirections() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long assembly = createItem(admin, "总成A");
+        long subAssembly = createItem(admin, "部件B");
+        long part = createItem(admin, "零件C");
+        insertBomLine(assembly, subAssembly);
+        insertBomLine(subAssembly, part);
+
+        long downEcr = createEcrWithAffected(admin, "向下影响", assembly);
+        JsonNode down = call(get("/api/v1/chg/ecrs/{id}/impact?depth=3&viewType=DESIGN", downEcr), admin, null);
+        Map<String, Integer> downDepths = new HashMap<>();
+        for (JsonNode row : down) {
+            assertThat(row.path("direction").asText()).isEqualTo("DOWN");
+            downDepths.put(row.path("objectId").asText(), row.path("depth").asInt());
+        }
+        assertThat(downDepths.get(String.valueOf(subAssembly))).isEqualTo(1);
+        assertThat(downDepths.get(String.valueOf(part))).isEqualTo(2);
+        assertThat(downDepths.containsKey(String.valueOf(assembly))).isFalse();
+
+        long upEcr = createEcrWithAffected(admin, "向上影响", part);
+        JsonNode up = call(get("/api/v1/chg/ecrs/{id}/impact?depth=3&viewType=DESIGN", upEcr), admin, null);
+        Map<String, Integer> upDepths = new HashMap<>();
+        for (JsonNode row : up) {
+            assertThat(row.path("direction").asText()).isEqualTo("UP");
+            upDepths.put(row.path("objectId").asText(), row.path("depth").asInt());
+        }
+        assertThat(upDepths.get(String.valueOf(subAssembly))).isEqualTo(1);
+        assertThat(upDepths.get(String.valueOf(assembly))).isEqualTo(2);
+    }
+
+    private void insertBomLine(long parentId, long childId) {
+        jdbcTemplate.update("""
+                INSERT INTO bom_line (id, parent_object_id, child_object_id, view_type, line_no, qty)
+                VALUES (?, ?, ?, 'DESIGN', 10, 1)
+                """, com.baomidou.mybatisplus.core.toolkit.IdWorker.getId(), parentId, childId);
+    }
+
+    private long createEcrWithAffected(String admin, String title, long objectId) throws Exception {
+        long ecrId = call(post("/api/v1/chg/ecrs"), admin,
+                json(Map.of("title", title, "changeType", "DESIGN"))).path("id").asLong();
+        Map<String, Object> affected = new HashMap<>();
+        affected.put("objectType", "PdmItem");
+        affected.put("objectId", objectId);
+        affected.put("relation", "AFFECTED");
+        affected.put("action", "REVISE");
+        call(post("/api/v1/chg/ecrs/{id}/objects", ecrId), admin, json(affected));
+        return ecrId;
+    }
+
     // ------------------------------------------------------------ 工具
 
     private long createItem(String token, String name) throws Exception {

@@ -154,6 +154,15 @@ public class ChgController {
         return Result.ok();
     }
 
+    @Operation(summary = "影响分析（从受影响对象按 BOM 向上/向下展开）")
+    @GetMapping("/ecrs/{id}/impact")
+    @PreAuthorize("hasAuthority('chg.ecr.read')")
+    public Result<java.util.List<ChgDtos.ImpactRow>> impact(@PathVariable Long id,
+                                                            @RequestParam(defaultValue = "3") int depth,
+                                                            @RequestParam(defaultValue = "DESIGN") String viewType) {
+        return Result.ok(execService.impact(id, CurrentUser.companyId(), depth, viewType));
+    }
+
     @Operation(summary = "执行变更（受影响对象批量升版/废弃/发布）")
     @PostMapping("/ecrs/{id}/execute")
     @PreAuthorize("hasAuthority('chg.ecr.write')")

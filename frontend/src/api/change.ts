@@ -121,7 +121,24 @@ export interface ExecuteResult {
   messages: string[]
 }
 
+/** 影响分析行。 */
+export interface ImpactRow {
+  direction: 'UP' | 'DOWN'
+  depth: number
+  objectType: string
+  objectId: string
+  code: string
+  name: string
+  lifecycleState: string
+  revision: number
+  iteration: number
+  linked: boolean
+}
+
 export const changeApi = {
+  impact(ecrId: string, depth = 3, viewType = 'DESIGN') {
+    return http.get<ImpactRow[]>(`/chg/ecrs/${ecrId}/impact`, { depth, viewType })
+  },
   createEcn(ecrId: string, body: { title: string; executorId?: string | null; planDate?: string | null; remark?: string | null }) {
     return http.post<EcnRow>(`/chg/ecrs/${ecrId}/ecns`, body)
   },

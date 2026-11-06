@@ -90,4 +90,13 @@ public final class ChgDtos {
     /** 变更执行结果。 */
     public record ExecuteResult(int total, int succeeded, int skipped, List<String> messages) {
     }
+
+    /**
+     * 影响分析行：从「受影响」对象出发的 BOM 向上/向下展开结果。
+     * <p>versionLabel 由 revision/iteration 拼装（与列表页版本展示一致）。</p>
+     */
+    public record ImpactRow(String direction, int depth, String objectType, Long objectId,
+                            String code, String name, String lifecycleState,
+                            int revision, int iteration, boolean linked) {
+    }
 }
