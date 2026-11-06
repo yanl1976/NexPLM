@@ -17,6 +17,7 @@ import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.repository.ProcessDefinition;
 import org.flowable.engine.runtime.ProcessInstance;
+import org.flowable.engine.history.HistoricProcessInstance;
 import org.flowable.task.api.Task;
 import org.flowable.task.api.TaskQuery;
 import org.flowable.task.api.history.HistoricTaskInstance;
@@ -733,6 +734,84 @@ public class WorkflowService {
                     row.signerId(), row.signerName(), row.meaning(), row.fileId(), row.fileSha256(),
                     row.signTime(), verifySignature(row.fileSha256(), current));
         }).toList();
+    }
+
+    /**
+     * 一致性巡检：核对「引擎运行实例 ↔ wf_instance_link ↔ 对象生命周期」三方是否自洽。
+     * <p>{@code fix=true} 只修正可判定的漂移（孤儿 link 置终态）；生命周期不符仅报告，交人工判断。</p>
+     */
+    @Transactional
+    public WfDtos.ConsistencyReport checkConsistency(boolean fix) {
+        List<WfDtos.ConsistencyIssue> issues = new ArrayList<>();
+        List<String> autoFixed = new ArrayList<>();
+
+        List<Map<String, Object>> orphanLinks = jdbcTemplate.queryForList("""
+                SELECT l.process_instance_id, l.object_type, l.object_id
+                  FROM wf_instance_link l
+                 WHERE l.status = 'RUNNING'
+                   AND NOT EXISTS (SELECT 1 FROM act_ru_execution e
+                                    WHERE e.proc_inst_id_ = l.process_instance_id)
+                """);
+        for (Map<String, Object> row : orphanLinks) {
+            String pid = String.valueOf(row.get("process_instance_id"));
+            issues.add(new WfDtos.ConsistencyIssue("ORPHAN_RUNNING_LINK", "ERROR",
+                    String.valueOf(row.get("object_type")), toLong(row.get("object_id")), pid,
+                    "流程实例已结束但业务关联仍标记为运行中"));
+            if (fix) {
+                HistoricProcessInstance historic = historyService.createHistoricProcessInstanceQuery()
+                        .processInstanceId(pid).singleResult();
+                boolean terminated = historic == null || historic.getDeleteReason() != null;
+                markLink(pid, terminated ? "TERMINATED" : "COMPLETED");
+                autoFixed.add(pid + " → " + (terminated ? "TERMINATED" : "COMPLETED"));
+            }
+        }
+
+        List<Map<String, Object>> unlinked = jdbcTemplate.queryForList("""
+                SELECT DISTINCT e.proc_inst_id_ AS pid
+                  FROM act_ru_execution e
+                 WHERE e.parent_id_ IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM wf_instance_link l
+                                    WHERE l.process_instance_id = e.proc_inst_id_)
+                """);
+        for (Map<String, Object> row : unlinked) {
+            issues.add(new WfDtos.ConsistencyIssue("UNLINKED_INSTANCE", "ERROR", null, null,
+                    String.valueOf(row.get("pid")), "存在运行中的流程实例但未关联业务对象"));
+        }
+
+        List<Map<String, Object>> stateMismatch = jdbcTemplate.queryForList("""
+                SELECT l.process_instance_id, l.object_type, l.object_id, o.lifecycle_state
+                  FROM wf_instance_link l
+                  JOIN plm_object o ON o.id = l.object_id
+                 WHERE l.status = 'RUNNING' AND o.lifecycle_state <> 'InWorkflow'
+                """);
+        for (Map<String, Object> row : stateMismatch) {
+            issues.add(new WfDtos.ConsistencyIssue("LIFECYCLE_NOT_IN_WORKFLOW", "WARN",
+                    String.valueOf(row.get("object_type")), toLong(row.get("object_id")),
+                    String.valueOf(row.get("process_instance_id")),
+                    "流程在运行但对象状态为 " + row.get("lifecycle_state")));
+        }
+
+        List<Map<String, Object>> stranded = jdbcTemplate.queryForList("""
+                SELECT o.id, o.object_type
+                  FROM plm_object o
+                 WHERE o.lifecycle_state = 'InWorkflow' AND o.deleted = false
+                   AND NOT EXISTS (SELECT 1 FROM wf_instance_link l
+                                    WHERE l.object_id = o.id AND l.status = 'RUNNING')
+                """);
+        for (Map<String, Object> row : stranded) {
+            issues.add(new WfDtos.ConsistencyIssue("STRANDED_IN_WORKFLOW", "WARN",
+                    String.valueOf(row.get("object_type")), toLong(row.get("id")), null,
+                    "对象处于审批中但没有运行中的流程"));
+        }
+
+        return new WfDtos.ConsistencyReport(OffsetDateTime.now(), issues.size(), autoFixed, issues);
+    }
+
+    private Long toLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        return value instanceof Number number ? number.longValue() : Long.valueOf(String.valueOf(value));
     }
 
     private Map<Long, String> currentFileShas(List<WfDtos.SignatureRow> rows) {

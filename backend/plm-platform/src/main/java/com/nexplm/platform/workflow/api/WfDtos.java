@@ -88,6 +88,18 @@ public final class WfDtos {
                                String verifyResult) {
     }
 
+    /**
+     * 一致性巡检问题项。
+     * <p>level：ERROR=必须处理（流程与业务关联断裂）、WARN=需人工确认（状态不符）。</p>
+     */
+    public record ConsistencyIssue(String code, String level, String objectType, Long objectId,
+                                   String processInstanceId, String message) {
+    }
+
+    public record ConsistencyReport(OffsetDateTime checkedAt, int issueCount,
+                                    List<String> autoFixed, List<ConsistencyIssue> issues) {
+    }
+
     /** 加签：给当前会签节点再追加一名审批人（只对多实例节点有效）。 */
     public record AddSignerReq(@NotNull(message = "加签人不能为空") Long signerId,
                                @Size(max = 2000) String comment) {

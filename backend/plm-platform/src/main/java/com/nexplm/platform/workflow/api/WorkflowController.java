@@ -117,6 +117,14 @@ public class WorkflowController {
         return Result.ok(workflowService.bindings(objectType));
     }
 
+    @Operation(summary = "流程与生命周期一致性巡检（fix=true 时自动修正可判定的漂移）")
+    @PostMapping("/consistency/check")
+    @PreAuthorize("hasAuthority('wf.process.manage')")
+    @Audit(module = "WF", action = "CONSISTENCY_CHECK", objectType = "WfInstance")
+    public Result<WfDtos.ConsistencyReport> checkConsistency(@RequestParam(defaultValue = "false") boolean fix) {
+        return Result.ok(workflowService.checkConsistency(fix));
+    }
+
     @Operation(summary = "对象电子签名记录（含主文件摘要核验结果）")
     @GetMapping("/signatures")
     @PreAuthorize("hasAuthority('wf.task.read')")

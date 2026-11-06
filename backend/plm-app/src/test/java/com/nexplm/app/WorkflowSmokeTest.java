@@ -1,5 +1,6 @@
 package com.nexplm.app;
 
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
@@ -469,6 +470,35 @@ class WorkflowSmokeTest {
         JsonNode rejectSignatures = call(
                 get("/api/v1/workflow/signatures?objectType=PdmItem&objectId=" + rejectItem), admin, null);
         assertThat(rejectSignatures.findValuesAsText("meaning")).contains("APPROVE", "REJECT");
+    }
+
+    @Test
+    void consistencyCheckDetectsAndFixesOrphans() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long itemId = createItem(admin, "巡检零件");
+
+        // 造一条「业务关联在跑、引擎里根本没有」的僵尸记录
+        String fakePid = "fake-instance-" + System.nanoTime();
+        jdbcTemplate.update("""
+                        INSERT INTO wf_instance_link (id, object_type, object_id, process_instance_id,
+                                                      process_key, business_key, status, started_by, started_at)
+                        VALUES (?, 'PdmItem', ?, ?, 'nexplmApproval', ?, 'RUNNING', ?, now())
+                        """,
+                IdWorker.getId(), itemId, fakePid, "PdmItem:" + itemId, adminId);
+
+        JsonNode report = call(post("/api/v1/workflow/consistency/check?fix=false"), admin, null);
+        assertThat(report.path("issues").findValuesAsText("processInstanceId")).contains(fakePid);
+        assertThat(report.path("issues").findValuesAsText("code")).contains("ORPHAN_RUNNING_LINK");
+
+        JsonNode fixed = call(post("/api/v1/workflow/consistency/check?fix=true"), admin, null);
+        assertThat(fixed.path("autoFixed").size()).isGreaterThanOrEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM wf_instance_link WHERE process_instance_id = ?", String.class, fakePid))
+                .isEqualTo("TERMINATED");
+
+        JsonNode after = call(post("/api/v1/workflow/consistency/check?fix=false"), admin, null);
+        assertThat(after.path("issues").findValuesAsText("processInstanceId")).doesNotContain(fakePid);
     }
 
     private String stateOf(long objectId) {
