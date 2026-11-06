@@ -8,24 +8,44 @@ import java.time.OffsetDateTime;
 
 /**
  * 零部件 DTO。
+ * <p>复刻旧系统 PSEITEM 页面：列表并列三状态（生命周期 / 使用状态 / 流程状态），
+ * 详情页带设计属性（旧 PSEBASEFORM）与检出信息。</p>
  */
 public final class ItemDtos {
 
     private ItemDtos() {
     }
 
+    /** 列表行：含旧系统主列表要求的发布时间、创建人、修改人。 */
     public record ItemSummary(Long id, String code, String name, String itemType, String specification,
-                              String material, String unit, String sourceType, String lifecycleState,
+                              String material, String unit, String sourceType,
+                              String lifecycleState, String phaseState, String usingState, String workflowState,
                               Integer revision, Integer iteration, String revisionLabel,
-                              OffsetDateTime updatedAt) {
+                              Long createdBy, String createdByName, Long updatedBy, String updatedByName,
+                              OffsetDateTime releasedAt, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     }
 
     public record ItemDetail(Long id, String code, String name, String itemType, String specification,
                              String material, String unit, BigDecimal weight, String sourceType,
-                             String stdCode, String remark, String lifecycleState, Integer revision,
-                             Integer iteration, String revisionLabel, Boolean isLatest, Long ownerId,
-                             Long orgId, Integer securityLevel, OffsetDateTime createdAt,
-                             OffsetDateTime updatedAt) {
+                             String stdCode, String remark, String lifecycleState, String phaseState,
+                             String usingState, String workflowState, Integer revision, Integer iteration,
+                             String revisionLabel, Boolean isLatest, Long ownerId, Long orgId,
+                             Integer securityLevel, Long createdBy, String createdByName,
+                             Long updatedBy, String updatedByName, OffsetDateTime releasedAt,
+                             OffsetDateTime createdAt, OffsetDateTime updatedAt,
+                             ItemDesignAttr designAttr, CheckoutInfo checkout) {
+    }
+
+    /** 设计属性（旧系统 PSEBASEFORM）：独立表，随零件 1:1。 */
+    public record ItemDesignAttr(String provider, String dwgNo, String productCategory, String productModel,
+                                 String productSpec, String materialType, String materialType2,
+                                 String surfaceTreatment, Boolean isTooling, String weightUnit,
+                                 String montage, Boolean colorItem) {
+    }
+
+    /** 检出信息：谁在什么时间检出、是否当前用户。 */
+    public record CheckoutInfo(Long userId, String userName, OffsetDateTime checkedOutAt,
+                               OffsetDateTime expireAt, Boolean mine) {
     }
 
     public record ItemSaveReq(
@@ -40,6 +60,41 @@ public final class ItemDtos {
             @Size(max = 128) String stdCode,
             @Size(max = 500) String remark,
             Long orgId,
-            Integer securityLevel) {
+            Integer securityLevel,
+            ItemDesignAttr designAttr) {
+    }
+
+    /** 使用状态迁移（旧系统 STATEID：Using / StopUsing / GiveUp）。 */
+    public record UsingStateReq(@NotBlank(message = "使用状态不能为空") String usingState) {
+    }
+
+    /** 零件视图行（旧系统 PSEITEMVIEW）。 */
+    public record ItemViewRow(Long id, String viewType, String viewTypeLabel, String description,
+                              Boolean isDefault, String lifecycleState, String workflowState,
+                              Integer bomLineCount, OffsetDateTime createdAt) {
+    }
+
+    public record ItemViewReq(String viewType, @Size(max = 500) String description,
+                              Long copyFromViewId) {
+    }
+
+    /** 版本行（旧系统「历史」页签）。 */
+    public record VersionRow(Long id, Integer revision, Integer iteration, String revisionLabel,
+                             String lifecycleState, Boolean isLatest, Long createdBy,
+                             String createdByName, OffsetDateTime createdAt, OffsetDateTime releasedAt) {
+    }
+
+    /** 设计文档行（零件 ↔ 图文档关系）。 */
+    public record ItemDocRow(Long id, String code, String name, String docType, String relationType,
+                             String lifecycleState, String revisionLabel, OffsetDateTime updatedAt) {
+    }
+
+    public record LogRow(String logType, String action, String fromState, String toState, String detail,
+                         String result, Long operatorId, String operatorLabel, String ip,
+                         OffsetDateTime createdAt) {
+    }
+
+    /** 批量操作结果（部分成功语义，与 BOM 批量一致）。 */
+    public record BatchResult(int total, int done, int skipped, java.util.List<String> messages) {
     }
 }

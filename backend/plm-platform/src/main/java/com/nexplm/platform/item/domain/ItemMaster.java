@@ -25,6 +25,8 @@ public class ItemMaster {
     private String sourceType;
     private String stdCode;
     private String remark;
+    /** 使用状态（旧系统 STATEID）：Using 在用 / StopUsing 停用 / GiveUp 废弃。 */
+    private String usingState;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 }
