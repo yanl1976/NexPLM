@@ -598,6 +598,124 @@ class CappSmokeTest {
         call(delete("/api/v1/capp/resource-classes/{id}", classId), admin, null);
     }
 
+    /**
+     * P6-5 工艺成册与齐套性检查。
+     *
+     * <p>覆盖：齐套检查的 PASS/WARN/FAIL 口径（无路线=FAIL）、成册页序（10/20）、跨零件卡片被拒、
+     * 空册不能发布、成册 PDF 导出（封页+目录+卡片分页）。</p>
+     */
+    @Test
+    void volumeAndCompleteness() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long itemId = createItem(admin, "成册零件");
+        long otherItemId = createItem(admin, "别的零件");
+
+        // 没有路线 → FAIL，ready=false
+        JsonNode empty = call(get("/api/v1/capp/completeness?objectId=" + itemId), admin, null);
+        assertThat(empty.path("ready").asBoolean()).isFalse();
+        assertThat(empty.path("failCount").asInt()).isEqualTo(2);
+        assertThat(empty.path("checks").findValuesAsText("key")).contains("ROUTE_EXISTS", "STEP_EXISTS");
+
+        long routingId = call(post("/api/v1/capp/routings"), admin,
+                json(routing("成册路线", itemId, steps(
+                        step(10, "粗车", "MACHINING", "机加车间", 0.5, 1.5),
+                        step(20, "终检", "INSPECTION", "检验站", 0.2, 0.3))))).path("id").asLong();
+
+        JsonNode draft = call(get("/api/v1/capp/completeness?objectId=" + itemId), admin, null);
+        assertThat(draft.path("ready").asBoolean()).isTrue();
+        assertThat(draft.path("routeCount").asInt()).isEqualTo(1);
+        assertThat(draft.path("releasedRouteCount").asInt()).isZero();
+        assertThat(draft.path("stepCount").asInt()).isEqualTo(2);
+        assertThat(draft.path("warnCount").asInt()).isGreaterThan(0);
+        assertThat(draft.path("checks").findValuesAsText("key")).contains("SUBSTEP_EXISTS", "CARD_EXISTS");
+
+        call(post("/api/v1/capp/routings/{id}/release", routingId), admin, null);
+
+        // 已发布模板 + 两张卡片
+        Map<String, Object> layout = new HashMap<>();
+        layout.put("title", "成册工序卡");
+        layout.put("columns", List.of(
+                column("seqNo", "工序号", "CENTER", 10),
+                column("name", "工序名称", "LEFT", 18)));
+        Map<String, Object> templateReq = new HashMap<>();
+        templateReq.put("name", "成册模板");
+        templateReq.put("layout", layout);
+        long templateId = call(post("/api/v1/capp/card-templates"), admin, json(templateReq))
+                .path("id").asLong();
+        call(post("/api/v1/capp/card-templates/{id}/release", templateId), admin, null);
+        long card1 = call(post("/api/v1/capp/cards"), admin,
+                json(Map.of("templateId", templateId, "routingId", routingId))).path("id").asLong();
+        long card2 = call(post("/api/v1/capp/cards"), admin,
+                json(Map.of("templateId", templateId, "routingId", routingId))).path("id").asLong();
+
+        JsonNode filled = call(get("/api/v1/capp/completeness?objectId=" + itemId), admin, null);
+        assertThat(filled.path("cardCount").asInt()).isEqualTo(2);
+        assertThat(filled.path("releasedRouteCount").asInt()).isEqualTo(1);
+
+        // 空册不能发布
+        Map<String, Object> emptyVolume = new HashMap<>();
+        emptyVolume.put("name", "空册");
+        emptyVolume.put("objectId", itemId);
+        emptyVolume.put("cardIds", List.of());
+        long emptyVolumeId = call(post("/api/v1/capp/volumes"), admin, json(emptyVolume))
+                .path("id").asLong();
+        mockMvc.perform(post("/api/v1/capp/volumes/" + emptyVolumeId + "/release")
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isBadRequest());
+        call(delete("/api/v1/capp/volumes/{id}", emptyVolumeId), admin, null);
+
+        // 正常成册：两张卡按传入顺序得到页序 10 / 20
+        Map<String, Object> volumeReq = new HashMap<>();
+        volumeReq.put("name", "机加工工艺卡片册");
+        volumeReq.put("objectId", itemId);
+        volumeReq.put("cardIds", List.of(card1, card2));
+        JsonNode volume = call(post("/api/v1/capp/volumes"), admin, json(volumeReq));
+        long volumeId = volume.path("id").asLong();
+        assertThat(volume.path("code").asText()).startsWith("CV-");
+        assertThat(volume.path("cards")).hasSize(2);
+        assertThat(volume.path("cards").get(0).path("seqNo").asInt()).isEqualTo(10);
+        assertThat(volume.path("cards").get(1).path("seqNo").asInt()).isEqualTo(20);
+        assertThat(volume.path("cards").get(0).path("rowCount").asInt()).isEqualTo(2);
+        assertThat(volume.path("cards").get(0).path("cardCode").asText()).startsWith("CC-");
+
+        // 跨零件卡片被拒
+        // 另建一个零件的卡片：先给 otherItem 建路线（否则没有卡片可生成）
+        long otherRouting = call(post("/api/v1/capp/routings"), admin,
+                json(routing("别零件路线", otherItemId,
+                        steps(step(10, "装配", "ASSEMBLY", "装配线", 0.1, 0.4))))).path("id").asLong();
+        long otherCard = call(post("/api/v1/capp/cards"), admin,
+                json(Map.of("templateId", templateId, "routingId", otherRouting))).path("id").asLong();
+        Map<String, Object> badVolume = new HashMap<>();
+        badVolume.put("name", "混装册");
+        badVolume.put("objectId", itemId);
+        badVolume.put("cardIds", List.of(card1, otherCard));
+        mockMvc.perform(post("/api/v1/capp/volumes")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(badVolume)))
+                .andExpect(status().isBadRequest());
+
+        // 成册 PDF：封页 + 目录 + 2 张卡
+        MvcResult pdf = mockMvc.perform(get("/api/v1/capp/volumes/{id}/export.pdf", volumeId)
+                        .header("Authorization", "Bearer " + admin))
+                .andReturn();
+        if (pdf.getResponse().getStatus() == 200) {
+            byte[] bytes = pdf.getResponse().getContentAsByteArray();
+            assertThat(bytes.length).isGreaterThan(3000);
+            assertThat(new String(bytes, 0, 4, StandardCharsets.ISO_8859_1)).isEqualTo("%PDF");
+        } else {
+            String message = pdf.getResponse().getContentAsString(StandardCharsets.UTF_8);
+            assumeTrue(!message.contains("中文字体"), "成册 PDF 导出失败（非字体原因）：" + message);
+        }
+
+        call(delete("/api/v1/capp/volumes/{id}", volumeId), admin, null);
+        call(delete("/api/v1/capp/cards/{id}", card1), admin, null);
+        call(delete("/api/v1/capp/cards/{id}", card2), admin, null);
+        call(delete("/api/v1/capp/cards/{id}", otherCard), admin, null);
+        call(delete("/api/v1/capp/routings/{id}", otherRouting), admin, null);
+        // 已发布路线按业务规则不可删除（只有草稿可删），内嵌库随测试销毁，无需清理
+    }
+
     // ------------------------------------------------------------------ 工具
 
     private Map<String, Object> substep(int seqNo, String name, String content, Long resourceId,

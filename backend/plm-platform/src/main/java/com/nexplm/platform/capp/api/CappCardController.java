@@ -127,10 +127,11 @@ public class CappCardController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Long routingId,
             @RequestParam(required = false) Long templateId,
+            @RequestParam(required = false) Long objectId,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         return Result.ok(cardService.cardList(CurrentUser.companyId(), keyword, routingId, templateId,
-                page, size));
+                objectId, page, size));
     }
 
     @Operation(summary = "工艺卡片详情（版式快照 + 工序行快照）")

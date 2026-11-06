@@ -420,6 +420,7 @@ export const cardApi = {
     keyword?: string
     routingId?: string
     templateId?: string
+    objectId?: string
   }): Promise<{ items: CappCardRow[]; total: number; page: number; size: number }> {
     return http.get(`/capp/cards`, params)
   },
@@ -525,5 +526,113 @@ export const timeApi = {
   /** 只读试算：规则或路线改动后重查即得新值。 */
   calc(routingId: string, batchQty?: number): Promise<TimeCalcResult> {
     return http.get<TimeCalcResult>(`/capp/time-calc`, { routingId, batchQty })
+  }
+}
+
+// ---------------------------------------------------------------- 工艺成册与齐套（P6-5）
+
+export interface VolumeRow {
+  id: string
+  code: string
+  name: string
+  objectId: string
+  objectCode?: string | null
+  objectName?: string | null
+  status: 'DRAFT' | 'RELEASED'
+  cardCount: number
+  remark?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+/** 册内条目：seqNo 即页序（10/20/30 步进）。 */
+export interface VolumeCardRow {
+  seqNo: number
+  cardId: string
+  cardCode: string
+  cardTitle?: string | null
+  templateName: string
+  templateVersion: number
+  routingCode?: string | null
+  rowCount: number
+}
+
+export interface VolumeDetail {
+  id: string
+  code: string
+  name: string
+  objectId: string
+  objectCode?: string | null
+  objectName?: string | null
+  status: 'DRAFT' | 'RELEASED'
+  remark?: string | null
+  cards: VolumeCardRow[]
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+/** cardIds 的顺序即页序。 */
+export interface VolumeSaveReq {
+  name: string
+  objectId: string
+  cardIds: string[]
+  remark?: string | null
+}
+
+export type CheckStatus = 'PASS' | 'WARN' | 'FAIL'
+
+export interface CheckItem {
+  key: string
+  label: string
+  status: CheckStatus
+  detail: string
+}
+
+/** 齐套检查：只有「没有路线 / 没有工序」是 FAIL，其余是 WARN（工艺还没写完，不是数据错误）。 */
+export interface CompletenessResult {
+  objectId: string
+  objectCode?: string | null
+  objectName?: string | null
+  routeCount: number
+  releasedRouteCount: number
+  stepCount: number
+  substepCount: number
+  cardCount: number
+  zeroMinuteSteps: number
+  unboundResourceSteps: number
+  checks: CheckItem[]
+  passCount: number
+  warnCount: number
+  failCount: number
+  ready: boolean
+}
+
+export const volumeApi = {
+  list(params?: { keyword?: string; objectId?: string }): Promise<VolumeRow[]> {
+    return http.get<VolumeRow[]>(`/capp/volumes`, params)
+  },
+  detail(id: string): Promise<VolumeDetail> {
+    return http.get<VolumeDetail>(`/capp/volumes/${id}`)
+  },
+  create(req: VolumeSaveReq): Promise<VolumeDetail> {
+    return http.post<VolumeDetail>(`/capp/volumes`, req)
+  },
+  update(id: string, req: VolumeSaveReq): Promise<VolumeDetail> {
+    return http.put<VolumeDetail>(`/capp/volumes/${id}`, req)
+  },
+  release(id: string): Promise<VolumeDetail> {
+    return http.post<VolumeDetail>(`/capp/volumes/${id}/release`)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/capp/volumes/${id}`)
+  },
+  /** 齐套性检查（零件维度）。 */
+  completeness(objectId: string): Promise<CompletenessResult> {
+    return http.get<CompletenessResult>(`/capp/completeness`, { objectId })
+  },
+  /** 导出成册 PDF（封页 + 目录 + 每张卡分页）。 */
+  async exportPdf(id: string): Promise<void> {
+    const { blob, fileName } = await downloadFile(`/capp/volumes/${id}/export.pdf`)
+    saveBlob(blob, fileName)
   }
 }

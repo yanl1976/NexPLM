@@ -60,13 +60,34 @@ public class CappCardPdfService {
         this.configuredFontPath = configuredFontPath;
     }
 
-    /** 按卡片自带的版式快照渲染 PDF。 */
+    /** 按卡片自带的版式快照渲染单张 PDF。 */
     public byte[] export(CappCardDtos.CardDetail card) {
-        CappCardDtos.CardLayout layout = card.layout();
-        List<CappCardDtos.CardColumn> columns = layout == null || layout.columns() == null
-                ? List.of() : layout.columns();
-        if (columns.isEmpty()) {
-            throw BizException.of(ErrorCode.CAPP_CARD_INVALID, "卡片没有明细列，无法导出");
+        BaseFont baseFont = chineseFont();
+        Document document = new Document(PageSize.A4.rotate(), 28, 28, 26, 26);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            PdfWriter.getInstance(document, out);
+            document.open();
+            renderCard(document, card, baseFont);
+            document.close();
+            return out.toByteArray();
+        } catch (Exception ex) {
+            if (document.isOpen()) {
+                document.close();
+            }
+            throw BizException.of(ErrorCode.CAPP_CARD_INVALID, "导出 PDF 失败：" + ex.getMessage());
+        }
+    }
+
+    /**
+     * 成册导出：封页（册名/零件/卡片数）+ 目录 + 每张卡各自新起一页。
+     *
+     * <p>不写页码：页码要在两遍渲染后才能确定，而目录页码对工艺卡的实用性远低于实现成本；
+     * 代替方案是目录里保留页序（1./2./3.），与册内 seq_no 一一对应。</p>
+     */
+    public byte[] exportVolume(String volumeName, String objectLabel, List<CappCardDtos.CardDetail> cards) {
+        if (cards == null || cards.isEmpty()) {
+            throw BizException.of(ErrorCode.CAPP_CARD_INVALID, "成册里没有卡片，无法导出");
         }
         BaseFont baseFont = chineseFont();
         Document document = new Document(PageSize.A4.rotate(), 28, 28, 26, 26);
@@ -75,27 +96,38 @@ public class CappCardPdfService {
             PdfWriter.getInstance(document, out);
             document.open();
 
-            if (layout.title() != null && !layout.title().isBlank()) {
-                Paragraph title = new Paragraph(layout.title(), font(baseFont, 16, Font.BOLD));
-                title.setAlignment(Element.ALIGN_CENTER);
-                title.setSpacingAfter(10f);
-                document.add(title);
+            Paragraph title = new Paragraph(nullToEmpty(volumeName), font(baseFont, 22, Font.BOLD));
+            title.setAlignment(Element.ALIGN_CENTER);
+            title.setSpacingBefore(140f);
+            title.setSpacingAfter(18f);
+            document.add(title);
+
+            Paragraph object = new Paragraph("零件：" + nullToEmpty(objectLabel),
+                    font(baseFont, 13, Font.NORMAL));
+            object.setAlignment(Element.ALIGN_CENTER);
+            document.add(object);
+
+            Paragraph count = new Paragraph("共 " + cards.size() + " 张工艺卡片",
+                    font(baseFont, 12, Font.NORMAL));
+            count.setAlignment(Element.ALIGN_CENTER);
+            document.add(count);
+
+            document.newPage();
+            Paragraph catalogTitle = new Paragraph("目  录", font(baseFont, 16, Font.BOLD));
+            catalogTitle.setAlignment(Element.ALIGN_CENTER);
+            catalogTitle.setSpacingAfter(12f);
+            document.add(catalogTitle);
+            int index = 1;
+            for (CappCardDtos.CardDetail card : cards) {
+                document.add(new Paragraph(index + ".  " + nullToEmpty(card.code()) + "  "
+                        + nullToEmpty(card.title()) + "（" + nullToEmpty(card.objectCode()) + "）",
+                        font(baseFont, 11, Font.NORMAL)));
+                index++;
             }
 
-            List<CappCardDtos.HeaderField> headers = layout.headerFields() == null
-                    ? List.of() : layout.headerFields();
-            if (!headers.isEmpty()) {
-                document.add(headerTable(headers, card.fieldValues() == null ? Map.of() : card.fieldValues(),
-                        baseFont));
-            }
-
-            document.add(detailTable(columns, card.rows() == null ? List.of() : card.rows(), baseFont));
-
-            if (layout.footerText() != null && !layout.footerText().isBlank()) {
-                Paragraph footer = new Paragraph(layout.footerText(),
-                        font(baseFont, 10, Font.NORMAL));
-                footer.setSpacingBefore(12f);
-                document.add(footer);
+            for (CappCardDtos.CardDetail card : cards) {
+                document.newPage();
+                renderCard(document, card, baseFont);
             }
             document.close();
             return out.toByteArray();
@@ -103,7 +135,36 @@ public class CappCardPdfService {
             if (document.isOpen()) {
                 document.close();
             }
-            throw BizException.of(ErrorCode.CAPP_CARD_INVALID, "导出 PDF 失败：" + ex.getMessage());
+            throw BizException.of(ErrorCode.CAPP_CARD_INVALID, "导出成册 PDF 失败：" + ex.getMessage());
+        }
+    }
+
+    /** 单张卡片内容（标题 / 表头字段 / 明细 / 表尾），单张导出与成册导出共用。 */
+    private void renderCard(Document document, CappCardDtos.CardDetail card, BaseFont baseFont)
+            throws Exception {
+        CappCardDtos.CardLayout layout = card.layout();
+        List<CappCardDtos.CardColumn> columns = layout == null || layout.columns() == null
+                ? List.of() : layout.columns();
+        if (columns.isEmpty()) {
+            throw BizException.of(ErrorCode.CAPP_CARD_INVALID, "卡片没有明细列，无法导出");
+        }
+        if (layout.title() != null && !layout.title().isBlank()) {
+            Paragraph title = new Paragraph(layout.title(), font(baseFont, 16, Font.BOLD));
+            title.setAlignment(Element.ALIGN_CENTER);
+            title.setSpacingAfter(10f);
+            document.add(title);
+        }
+        List<CappCardDtos.HeaderField> headers = layout.headerFields() == null
+                ? List.of() : layout.headerFields();
+        if (!headers.isEmpty()) {
+            document.add(headerTable(headers,
+                    card.fieldValues() == null ? Map.of() : card.fieldValues(), baseFont));
+        }
+        document.add(detailTable(columns, card.rows() == null ? List.of() : card.rows(), baseFont));
+        if (layout.footerText() != null && !layout.footerText().isBlank()) {
+            Paragraph footer = new Paragraph(layout.footerText(), font(baseFont, 10, Font.NORMAL));
+            footer.setSpacingBefore(12f);
+            document.add(footer);
         }
     }
 

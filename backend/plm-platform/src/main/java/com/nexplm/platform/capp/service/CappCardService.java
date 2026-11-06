@@ -259,7 +259,7 @@ public class CappCardService {
     // ------------------------------------------------------------------ 卡片
 
     public PageResult<CappCardDtos.CardRow> cardList(Long companyId, String keyword, Long routingId,
-                                                     Long templateId, int page, int size) {
+                                                     Long templateId, Long objectId, int page, int size) {
         StringBuilder where = new StringBuilder(" WHERE c.company_id = ? AND c.deleted = false");
         List<Object> args = new ArrayList<>();
         args.add(companyId);
@@ -270,6 +270,10 @@ public class CappCardService {
         if (templateId != null) {
             where.append(" AND c.template_id = ?");
             args.add(templateId);
+        }
+        if (objectId != null) {
+            where.append(" AND c.object_id = ?");
+            args.add(objectId);
         }
         if (keyword != null && !keyword.isBlank()) {
             where.append(" AND (c.code ILIKE ? OR c.title ILIKE ? OR c.object_code ILIKE ?"

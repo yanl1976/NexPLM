@@ -104,6 +104,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '工时定额' }
       },
       {
+        path: 'capp/volume',
+        name: 'capp-volume',
+        component: () => import('@/views/capp/VolumeView.vue'),
+        meta: { title: '工艺成册' }
+      },
+      {
         path: 'workflow/definitions',
         name: 'workflow-definitions',
         component: () => import('@/views/workflow/DefinitionView.vue'),
