@@ -91,6 +91,13 @@
           </template>
           <el-menu-item index="/sup/suppliers">供应商主数据</el-menu-item>
         </el-sub-menu>
+        <el-sub-menu index="/itg">
+          <template #title>
+            <el-icon><Connection /></el-icon>
+            <span>集成中心</span>
+          </template>
+          <el-menu-item index="/itg">端点 / 映射 / 任务</el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
 
@@ -116,6 +123,7 @@ import { ElMessage } from 'element-plus'
 import {
   Calendar,
   Checked,
+  Connection,
   Document,
   HomeFilled,
   OfficeBuilding,

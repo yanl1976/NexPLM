@@ -224,6 +224,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '供应商主数据' }
       },
       {
+        path: 'itg',
+        name: 'itg-center',
+        component: () => import('@/views/integration/IntegrationCenterView.vue'),
+        meta: { title: '集成中心' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),
