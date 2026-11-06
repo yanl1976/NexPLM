@@ -43,6 +43,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    JwtAuthenticationFilter jwtFilter,
+                                                   com.nexplm.platform.integration.security.ApiKeyAuthenticationFilter apiKeyFilter,
                                                    ObjectMapper objectMapper) throws Exception {
         http.csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -58,7 +59,11 @@ public class SecurityConfig {
                         .accessDeniedHandler((request, response, ex) ->
                                 write(response, objectMapper, HttpServletResponse.SC_FORBIDDEN,
                                         ErrorCode.COMMON_FORBIDDEN)))
-                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                // 两个过滤器都插在 UsernamePasswordAuthenticationFilter 之前且互斥：
+                // 带 X-API-Key 的请求没有 Authorization 头，JWT 过滤器直接放行；
+                // 站内请求没有 X-API-Key，API Key 过滤器直接放行。
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(apiKeyFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

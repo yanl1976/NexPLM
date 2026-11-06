@@ -119,7 +119,12 @@ public enum ErrorCode {
     ITG_JOB_NOT_FOUND("ITG.JOB.NOT_FOUND", "集成任务不存在", 404),
     ITG_JOB_STATE_INVALID("ITG.JOB.STATE.INVALID", "当前集成任务状态不允许该操作", 409),
     ITG_CODE_DUPLICATED("ITG.CODE.DUPLICATED", "集成端点编码已存在", 409),
-    ITG_MAPPING_DUPLICATED("ITG.MAPPING.DUPLICATED", "该端点下同对象同方向的映射已存在", 409);
+    ITG_MAPPING_DUPLICATED("ITG.MAPPING.DUPLICATED", "该端点下同对象同方向的映射已存在", 409),
+    ITG_CLIENT_NOT_FOUND("ITG.CLIENT.NOT_FOUND", "API 客户端不存在", 404),
+    ITG_CLIENT_INVALID("ITG.CLIENT.INVALID", "API 客户端数据不合法", 400),
+    OPEN_KEY_INVALID("OPEN.KEY.INVALID", "API Key 无效或已停用", 401),
+    OPEN_KEY_EXPIRED("OPEN.KEY.EXPIRED", "API Key 已过期", 401),
+    OPEN_RATE_LIMITED("OPEN.RATE.LIMITED", "请求过于频繁，请稍后重试", 429);
 
     private final String code;
     private final String message;
