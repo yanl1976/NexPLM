@@ -52,7 +52,12 @@ public enum ErrorCode {
     WF_TASK_NOT_FOUND("WF.TASK.NOT_FOUND", "待办任务不存在或已被处理", 404),
     WF_TASK_NOT_ASSIGNEE("WF.TASK.NOT_ASSIGNEE", "该任务不属于当前用户", 403),
     WF_OPERATION_DENIED("WF.OPERATION.DENIED", "当前流程状态不允许该操作", 409),
-    WF_VARIABLE_INVALID("WF.VARIABLE.INVALID", "流程参数不合法", 400);
+    WF_VARIABLE_INVALID("WF.VARIABLE.INVALID", "流程参数不合法", 400),
+
+    // 变更管理
+    CHG_ECR_NOT_FOUND("CHG.ECR.NOT_FOUND", "变更申请不存在", 404),
+    CHG_STATE_INVALID("CHG.STATE.INVALID", "当前变更状态不允许该操作", 409),
+    CHG_OBJECT_INVALID("CHG.OBJECT.INVALID", "变更关联对象不合法", 400);
 
     private final String code;
     private final String message;
