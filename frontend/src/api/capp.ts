@@ -636,3 +636,174 @@ export const volumeApi = {
     saveBlob(blob, fileName)
   }
 }
+
+// ---------------------------------------------------------------- 质量规划（P6-8）
+
+export type QualityCategory = 'DIMENSION' | 'APPEARANCE' | 'PERFORMANCE' | 'MATERIAL'
+
+export const QUALITY_CATEGORY_LABEL: Record<QualityCategory, string> = {
+  DIMENSION: '尺寸',
+  APPEARANCE: '外观',
+  PERFORMANCE: '性能',
+  MATERIAL: '材料'
+}
+
+export interface QualityItemRow {
+  id: string
+  code: string
+  name: string
+  category: string
+  spec?: string | null
+  method?: string | null
+  gauge?: string | null
+  unit?: string | null
+  remark?: string | null
+  updatedAt?: string | null
+}
+
+export interface QualityItemSaveReq {
+  name: string
+  category?: string | null
+  spec?: string | null
+  method?: string | null
+  gauge?: string | null
+  unit?: string | null
+  remark?: string | null
+}
+
+/** 控制计划行：itemId 只用于从字典带出默认值，行上的值才是权威。 */
+export interface QualityPlanRow {
+  id?: string
+  seqNo: number
+  stepSeqNo?: number | null
+  substepSeqNo?: number | null
+  stepName?: string | null
+  itemId?: string | null
+  itemCode?: string | null
+  characteristic?: string | null
+  spec?: string | null
+  method?: string | null
+  gauge?: string | null
+  sampleSize?: string | null
+  frequency?: string | null
+  controlMethod?: string | null
+  reactionPlan?: string | null
+  critical?: boolean
+  remark?: string | null
+}
+
+export interface QualityPlanRowView {
+  id: string
+  code: string
+  name: string
+  routingId: string
+  routingCode?: string | null
+  objectId: string
+  objectCode?: string | null
+  objectName?: string | null
+  status: 'DRAFT' | 'RELEASED'
+  rowCount: number
+  remark?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface QualityPlanDetail extends Omit<QualityPlanRowView, 'rowCount'> {
+  rows: QualityPlanRow[]
+}
+
+export interface QualityPlanSaveReq {
+  name: string
+  routingId: string
+  rows?: QualityPlanRow[]
+  remark?: string | null
+}
+
+export const qualityApi = {
+  itemList(params?: { keyword?: string; category?: string }): Promise<QualityItemRow[]> {
+    return http.get<QualityItemRow[]>(`/capp/quality-items`, params)
+  },
+  createItem(req: QualityItemSaveReq): Promise<QualityItemRow> {
+    return http.post<QualityItemRow>(`/capp/quality-items`, req)
+  },
+  updateItem(id: string, req: QualityItemSaveReq): Promise<QualityItemRow> {
+    return http.put<QualityItemRow>(`/capp/quality-items/${id}`, req)
+  },
+  removeItem(id: string): Promise<void> {
+    return http.delete<void>(`/capp/quality-items/${id}`)
+  },
+  planList(params?: {
+    keyword?: string
+    objectId?: string
+    routingId?: string
+    status?: string
+  }): Promise<QualityPlanRowView[]> {
+    return http.get<QualityPlanRowView[]>(`/capp/quality-plans`, params)
+  },
+  plan(id: string): Promise<QualityPlanDetail> {
+    return http.get<QualityPlanDetail>(`/capp/quality-plans/${id}`)
+  },
+  createPlan(req: QualityPlanSaveReq): Promise<QualityPlanDetail> {
+    return http.post<QualityPlanDetail>(`/capp/quality-plans`, req)
+  },
+  updatePlan(id: string, req: QualityPlanSaveReq): Promise<QualityPlanDetail> {
+    return http.put<QualityPlanDetail>(`/capp/quality-plans/${id}`, req)
+  },
+  releasePlan(id: string): Promise<QualityPlanDetail> {
+    return http.post<QualityPlanDetail>(`/capp/quality-plans/${id}/release`)
+  },
+  removePlan(id: string): Promise<void> {
+    return http.delete<void>(`/capp/quality-plans/${id}`)
+  },
+  async exportPlan(id: string): Promise<void> {
+    const { blob, fileName } = await downloadFile(`/capp/quality-plans/${id}/export`)
+    saveBlob(blob, fileName)
+  }
+}
+
+// ---------------------------------------------------------------- ERP 下发（P6-9 预留）
+
+export interface DispatchRow {
+  id: string
+  code: string
+  routingId: string
+  routingCode?: string | null
+  objectId: string
+  objectCode?: string | null
+  status: 'PENDING' | 'SENT' | 'FAILED' | 'VOID'
+  payloadSha?: string | null
+  message?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface DispatchDetail extends DispatchRow {
+  payload: Record<string, unknown>
+}
+
+export const DISPATCH_STATUS_LABEL: Record<string, string> = {
+  PENDING: '待发送',
+  SENT: '已发送',
+  FAILED: '失败',
+  VOID: '作废'
+}
+
+export const dispatchApi = {
+  list(params?: { routingId?: string; status?: string }): Promise<DispatchRow[]> {
+    return http.get<DispatchRow[]>(`/capp/erp-dispatches`, params)
+  },
+  detail(id: string): Promise<DispatchDetail> {
+    return http.get<DispatchDetail>(`/capp/erp-dispatches/${id}`)
+  },
+  create(routingId: string): Promise<DispatchDetail> {
+    return http.post<DispatchDetail>(`/capp/erp-dispatches`, { routingId })
+  },
+  callback(id: string, status: string, message?: string): Promise<DispatchDetail> {
+    return http.post<DispatchDetail>(`/capp/erp-dispatches/${id}/callback`, { status, message })
+  },
+  /** 下载原始载荷 JSON（交给 ERP 适配器）。 */
+  async downloadPayload(id: string): Promise<void> {
+    const { blob, fileName } = await downloadFile(`/capp/erp-dispatches/${id}/payload`)
+    saveBlob(blob, fileName)
+  }
+}

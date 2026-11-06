@@ -716,6 +716,158 @@ class CappSmokeTest {
         // 已发布路线按业务规则不可删除（只有草稿可删），内嵌库随测试销毁，无需清理
     }
 
+    /**
+     * P6-8 质量规划 + P6-9 下发预留。
+     *
+     * <p>覆盖：控制计划骨架自动生成、未填特性禁止发布、检验项被引用禁止删除、控制计划 Excel 导出、
+     * 草稿路线禁止下发、下发载荷结构（operations/totals）、原始 JSON 取数、回执回写。</p>
+     */
+    @Test
+    void qualityPlanAndErpDispatch() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long itemId = createItem(admin, "质量零件");
+        long routingId = call(post("/api/v1/capp/routings"), admin,
+                json(routing("质量路线", itemId, steps(
+                        step(10, "粗车", "MACHINING", "机加车间", 0.5, 1.5),
+                        step(20, "精车", "MACHINING", "机加车间", 0.2, 1.0))))).path("id").asLong();
+
+        // 草稿路线不能下发
+        mockMvc.perform(post("/api/v1/capp/erp-dispatches")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("routingId", routingId))))
+                .andExpect(status().isBadRequest());
+
+        // 检验项字典
+        Map<String, Object> itemReq = new HashMap<>();
+        itemReq.put("name", "外圆直径");
+        itemReq.put("category", "DIMENSION");
+        itemReq.put("spec", "Φ50 h7");
+        itemReq.put("method", "外径千分尺");
+        itemReq.put("gauge", "0-25mm 千分尺");
+        JsonNode qualityItem = call(post("/api/v1/capp/quality-items"), admin, json(itemReq));
+        long itemDictId = qualityItem.path("id").asLong();
+        assertThat(qualityItem.path("code").asText()).startsWith("QI-");
+
+        // 空 rows → 按路线工序生成骨架（2 行）
+        Map<String, Object> planReq = new HashMap<>();
+        planReq.put("name", "质量路线控制计划");
+        planReq.put("routingId", routingId);
+        JsonNode plan = call(post("/api/v1/capp/quality-plans"), admin, json(planReq));
+        long planId = plan.path("id").asLong();
+        assertThat(plan.path("code").asText()).startsWith("QP-");
+        assertThat(plan.path("rows")).hasSize(2);
+        assertThat(plan.path("rows").get(0).path("stepSeqNo").asInt()).isEqualTo(10);
+        assertThat(plan.path("rows").get(0).path("stepName").asText()).isEqualTo("粗车");
+
+        // 未填特性不能发布
+        mockMvc.perform(post("/api/v1/capp/quality-plans/" + planId + "/release")
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isBadRequest());
+
+        // 填第一行特性（引用字典），第二行留空也允许保存，但发布仍被拒
+        Map<String, Object> row1 = new HashMap<>();
+        row1.put("seqNo", 10);
+        row1.put("stepSeqNo", 10);
+        row1.put("stepName", "粗车");
+        row1.put("itemId", itemDictId);
+        row1.put("characteristic", "外圆直径");
+        row1.put("spec", "Φ50 h7");
+        row1.put("method", "外径千分尺");
+        row1.put("gauge", "0-25mm 千分尺");
+        row1.put("sampleSize", "5");
+        row1.put("frequency", "每批");
+        row1.put("controlMethod", "首检+巡检");
+        row1.put("reactionPlan", "隔离并通知工艺");
+        row1.put("critical", true);
+        Map<String, Object> row2 = new HashMap<>();
+        row2.put("seqNo", 20);
+        row2.put("stepSeqNo", 20);
+        row2.put("stepName", "精车");
+        Map<String, Object> updateReq = new HashMap<>();
+        updateReq.put("name", "质量路线控制计划");
+        updateReq.put("routingId", routingId);
+        updateReq.put("rows", List.of(row1, row2));
+        JsonNode updated = call(put("/api/v1/capp/quality-plans/{id}", planId), admin, json(updateReq));
+        assertThat(updated.path("rows").get(0).path("itemCode").asText()).isEqualTo(qualityItem.path("code").asText());
+        assertThat(updated.path("rows").get(0).path("critical").asBoolean()).isTrue();
+        mockMvc.perform(post("/api/v1/capp/quality-plans/" + planId + "/release")
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isBadRequest());
+
+        // 补齐第二行后可发布
+        row2.put("characteristic", "精车外圆直径");
+        updateReq.put("rows", List.of(row1, row2));
+        call(put("/api/v1/capp/quality-plans/{id}", planId), admin, json(updateReq));
+        JsonNode releasedPlan = call(post("/api/v1/capp/quality-plans/{id}/release", planId), admin, null);
+        assertThat(releasedPlan.path("status").asText()).isEqualTo("RELEASED");
+
+        // 已发布 → 不可再改
+        mockMvc.perform(put("/api/v1/capp/quality-plans/" + planId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(updateReq)))
+                .andExpect(status().isBadRequest());
+
+        // 被引用的检验项不能删
+        mockMvc.perform(delete("/api/v1/capp/quality-items/" + itemDictId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isConflict());
+
+        // 控制计划 Excel
+        MvcResult exported = mockMvc.perform(get("/api/v1/capp/quality-plans/{id}/export", planId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk())
+                .andReturn();
+        try (Workbook workbook = new XSSFWorkbook(
+                new ByteArrayInputStream(exported.getResponse().getContentAsByteArray()))) {
+            Sheet sheet = workbook.getSheetAt(0);
+            assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("控制计划");
+            assertThat(sheet.getRow(2).getCell(3).getStringCellValue()).isEqualTo("受控特性");
+            assertThat(sheet.getRow(3).getCell(3).getStringCellValue()).isEqualTo("外圆直径");
+            assertThat(sheet.getRow(4).getCell(3).getStringCellValue()).isEqualTo("精车外圆直径");
+            assertThat(sheet.getRow(3).getCell(11).getStringCellValue()).isEqualTo("是");
+        }
+
+        // 发布路线后可以下发
+        call(post("/api/v1/capp/routings/{id}/release", routingId), admin, null);
+        JsonNode dispatch = call(post("/api/v1/capp/erp-dispatches"), admin,
+                json(Map.of("routingId", routingId)));
+        long dispatchId = dispatch.path("id").asLong();
+        assertThat(dispatch.path("code").asText()).startsWith("ED-");
+        assertThat(dispatch.path("status").asText()).isEqualTo("PENDING");
+        assertThat(dispatch.path("payloadSha").asText()).hasSize(64);
+        assertThat(dispatch.path("payload").path("payloadVersion").asText()).isEqualTo("1.0");
+        assertThat(dispatch.path("payload").path("operations")).hasSize(2);
+        assertThat(dispatch.path("payload").path("operations").get(0).path("name").asText())
+                .isEqualTo("粗车");
+        assertThat(dispatch.path("payload").path("totals").path("totalMinutes").asDouble())
+                .isCloseTo(3.2, within(0.001));
+        assertThat(dispatch.path("payload").path("routing").path("code").asText())
+                .startsWith("RT-");
+
+        // 原始 JSON 取数（P9 适配器入口）
+        MvcResult payload = mockMvc.perform(get("/api/v1/capp/erp-dispatches/{id}/payload", dispatchId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk())
+                .andReturn();
+        String payloadJson = payload.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(payloadJson).contains("\"operations\"").contains("\"totals\"");
+
+        // 回执
+        JsonNode acked = call(post("/api/v1/capp/erp-dispatches/{id}/callback", dispatchId), admin,
+                json(Map.of("status", "SENT", "message", "试跑：模拟 ERP 已接收")));
+        assertThat(acked.path("status").asText()).isEqualTo("SENT");
+        assertThat(acked.path("message").asText()).contains("模拟 ERP 已接收");
+
+        // 载荷是快照而非实时拼装：两次读取的 generatedAt 必须一致（实时重算会生成新时间）
+        JsonNode firstRead = call(get("/api/v1/capp/erp-dispatches/{id}", dispatchId), admin, null);
+        JsonNode secondRead = call(get("/api/v1/capp/erp-dispatches/{id}", dispatchId), admin, null);
+        assertThat(firstRead.path("payload").path("generatedAt").asText())
+                .isEqualTo(secondRead.path("payload").path("generatedAt").asText());
+        assertThat(secondRead.path("payload").path("operations")).hasSize(2);
+    }
+
     // ------------------------------------------------------------------ 工具
 
     private Map<String, Object> substep(int seqNo, String name, String content, Long resourceId,

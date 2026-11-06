@@ -58,6 +58,8 @@
           <el-menu-item index="/capp/card">工艺卡片</el-menu-item>
           <el-menu-item index="/capp/time">工时定额</el-menu-item>
           <el-menu-item index="/capp/volume">工艺成册</el-menu-item>
+          <el-menu-item index="/capp/quality">质量规划</el-menu-item>
+          <el-menu-item index="/capp/dispatch">ERP下发（预留）</el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/project" disabled>
           <el-icon><Calendar /></el-icon>

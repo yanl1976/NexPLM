@@ -110,6 +110,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '工艺成册' }
       },
       {
+        path: 'capp/quality',
+        name: 'capp-quality',
+        component: () => import('@/views/capp/QualityView.vue'),
+        meta: { title: '质量规划' }
+      },
+      {
+        path: 'capp/dispatch',
+        name: 'capp-dispatch',
+        component: () => import('@/views/capp/DispatchView.vue'),
+        meta: { title: 'ERP下发' }
+      },
+      {
         path: 'workflow/definitions',
         name: 'workflow-definitions',
         component: () => import('@/views/workflow/DefinitionView.vue'),
