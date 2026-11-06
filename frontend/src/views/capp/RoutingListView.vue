@@ -34,6 +34,9 @@
         <template #default="{ row }">{{ formatMinutes(row.totalMinutes) }}</template>
       </el-table-column>
       <el-table-column prop="applicability" label="适用性" width="120" show-overflow-tooltip />
+      <el-table-column label="工艺负责人" width="120">
+        <template #default="{ row }">{{ row.ownerName || '-' }}</template>
+      </el-table-column>
       <el-table-column label="状态" width="90" align="center">
         <template #default="{ row }">
           <el-tag :type="statusTagType(row.status)" size="small">
@@ -101,6 +104,27 @@
         <el-form-item label="适用性">
           <el-input v-model="form.applicability" maxlength="200" placeholder="机型 / 项目 / 通用说明" />
         </el-form-item>
+        <el-form-item label="工艺负责人">
+          <el-select
+            v-model="form.ownerId"
+            filterable
+            remote
+            reserve-keyword
+            clearable
+            placeholder="默认创建人"
+            :remote-method="searchUsers"
+            :loading="usersLoading"
+            :disabled="readonly"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="user in users"
+              :key="user.id"
+              :label="`${user.displayName}（${user.username}）`"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" show-word-limit />
         </el-form-item>
@@ -151,14 +175,26 @@
             <el-input v-model="row.remark" :disabled="readonly" maxlength="500" />
           </template>
         </el-table-column>
-        <el-table-column v-if="!readonly" label="" width="60" align="center">
+        <el-table-column v-if="!readonly" label="排序" width="150" align="center">
           <template #default="{ $index }">
+            <el-button link type="primary" :disabled="$index === 0" @click="moveStep($index, -1)">上移</el-button>
+            <el-button
+              link
+              type="primary"
+              :disabled="$index === form.steps.length - 1"
+              @click="moveStep($index, 1)"
+            >
+              下移
+            </el-button>
             <el-button link type="danger" @click="form.steps.splice($index, 1)">移除</el-button>
           </template>
         </el-table-column>
       </el-table>
 
       <template #footer>
+        <el-button v-if="form.id && !readonly" :loading="resequencing" @click="onResequence">
+          序号重建（10/20/30…）
+        </el-button>
         <el-button @click="dialogVisible = false">关闭</el-button>
         <el-button v-if="!readonly" type="primary" :loading="saving" @click="onSave">保存</el-button>
       </template>
@@ -178,6 +214,7 @@ import {
   type RoutingStatus,
   type RoutingStep
 } from '@/api/capp'
+import { workflowApi, type ActorUserRow } from '@/api/workflow'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
@@ -194,8 +231,11 @@ const status = ref<string>('')
 
 const dialogVisible = ref(false)
 const readonly = ref(false)
+const resequencing = ref(false)
 const items = ref<ItemSummary[]>([])
 const itemsLoading = ref(false)
+const users = ref<ActorUserRow[]>([])
+const usersLoading = ref(false)
 
 const form = reactive<{
   id?: string
@@ -203,12 +243,14 @@ const form = reactive<{
   objectId: string
   applicability: string
   remark: string
+  ownerId: string | null
   steps: RoutingStep[]
 }>({
   name: '',
   objectId: '',
   applicability: '',
   remark: '',
+  ownerId: null,
   steps: []
 })
 
@@ -266,12 +308,32 @@ async function searchItems(keywordText: string): Promise<void> {
   }
 }
 
+async function searchUsers(keywordText: string): Promise<void> {
+  usersLoading.value = true
+  try {
+    users.value = await workflowApi.actorUsers(keywordText || '')
+  } catch {
+    users.value = []
+  } finally {
+    usersLoading.value = false
+  }
+}
+
 function openCreate(): void {
   readonly.value = false
-  Object.assign(form, { id: undefined, name: '', objectId: '', applicability: '', remark: '', steps: [] })
+  Object.assign(form, {
+    id: undefined,
+    name: '',
+    objectId: '',
+    applicability: '',
+    remark: '',
+    ownerId: null,
+    steps: []
+  })
   form.steps.push(emptyStep(10))
   dialogVisible.value = true
   searchItems('')
+  searchUsers('')
 }
 
 async function openDetail(id: string): Promise<void> {
@@ -295,8 +357,12 @@ async function fillForm(id: string): Promise<void> {
       objectId: detail.objectId,
       applicability: detail.applicability ?? '',
       remark: detail.remark ?? '',
+      ownerId: detail.ownerId ?? null,
       steps: detail.steps.map((step) => ({ ...step }))
     })
+    if (detail.ownerId && detail.ownerName) {
+      users.value = [{ id: detail.ownerId, username: detail.ownerName, displayName: detail.ownerName } as ActorUserRow]
+    }
     items.value = [
       {
         id: detail.objectId,
@@ -316,6 +382,36 @@ function emptyStep(seqNo: number): RoutingStep {
 function addStep(): void {
   const maxSeq = form.steps.reduce((max, step) => Math.max(max, step.seqNo ?? 0), 0)
   form.steps.push(emptyStep(maxSeq + 10))
+}
+
+/** 上移/下移：交换位置后按 10/20/30 重排工序号（编排即重排，避免号不连续）。 */
+function moveStep(index: number, delta: number): void {
+  const target = index + delta
+  if (target < 0 || target >= form.steps.length) {
+    return
+  }
+  const [moved] = form.steps.splice(index, 1)
+  form.steps.splice(target, 0, moved)
+  form.steps.forEach((step, idx) => {
+    step.seqNo = (idx + 1) * 10
+  })
+}
+
+async function onResequence(): Promise<void> {
+  if (!form.id) {
+    return
+  }
+  resequencing.value = true
+  try {
+    const detail = await cappApi.resequence(form.id)
+    form.steps = detail.steps.map((step) => ({ ...step }))
+    ElMessage.success('工序号已按顺序重建为 10/20/30…')
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '序号重建失败')
+  } finally {
+    resequencing.value = false
+  }
 }
 
 async function onSave(): Promise<void> {
@@ -338,6 +434,7 @@ async function onSave(): Promise<void> {
       objectId: form.objectId,
       applicability: form.applicability || null,
       remark: form.remark || null,
+      ownerId: form.ownerId,
       steps: form.steps.map((step) => ({
         seqNo: step.seqNo,
         name: step.name,

@@ -170,6 +170,38 @@ class CappSmokeTest {
                 .path("total").asLong()).isEqualTo(2);
     }
 
+    /** P6-2：工艺分工（负责人）+ 工序号乱序后一键重建。 */
+    @Test
+    void resequenceAndCraftOwner() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long itemId = createItem(admin, "分工零件");
+
+        Map<String, Object> body = routing("乱序工艺", itemId, steps(
+                step(5, "下料", "MACHINING", null, 0, 2),
+                step(7, "车削", "MACHINING", null, 0, 3),
+                step(9, "检验", "INSPECTION", null, 0, 1)));
+        body.put("ownerId", adminId);
+        JsonNode created = call(post("/api/v1/capp/routings"), admin, json(body));
+        long routingId = created.path("id").asLong();
+        assertThat(created.path("ownerId").asLong()).isEqualTo(adminId);
+        assertThat(created.path("ownerName").asText()).isNotBlank();
+
+        JsonNode resequenced = call(post("/api/v1/capp/routings/{id}/resequence", routingId), admin, null);
+        assertThat(resequenced.path("steps").size()).isEqualTo(3);
+        assertThat(resequenced.path("steps").get(0).path("seqNo").asInt()).isEqualTo(10);
+        assertThat(resequenced.path("steps").get(1).path("seqNo").asInt()).isEqualTo(20);
+        assertThat(resequenced.path("steps").get(2).path("seqNo").asInt()).isEqualTo(30);
+        // 顺序与工序名保持不变
+        assertThat(resequenced.path("routeString").asText()).isEqualTo("10 下料 → 20 车削 → 30 检验");
+
+        // 已发布的路线不允许重建序号
+        call(post("/api/v1/capp/routings/{id}/release", routingId), admin, null);
+        mockMvc.perform(post("/api/v1/capp/routings/{id}/resequence", routingId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isConflict());
+    }
+
     @Test
     void rejectsUnknownObjectAndEmptySteps() throws Exception {
         String admin = login("admin", "Admin@12345");
@@ -215,6 +247,10 @@ class CappSmokeTest {
         step.put("setupMinutes", setupMinutes);
         step.put("runMinutes", runMinutes);
         return step;
+    }
+
+    private long currentUserId(String token) throws Exception {
+        return call(get("/api/v1/auth/me"), token, null).path("id").asLong();
     }
 
     private long createItem(String token, String name) throws Exception {

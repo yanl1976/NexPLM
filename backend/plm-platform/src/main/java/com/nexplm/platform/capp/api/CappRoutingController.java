@@ -82,6 +82,14 @@ public class CappRoutingController {
         return Result.ok(routingService.archive(id, CurrentUser.companyId(), CurrentUser.userId()));
     }
 
+    @Operation(summary = "工序序号重建（按当前顺序重排 10/20/30…，仅草稿）")
+    @PostMapping("/capp/routings/{id}/resequence")
+    @PreAuthorize("hasAuthority('capp.routing.write')")
+    @Audit(module = "CAPP", action = "ROUTING_RESEQUENCE", objectType = "CappRouting")
+    public Result<CappDtos.RoutingDetail> resequence(@PathVariable Long id) {
+        return Result.ok(routingService.resequence(id, CurrentUser.companyId(), CurrentUser.userId()));
+    }
+
     @Operation(summary = "复制为新草稿（保留原路线，版本号 +1）")
     @PostMapping("/capp/routings/{id}/copy")
     @PreAuthorize("hasAuthority('capp.routing.write')")

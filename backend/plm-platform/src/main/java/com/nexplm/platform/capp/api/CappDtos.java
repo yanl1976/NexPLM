@@ -37,12 +37,14 @@ public final class CappDtos {
                                  @NotNull Long objectId,
                                  @Size(max = 200) String applicability,
                                  @Size(max = 500) String remark,
+                                 Long ownerId,
                                  @NotEmpty @Valid List<StepSaveReq> steps) {
     }
 
     /** 工艺路线列表行。 */
     public record RoutingRow(Long id, String code, String name, Long objectId, String objectCode,
                              String objectName, int versionNo, String status, String applicability,
+                             Long ownerId, String ownerName,
                              int stepCount, BigDecimal totalMinutes, OffsetDateTime releasedAt,
                              OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     }
@@ -55,7 +57,8 @@ public final class CappDtos {
      */
     public record RoutingDetail(Long id, String code, String name, Long objectId, String objectCode,
                                 String objectName, int versionNo, String status, String applicability,
-                                String remark, String routeString, BigDecimal totalMinutes,
+                                String remark, Long ownerId, String ownerName,
+                                String routeString, BigDecimal totalMinutes,
                                 OffsetDateTime releasedAt, OffsetDateTime createdAt, OffsetDateTime updatedAt,
                                 List<StepRow> steps) {
     }

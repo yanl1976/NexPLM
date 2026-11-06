@@ -40,6 +40,9 @@ export interface RoutingRow {
   versionNo: number
   status: RoutingStatus
   applicability?: string | null
+  /** 工艺负责人（工艺分工）。 */
+  ownerId?: string | null
+  ownerName?: string | null
   stepCount: number
   totalMinutes?: number | null
   releasedAt?: string | null
@@ -59,6 +62,7 @@ export interface RoutingSaveReq {
   objectId: string
   applicability?: string | null
   remark?: string | null
+  ownerId?: string | null
   steps: RoutingStep[]
 }
 
@@ -89,6 +93,10 @@ export const cappApi = {
   },
   copy(id: string): Promise<RoutingDetail> {
     return http.post<RoutingDetail>(`/capp/routings/${id}/copy`)
+  },
+  /** 序号重建：按当前顺序重排为 10/20/30…（仅草稿）。 */
+  resequence(id: string): Promise<RoutingDetail> {
+    return http.post<RoutingDetail>(`/capp/routings/${id}/resequence`)
   },
   remove(id: string): Promise<void> {
     return http.delete<void>(`/capp/routings/${id}`)

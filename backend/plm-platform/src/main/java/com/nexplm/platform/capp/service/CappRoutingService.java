@@ -81,18 +81,21 @@ public class CappRoutingService {
         pageArgs.add((long) (safePage - 1) * safeSize);
         List<CappDtos.RoutingRow> items = jdbcTemplate.query("""
                         SELECT r.id, r.code, r.name, r.object_id, o.code AS object_code, o.name AS object_name,
-                               r.version_no, r.status, r.applicability, r.released_at,
+                               r.version_no, r.status, r.applicability, r.owner_id,
+                               u.display_name AS owner_name, r.released_at,
                                r.created_at, r.updated_at,
                                (SELECT COUNT(1) FROM capp_routing_step s WHERE s.routing_id = r.id) AS step_count,
                                (SELECT COALESCE(SUM(s.setup_minutes + s.run_minutes), 0)
                                   FROM capp_routing_step s WHERE s.routing_id = r.id) AS total_minutes
                           FROM capp_routing r
                           LEFT JOIN plm_object o ON o.id = r.object_id
+                          LEFT JOIN sys_user u ON u.id = r.owner_id
                         """ + where + " ORDER BY r.updated_at DESC, r.id DESC LIMIT ? OFFSET ?",
                 (rs, rowNum) -> new CappDtos.RoutingRow(rs.getLong("id"), rs.getString("code"),
                         rs.getString("name"), rs.getLong("object_id"), rs.getString("object_code"),
                         rs.getString("object_name"), rs.getInt("version_no"), rs.getString("status"),
-                        rs.getString("applicability"), rs.getInt("step_count"),
+                        rs.getString("applicability"), (Long) rs.getObject("owner_id"),
+                        rs.getString("owner_name"), rs.getInt("step_count"),
                         rs.getBigDecimal("total_minutes"),
                         rs.getObject("released_at", OffsetDateTime.class),
                         rs.getObject("created_at", OffsetDateTime.class),
@@ -104,10 +107,12 @@ public class CappRoutingService {
     public CappDtos.RoutingDetail detail(Long id, Long companyId) {
         List<CappDtos.RoutingDetail> rows = jdbcTemplate.query("""
                         SELECT r.id, r.code, r.name, r.object_id, o.code AS object_code, o.name AS object_name,
-                               r.version_no, r.status, r.applicability, r.remark, r.released_at,
+                               r.version_no, r.status, r.applicability, r.remark, r.owner_id,
+                               u.display_name AS owner_name, r.released_at,
                                r.created_at, r.updated_at
                           FROM capp_routing r
                           LEFT JOIN plm_object o ON o.id = r.object_id
+                          LEFT JOIN sys_user u ON u.id = r.owner_id
                          WHERE r.id = ? AND r.company_id = ? AND r.deleted = false
                         """,
                 (rs, rowNum) -> {
@@ -118,7 +123,9 @@ public class CappRoutingService {
                     return new CappDtos.RoutingDetail(rs.getLong("id"), rs.getString("code"),
                             rs.getString("name"), rs.getLong("object_id"), rs.getString("object_code"),
                             rs.getString("object_name"), rs.getInt("version_no"), rs.getString("status"),
-                            rs.getString("applicability"), rs.getString("remark"), routeString(steps), total,
+                            rs.getString("applicability"), rs.getString("remark"),
+                            (Long) rs.getObject("owner_id"), rs.getString("owner_name"),
+                            routeString(steps), total,
                             rs.getObject("released_at", OffsetDateTime.class),
                             rs.getObject("created_at", OffsetDateTime.class),
                             rs.getObject("updated_at", OffsetDateTime.class), steps);
@@ -139,12 +146,13 @@ public class CappRoutingService {
         long id = IdWorker.getId();
         jdbcTemplate.update("""
                         INSERT INTO capp_routing (id, company_id, code, name, object_id, object_type,
-                                                  version_no, status, applicability, remark,
+                                                  version_no, status, applicability, remark, owner_id,
                                                   created_by, updated_by)
-                        VALUES (?, ?, ?, ?, ?, ?, 1, 'DRAFT', ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, 1, 'DRAFT', ?, ?, ?, ?, ?)
                         """,
                 id, companyId, code, req.name().trim(), object.id(), object.objectType(),
-                blankToNull(req.applicability()), blankToNull(req.remark()), userId, userId);
+                blankToNull(req.applicability()), blankToNull(req.remark()),
+                req.ownerId() == null ? userId : req.ownerId(), userId, userId);
         replaceSteps(id, companyId, req.steps());
         return detail(id, companyId);
     }
@@ -157,11 +165,12 @@ public class CappRoutingService {
         jdbcTemplate.update("""
                         UPDATE capp_routing
                            SET name = ?, object_id = ?, object_type = ?, applicability = ?, remark = ?,
-                               updated_by = ?, updated_at = now()
+                               owner_id = ?, updated_by = ?, updated_at = now()
                          WHERE id = ? AND company_id = ?
                         """,
                 req.name().trim(), object.id(), object.objectType(), blankToNull(req.applicability()),
-                blankToNull(req.remark()), userId, id, companyId);
+                blankToNull(req.remark()), req.ownerId() == null ? current.ownerId() : req.ownerId(),
+                userId, id, companyId);
         replaceSteps(id, companyId, req.steps());
         return detail(id, companyId);
     }
@@ -215,18 +224,44 @@ public class CappRoutingService {
         String code = nextCode("CappRouting", "RT");
         jdbcTemplate.update("""
                         INSERT INTO capp_routing (id, company_id, code, name, object_id, object_type,
-                                                  version_no, status, applicability, remark,
+                                                  version_no, status, applicability, remark, owner_id,
                                                   created_by, updated_by)
-                        VALUES (?, ?, ?, ?, ?, 'PdmItem', ?, 'DRAFT', ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, 'PdmItem', ?, 'DRAFT', ?, ?, ?, ?, ?)
                         """,
                 newId, companyId, code, source.name(), source.objectId(),
                 (maxVersion == null ? 0 : maxVersion) + 1, source.applicability(), source.remark(),
-                userId, userId);
+                source.ownerId(), userId, userId);
         // 逐行插入（INSERTSELECT 会让所有行共用一个主键，撞 uk(id)）
         for (CappDtos.StepRow step : stepsOf(id)) {
             insertStep(newId, companyId, step);
         }
         return detail(newId, companyId);
+    }
+
+    /**
+     * 序号重建（P6-2）：按当前顺序把工序号重排为 10/20/30…（工艺号插队后一键整理）。
+     *
+     * <p>不做 UPDATE 逐行改号——{@code uk_capp_step_seq(routing_id, seq_no)} 会在「5→10、7→20」
+     * 这类互换时中途撞唯一键；这里按读出的顺序整表重插，既避开唯一键冲突，也顺手清掉历史脏号。</p>
+     */
+    @Transactional
+    public CappDtos.RoutingDetail resequence(Long id, Long companyId, Long userId) {
+        CappDtos.RoutingDetail current = detail(id, companyId);
+        requireDraft(current.status(), "只有草稿状态的工艺路线可以重建序号");
+        List<CappDtos.StepRow> steps = current.steps();
+        jdbcTemplate.update("DELETE FROM capp_routing_step WHERE routing_id = ? AND company_id = ?",
+                id, companyId);
+        int seqNo = 10;
+        for (CappDtos.StepRow step : steps) {
+            insertStep(id, companyId, seqNo, step.name(), normalizeOpType(step.opType()),
+                    step.workCenter(), step.setupMinutes(), step.runMinutes(), step.remark());
+            seqNo += 10;
+        }
+        jdbcTemplate.update("""
+                UPDATE capp_routing SET updated_by = ?, updated_at = now()
+                 WHERE id = ? AND company_id = ?
+                """, userId, id, companyId);
+        return detail(id, companyId);
     }
 
     @Transactional
