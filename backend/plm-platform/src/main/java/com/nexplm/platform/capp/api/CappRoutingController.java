@@ -31,15 +31,17 @@ public class CappRoutingController {
         this.routingService = routingService;
     }
 
-    @Operation(summary = "工艺路线列表（按零件/状态/关键字筛选）")
+    @Operation(summary = "工艺路线列表（typical=true 查典型工艺库，缺省查零件工艺）")
     @GetMapping("/capp/routings")
     @PreAuthorize("hasAuthority('capp.routing.read')")
     public Result<PageResult<CappDtos.RoutingRow>> list(@RequestParam(required = false) String keyword,
                                                         @RequestParam(required = false) Long objectId,
                                                         @RequestParam(required = false) String status,
+                                                        @RequestParam(defaultValue = "false") boolean typical,
                                                         @RequestParam(defaultValue = "1") int page,
                                                         @RequestParam(defaultValue = "20") int size) {
-        return Result.ok(routingService.list(CurrentUser.companyId(), keyword, objectId, status, page, size));
+        return Result.ok(routingService.list(CurrentUser.companyId(), keyword, objectId, status,
+                typical, page, size));
     }
 
     @Operation(summary = "工艺路线详情（含工序与路线串）")
@@ -103,6 +105,26 @@ public class CappRoutingController {
     @Audit(module = "CAPP", action = "ROUTING_COPY", objectType = "CappRouting")
     public Result<CappDtos.RoutingDetail> copy(@PathVariable Long id) {
         return Result.ok(routingService.copy(id, CurrentUser.companyId(), CurrentUser.userId()));
+    }
+
+    @Operation(summary = "另存为典型工艺（工序/工步整份拷入典型工艺库，不绑零件）")
+    @PostMapping("/capp/routings/{id}/save-as-typical")
+    @PreAuthorize("hasAuthority('capp.routing.write')")
+    @Audit(module = "CAPP", action = "ROUTING_SAVE_TYPICAL", objectType = "CappRouting")
+    public Result<CappDtos.RoutingDetail> saveAsTypical(@PathVariable Long id,
+                                                       @Valid @RequestBody CappDtos.TypicalSaveReq req) {
+        return Result.ok(routingService.saveAsTypical(id, req,
+                CurrentUser.companyId(), CurrentUser.userId()));
+    }
+
+    @Operation(summary = "套用典型工艺到零件（生成该零件的一条新草稿路线）")
+    @PostMapping("/capp/routings/{id}/apply")
+    @PreAuthorize("hasAuthority('capp.routing.write')")
+    @Audit(module = "CAPP", action = "ROUTING_APPLY_TYPICAL", objectType = "CappRouting")
+    public Result<CappDtos.RoutingDetail> applyToPart(@PathVariable Long id,
+                                                      @Valid @RequestBody CappDtos.TypicalApplyReq req) {
+        return Result.ok(routingService.applyToPart(id, req,
+                CurrentUser.companyId(), CurrentUser.userId()));
     }
 
     @Operation(summary = "删除工艺路线（仅草稿，软删除）")

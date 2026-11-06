@@ -49,12 +49,15 @@ public class CappRoutingService {
     // ------------------------------------------------------------------ 查询
 
     public PageResult<CappDtos.RoutingRow> list(Long companyId, String keyword, Long objectId,
-                                                String status, int page, int size) {
+                                                String status, boolean typical, int page, int size) {
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 1), 100);
         StringBuilder where = new StringBuilder(" WHERE r.deleted = false AND r.company_id = ?");
         List<Object> args = new ArrayList<>();
         args.add(companyId);
+        // 典型工艺库与零件工艺共用这张表，列表默认只看零件工艺，两者互不串台
+        where.append(" AND r.typical = ?");
+        args.add(typical);
         if (status != null && !status.isBlank()) {
             String normalized = status.trim().toUpperCase();
             if (!STATUSES.contains(normalized)) {
@@ -83,7 +86,7 @@ public class CappRoutingService {
         pageArgs.add((long) (safePage - 1) * safeSize);
         List<CappDtos.RoutingRow> items = jdbcTemplate.query("""
                         SELECT r.id, r.code, r.name, r.object_id, o.code AS object_code, o.name AS object_name,
-                               r.version_no, r.status, r.applicability, r.owner_id,
+                               r.version_no, r.status, r.typical, r.applicability, r.owner_id,
                                u.display_name AS owner_name, r.released_at,
                                r.created_at, r.updated_at,
                                (SELECT COUNT(1) FROM capp_routing_step s WHERE s.routing_id = r.id) AS step_count,
@@ -94,9 +97,9 @@ public class CappRoutingService {
                           LEFT JOIN sys_user u ON u.id = r.owner_id
                         """ + where + " ORDER BY r.updated_at DESC, r.id DESC LIMIT ? OFFSET ?",
                 (rs, rowNum) -> new CappDtos.RoutingRow(rs.getLong("id"), rs.getString("code"),
-                        rs.getString("name"), rs.getLong("object_id"), rs.getString("object_code"),
+                        rs.getString("name"), (Long) rs.getObject("object_id"), rs.getString("object_code"),
                         rs.getString("object_name"), rs.getInt("version_no"), rs.getString("status"),
-                        rs.getString("applicability"), (Long) rs.getObject("owner_id"),
+                        rs.getBoolean("typical"), rs.getString("applicability"), (Long) rs.getObject("owner_id"),
                         rs.getString("owner_name"), rs.getInt("step_count"),
                         rs.getBigDecimal("total_minutes"),
                         rs.getObject("released_at", OffsetDateTime.class),
@@ -109,7 +112,7 @@ public class CappRoutingService {
     public CappDtos.RoutingDetail detail(Long id, Long companyId) {
         List<CappDtos.RoutingDetail> rows = jdbcTemplate.query("""
                         SELECT r.id, r.code, r.name, r.object_id, o.code AS object_code, o.name AS object_name,
-                               r.version_no, r.status, r.applicability, r.remark, r.owner_id,
+                               r.version_no, r.status, r.typical, r.applicability, r.remark, r.owner_id,
                                u.display_name AS owner_name, r.released_at,
                                r.created_at, r.updated_at
                           FROM capp_routing r
@@ -123,8 +126,9 @@ public class CappRoutingService {
                             .map(step -> nullToZero(step.setupMinutes()).add(nullToZero(step.runMinutes())))
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
                     return new CappDtos.RoutingDetail(rs.getLong("id"), rs.getString("code"),
-                            rs.getString("name"), rs.getLong("object_id"), rs.getString("object_code"),
+                            rs.getString("name"), (Long) rs.getObject("object_id"), rs.getString("object_code"),
                             rs.getString("object_name"), rs.getInt("version_no"), rs.getString("status"),
+                            rs.getBoolean("typical"),
                             rs.getString("applicability"), rs.getString("remark"),
                             (Long) rs.getObject("owner_id"), rs.getString("owner_name"),
                             routeString(steps), total,
@@ -143,16 +147,24 @@ public class CappRoutingService {
 
     @Transactional
     public CappDtos.RoutingDetail create(CappDtos.RoutingSaveReq req, Long companyId, Long userId) {
-        ObjectRef object = requirePart(req.objectId());
+        boolean typical = Boolean.TRUE.equals(req.typical());
+        // 典型工艺不绑零件；零件路线必须给零件（object_id 在库里已允许为空，靠这里守住语义）
+        ObjectRef object = typical ? null : requirePart(requireObjectId(req.objectId()));
+        String name = req.name().trim();
+        if (typical) {
+            requireUniqueTypicalName(name, null, companyId);
+        }
         String code = nextCode("CappRouting", "RT");
         long id = IdWorker.getId();
         jdbcTemplate.update("""
                         INSERT INTO capp_routing (id, company_id, code, name, object_id, object_type,
-                                                  version_no, status, applicability, remark, owner_id,
+                                                  typical, version_no, status, applicability, remark, owner_id,
                                                   created_by, updated_by)
-                        VALUES (?, ?, ?, ?, ?, ?, 1, 'DRAFT', ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'DRAFT', ?, ?, ?, ?, ?)
                         """,
-                id, companyId, code, req.name().trim(), object.id(), object.objectType(),
+                id, companyId, code, name,
+                object == null ? null : object.id(),
+                object == null ? "Typical" : object.objectType(), typical,
                 blankToNull(req.applicability()), blankToNull(req.remark()),
                 req.ownerId() == null ? userId : req.ownerId(), userId, userId);
         replaceSteps(id, companyId, req.steps());
@@ -163,14 +175,25 @@ public class CappRoutingService {
     public CappDtos.RoutingDetail update(Long id, CappDtos.RoutingSaveReq req, Long companyId, Long userId) {
         CappDtos.RoutingDetail current = detail(id, companyId);
         requireDraft(current.status(), "只有草稿状态的工艺路线可以修改");
-        ObjectRef object = requirePart(req.objectId());
+        if (req.typical() != null && req.typical() != current.typical()) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    current.typical() ? "典型工艺不能改成零件路线（请用「套用到零件」）"
+                            : "零件路线不能改成典型工艺（请用「另存为典型工艺」）");
+        }
+        ObjectRef object = current.typical() ? null : requirePart(requireObjectId(req.objectId()));
+        String name = req.name().trim();
+        if (current.typical()) {
+            requireUniqueTypicalName(name, id, companyId);
+        }
         jdbcTemplate.update("""
                         UPDATE capp_routing
                            SET name = ?, object_id = ?, object_type = ?, applicability = ?, remark = ?,
                                owner_id = ?, updated_by = ?, updated_at = now()
                          WHERE id = ? AND company_id = ?
                         """,
-                req.name().trim(), object.id(), object.objectType(), blankToNull(req.applicability()),
+                name, object == null ? null : object.id(),
+                object == null ? "Typical" : object.objectType(),
+                blankToNull(req.applicability()),
                 blankToNull(req.remark()), req.ownerId() == null ? current.ownerId() : req.ownerId(),
                 userId, id, companyId);
         replaceSteps(id, companyId, req.steps());
@@ -185,12 +208,16 @@ public class CappRoutingService {
         if (current.steps().isEmpty()) {
             throw BizException.of(ErrorCode.CAPP_STEP_INVALID, "工艺路线至少需要一道工序才能发布");
         }
-        jdbcTemplate.update("""
-                        UPDATE capp_routing
-                           SET status = 'ARCHIVED', updated_by = ?, updated_at = now()
-                         WHERE company_id = ? AND object_id = ? AND object_type = ?
-                           AND status = 'RELEASED' AND deleted = false AND id <> ?
-                        """, userId, companyId, current.objectId(), "PdmItem", id);
+        // 「一个零件同时只有一条投产路线」只约束零件工艺；典型工艺之间互不顶替（库里可并存多条）
+        if (!current.typical()) {
+            jdbcTemplate.update("""
+                            UPDATE capp_routing
+                               SET status = 'ARCHIVED', updated_by = ?, updated_at = now()
+                             WHERE company_id = ? AND object_id = ? AND object_type = ?
+                               AND typical = false
+                               AND status = 'RELEASED' AND deleted = false AND id <> ?
+                            """, userId, companyId, current.objectId(), "PdmItem", id);
+        }
         jdbcTemplate.update("""
                         UPDATE capp_routing
                            SET status = 'RELEASED', released_at = now(), updated_by = ?, updated_at = now()
@@ -218,27 +245,99 @@ public class CappRoutingService {
     @Transactional
     public CappDtos.RoutingDetail copy(Long id, Long companyId, Long userId) {
         CappDtos.RoutingDetail source = detail(id, companyId);
-        Integer maxVersion = jdbcTemplate.queryForObject("""
-                SELECT COALESCE(MAX(version_no), 0) FROM capp_routing
-                 WHERE company_id = ? AND object_id = ? AND deleted = false
-                """, Integer.class, companyId, source.objectId());
+        if (source.typical()) {
+            // 典型工艺没有「版本链」概念，副本靠名称区分（同公司典型工艺名唯一）
+            return cloneRouting(source, null, "Typical", true,
+                    nextCopyName(source.name(), companyId), 1, companyId, userId);
+        }
+        return cloneRouting(source, source.objectId(), "PdmItem", false, source.name(),
+                nextVersionNo(source.objectId(), companyId), companyId, userId);
+    }
+
+    /**
+     * 另存为典型工艺（P6-7）：把现有零件路线的工序/工步整份拷进典型工艺库。
+     *
+     * <p>典型工艺不绑零件（{@code object_id} 为空），因此可被任意零件「套用」；
+     * 这里只复制结构，不改动源路线，也不占用源路线的版本号。</p>
+     */
+    @Transactional
+    public CappDtos.RoutingDetail saveAsTypical(Long id, CappDtos.TypicalSaveReq req,
+                                                Long companyId, Long userId) {
+        CappDtos.RoutingDetail source = detail(id, companyId);
+        if (source.typical()) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "该记录本身就是典型工艺，直接「复制」即可，无需另存为典型工艺");
+        }
+        String name = req.name().trim();
+        requireUniqueTypicalName(name, null, companyId);
         long newId = IdWorker.getId();
         String code = nextCode("CappRouting", "RT");
         jdbcTemplate.update("""
                         INSERT INTO capp_routing (id, company_id, code, name, object_id, object_type,
-                                                  version_no, status, applicability, remark, owner_id,
+                                                  typical, version_no, status, applicability, remark, owner_id,
                                                   created_by, updated_by)
-                        VALUES (?, ?, ?, ?, ?, 'PdmItem', ?, 'DRAFT', ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, NULL, 'Typical', true, 1, 'DRAFT', ?, ?, ?, ?, ?)
                         """,
-                newId, companyId, code, source.name(), source.objectId(),
-                (maxVersion == null ? 0 : maxVersion) + 1, source.applicability(), source.remark(),
+                newId, companyId, code, name,
+                firstNonBlank(req.applicability(), source.applicability()),
+                firstNonBlank(req.remark(), source.remark()),
                 source.ownerId(), userId, userId);
-        // 逐行插入（INSERTSELECT 会让所有行共用一个主键，撞 uk(id)）
-        for (CappDtos.StepRow step : stepsOf(id)) {
-            insertStep(newId, companyId, step);
-            writeSubstepsFromRows(newId, companyId, step.seqNo(), step.substeps());
-        }
+        copyStepsInto(source, newId, companyId);
         return detail(newId, companyId);
+    }
+
+    /**
+     * 套用典型工艺到零件（P6-7）：生成该零件的一条新草稿路线。
+     *
+     * <p>典型工艺本身不消耗、不修改；新路线 {@code version_no} 接着该零件现有最大值 +1，
+     * 与「复制路线」的版本口径一致，套用后照常走「修改 → 发布」流程。</p>
+     */
+    @Transactional
+    public CappDtos.RoutingDetail applyToPart(Long typicalId, CappDtos.TypicalApplyReq req,
+                                              Long companyId, Long userId) {
+        CappDtos.RoutingDetail typical = detail(typicalId, companyId);
+        if (!typical.typical()) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "只有典型工艺可以套用到零件；零件路线请用「复制」");
+        }
+        ObjectRef object = requirePart(requireObjectId(req.objectId()));
+        String name = req.name() == null || req.name().isBlank() ? typical.name() : req.name().trim();
+        return cloneRouting(typical, object.id(), object.objectType(), false, name,
+                nextVersionNo(object.id(), companyId), companyId, userId);
+    }
+
+    /** 深拷贝一条路线（工序 + 工步）到目标对象/类型，返回新路线详情。 */
+    private CappDtos.RoutingDetail cloneRouting(CappDtos.RoutingDetail source, Long objectId,
+                                                String objectType, boolean typical, String name,
+                                                int versionNo, Long companyId, Long userId) {
+        long newId = IdWorker.getId();
+        String code = nextCode("CappRouting", "RT");
+        jdbcTemplate.update("""
+                        INSERT INTO capp_routing (id, company_id, code, name, object_id, object_type,
+                                                  typical, version_no, status, applicability, remark, owner_id,
+                                                  created_by, updated_by)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?)
+                        """,
+                newId, companyId, code, name, objectId, objectType, typical, versionNo,
+                source.applicability(), source.remark(), source.ownerId(), userId, userId);
+        copyStepsInto(source, newId, companyId);
+        return detail(newId, companyId);
+    }
+
+    /** 逐行插入工序与工步（批量 INSERT…SELECT 会让所有行共用一个主键，撞 uk(id)）。 */
+    private void copyStepsInto(CappDtos.RoutingDetail source, long targetId, Long companyId) {
+        for (CappDtos.StepRow step : source.steps()) {
+            insertStep(targetId, companyId, step);
+            writeSubstepsFromRows(targetId, companyId, step.seqNo(), step.substeps());
+        }
+    }
+
+    private int nextVersionNo(Long objectId, Long companyId) {
+        Integer maxVersion = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(MAX(version_no), 0) FROM capp_routing
+                 WHERE company_id = ? AND object_id = ? AND typical = false AND deleted = false
+                """, Integer.class, companyId, objectId);
+        return (maxVersion == null ? 0 : maxVersion) + 1;
     }
 
     /** 把已读出的工步行按「目标工序号」重写到某条路线（复制、序号重建共用）。 */
@@ -491,6 +590,45 @@ public class CappRoutingService {
                     "工艺路线只能挂在零件上（当前对象类型：" + rows.get(0).objectType() + "）");
         }
         return rows.get(0);
+    }
+
+    /** 零件路线必须显式给零件：object_id 在库里允许为空（典型工艺），语义由这里守住。 */
+    private static Long requireObjectId(Long objectId) {
+        if (objectId == null) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "零件工艺路线必须指定零件（objectId）");
+        }
+        return objectId;
+    }
+
+    /** 典型工艺同公司内名称唯一（DB 有部分唯一索引兜底，这里先查一次给出可读文案）。 */
+    private void requireUniqueTypicalName(String name, Long excludeId, Long companyId) {
+        if (typicalNameExists(name, excludeId, companyId)) {
+            throw BizException.of(ErrorCode.CAPP_ROUTING_DUPLICATE, "典型工艺名称已存在：" + name);
+        }
+    }
+
+    private boolean typicalNameExists(String name, Long excludeId, Long companyId) {
+        List<Long> ids = jdbcTemplate.query("""
+                        SELECT id FROM capp_routing
+                         WHERE company_id = ? AND typical = true AND deleted = false AND name = ?
+                        """,
+                (rs, rowNum) -> rs.getLong(1), companyId, name);
+        return ids.stream().anyMatch(found -> excludeId == null || !found.equals(excludeId));
+    }
+
+    /** 典型工艺复制时的默认命名：{@code 车削典型工艺-副本}、{@code -副本2}…（避开唯一索引）。 */
+    private String nextCopyName(String baseName, Long companyId) {
+        String candidate = baseName + "-副本";
+        int index = 2;
+        while (typicalNameExists(candidate, null, companyId)) {
+            candidate = baseName + "-副本" + index;
+            index++;
+        }
+        return candidate;
+    }
+
+    private static String firstNonBlank(String primary, String fallback) {
+        return primary == null || primary.isBlank() ? blankToNull(fallback) : primary.trim();
     }
 
     private void requireResource(Long resourceId, Long companyId) {

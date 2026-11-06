@@ -535,7 +535,7 @@ public class CappCardService {
                         """,
                 (rs, rowNum) -> new RoutingSnapshot(rs.getLong("id"), rs.getString("code"),
                         rs.getString("name"), rs.getInt("version_no"), rs.getString("status"),
-                        rs.getString("applicability"), rs.getLong("object_id"),
+                        rs.getString("applicability"), (Long) rs.getObject("object_id"),
                         rs.getString("object_code"), rs.getString("object_name"),
                         rs.getString("specification"), rs.getString("material"), rs.getString("unit"),
                         rs.getString("owner_name"), stepsOf(routingId, companyId)),
@@ -543,7 +543,13 @@ public class CappCardService {
         if (routings.isEmpty()) {
             throw BizException.of(ErrorCode.CAPP_ROUTING_NOT_FOUND, "工艺路线不存在：" + routingId);
         }
-        return routings.get(0);
+        RoutingSnapshot routing = routings.get(0);
+        // 典型工艺不绑零件（object_id 为空），卡片表头/齐套都按零件组织，因此不允许直接出卡
+        if (routing.objectId() == null) {
+            throw BizException.of(ErrorCode.CAPP_CARD_INVALID,
+                    "典型工艺不绑定零件，不能直接生成工艺卡片（请先「套用到零件」）");
+        }
+        return routing;
     }
 
     private List<StepSnapshot> stepsOf(Long routingId, Long companyId) {

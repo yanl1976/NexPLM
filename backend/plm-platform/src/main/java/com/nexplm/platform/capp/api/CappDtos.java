@@ -64,18 +64,35 @@ public final class CappDtos {
                                   List<SubstepRow> substeps) {
     }
 
-    /** 工艺路线保存入参：主档 + 工序（批量编辑，整表替换）。 */
+    /**
+     * 工艺路线保存入参：主档 + 工序（批量编辑，整表替换）。
+     *
+     * <p>{@code typical=true} 时无需 {@code objectId}（典型工艺不绑定零件）；零件路线必须给零件。</p>
+     */
     public record RoutingSaveReq(@NotBlank @Size(max = 200) String name,
-                                 @NotNull Long objectId,
+                                 Long objectId,
                                  @Size(max = 200) String applicability,
                                  @Size(max = 500) String remark,
                                  Long ownerId,
-                                 @NotEmpty @Valid List<StepSaveReq> steps) {
+                                 @NotEmpty @Valid List<StepSaveReq> steps,
+                                 Boolean typical) {
     }
 
-    /** 工艺路线列表行。 */
+    /** 另存为典型工艺入参：只需起个名字，其余（工序/工步/适用性）沿用源路线。 */
+    public record TypicalSaveReq(@NotBlank @Size(max = 200) String name,
+                                 @Size(max = 200) String applicability,
+                                 @Size(max = 500) String remark) {
+    }
+
+    /** 典型工艺套用到零件入参：目标零件 + 可选的新路线名（不填沿用典型工艺名）。 */
+    public record TypicalApplyReq(@NotNull Long objectId,
+                                  @Size(max = 200) String name) {
+    }
+
+    /** 工艺路线列表行（{@code typical=true} 表示典型工艺，此时零件字段为空）。 */
     public record RoutingRow(Long id, String code, String name, Long objectId, String objectCode,
-                             String objectName, int versionNo, String status, String applicability,
+                             String objectName, int versionNo, String status, boolean typical,
+                             String applicability,
                              Long ownerId, String ownerName,
                              int stepCount, BigDecimal totalMinutes, OffsetDateTime releasedAt,
                              OffsetDateTime createdAt, OffsetDateTime updatedAt) {
@@ -88,7 +105,8 @@ public final class CappDtos {
      * 由工序按 seq_no 升序拼装，供列表/导出直接展示。</p>
      */
     public record RoutingDetail(Long id, String code, String name, Long objectId, String objectCode,
-                                String objectName, int versionNo, String status, String applicability,
+                                String objectName, int versionNo, String status, boolean typical,
+                                String applicability,
                                 String remark, Long ownerId, String ownerName,
                                 String routeString, BigDecimal totalMinutes,
                                 OffsetDateTime releasedAt, OffsetDateTime createdAt, OffsetDateTime updatedAt,

@@ -56,6 +56,11 @@ public class CappErpDispatchService {
             throw BizException.of(ErrorCode.CAPP_CARD_INVALID,
                     "只有已发布的工艺路线可以下发（当前：" + status + "）");
         }
+        // 载荷里要带零件编码/名称，典型工艺（object_id 为空）没有对应零件，不能下发
+        if (routing.get("object_id") == null) {
+            throw BizException.of(ErrorCode.CAPP_CARD_INVALID,
+                    "典型工艺不绑定零件，不能下发到 ERP（请先「套用到零件」）");
+        }
         Map<String, Object> payload = buildPayload(routing, req.routingId(), companyId);
         String payloadJson = toJson(payload);
         String code = nextCode("CappErpDispatch", "ED");

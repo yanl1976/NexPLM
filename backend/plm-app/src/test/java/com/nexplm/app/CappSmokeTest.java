@@ -868,6 +868,127 @@ class CappSmokeTest {
         assertThat(secondRead.path("payload").path("operations")).hasSize(2);
     }
 
+    /** P6-7 典型工艺库：另存为典型 → 编辑/发布 → 套用到零件，且与零件路线互不串台。 */
+    @Test
+    void typicalRoutingSaveAndApply() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long sourceItem = createItem(admin, "典型工艺源零件");
+        long targetItem = createItem(admin, "典型工艺目标零件");
+
+        // 源零件路线：2 道工序，其中一道带工步
+        Map<String, Object> second = step(20, "精车", "MACHINING", "机加车间", 0.2, 1.0);
+        second.put("substeps", List.of(substep(1, "装夹", "三爪卡盘", null, "0.1", "0")));
+        long sourceId = call(post("/api/v1/capp/routings"), admin,
+                json(routing("轴类工艺", sourceItem, steps(
+                        step(10, "下料", "MACHINING", "下料车间", 0, 5), second))))
+                .path("id").asLong();
+
+        // 另存为典型工艺：不绑零件，工序/工步整份拷入，回到草稿待编辑
+        JsonNode typical = call(post("/api/v1/capp/routings/{id}/save-as-typical", sourceId), admin,
+                json(Map.of("name", "轴类典型工艺")));
+        long typicalId = typical.path("id").asLong();
+        assertThat(typical.path("code").asText()).startsWith("RT-");
+        assertThat(typical.path("typical").asBoolean()).isTrue();
+        assertThat(typical.path("objectId").isMissingNode() || typical.path("objectId").isNull()).isTrue();
+        assertThat(typical.path("status").asText()).isEqualTo("DRAFT");
+        assertThat(typical.path("steps")).hasSize(2);
+        assertThat(typical.path("steps").get(1).path("substeps")).hasSize(1);
+        assertThat(typical.path("totalMinutes").decimalValue()).isEqualByComparingTo("6.2");
+
+        // 列表分离：typical=true 才出典型工艺库，零件路线列表里绝不会混进来
+        JsonNode typicalList = call(get("/api/v1/capp/routings?typical=true"), admin, null);
+        assertThat(typicalList.path("items").findValuesAsText("code"))
+                .contains(typical.path("code").asText());
+        JsonNode partList = call(get("/api/v1/capp/routings?objectId=" + sourceItem), admin, null);
+        assertThat(partList.path("items").findValuesAsText("typical")).containsOnly("false");
+
+        // 典型工艺同公司内名称唯一
+        mockMvc.perform(post("/api/v1/capp/routings/{id}/save-as-typical", sourceId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("name", "轴类典型工艺"))))
+                .andExpect(status().isConflict());
+
+        // 直接新建典型工艺（不绑零件）
+        Map<String, Object> direct = new HashMap<>();
+        direct.put("name", "钻孔典型工艺");
+        direct.put("typical", true);
+        direct.put("steps", steps(step(10, "钻孔", "MACHINING", "机加车间", 0, 2)));
+        JsonNode createdTypical = call(post("/api/v1/capp/routings"), admin, json(direct));
+        assertThat(createdTypical.path("typical").asBoolean()).isTrue();
+        assertThat(createdTypical.path("objectId").isMissingNode()
+                || createdTypical.path("objectId").isNull()).isTrue();
+        assertThat(createdTypical.path("totalMinutes").decimalValue()).isEqualByComparingTo("2");
+
+        // 零件路线缺零件 → 400（库里 object_id 允许为空，语义由服务端守住）
+        Map<String, Object> noObject = new HashMap<>();
+        noObject.put("name", "缺零件的路线");
+        noObject.put("steps", steps(step(10, "下料", "MACHINING", null, 0, 1)));
+        mockMvc.perform(post("/api/v1/capp/routings")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(noObject)))
+                .andExpect(status().isBadRequest());
+
+        // 编辑典型工艺（改工时），typical 标记必须与当前一致
+        Map<String, Object> typicalEdit = new HashMap<>();
+        typicalEdit.put("name", "轴类典型工艺");
+        typicalEdit.put("typical", true);
+        typicalEdit.put("applicability", "通用");
+        typicalEdit.put("steps", steps(step(10, "下料", "MACHINING", "下料车间", 0, 4),
+                step(20, "精车", "MACHINING", "机加车间", 0.2, 1.0)));
+        JsonNode edited = call(put("/api/v1/capp/routings/{id}", typicalId), admin, json(typicalEdit));
+        assertThat(edited.path("totalMinutes").decimalValue()).isEqualByComparingTo("5.2");
+
+        // 典型 ↔ 零件不能直接改开关（各有专属动作）
+        Map<String, Object> flip = new HashMap<>(typicalEdit);
+        flip.put("typical", false);
+        flip.put("objectId", targetItem);
+        mockMvc.perform(put("/api/v1/capp/routings/{id}", typicalId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(flip)))
+                .andExpect(status().isBadRequest());
+
+        // 典型工艺发布：不参与「同零件唯一投产路线」，不会顶掉源零件路线
+        JsonNode released = call(post("/api/v1/capp/routings/{id}/release", typicalId), admin, null);
+        assertThat(released.path("status").asText()).isEqualTo("RELEASED");
+        assertThat(call(get("/api/v1/capp/routings/{id}", sourceId), admin, null).path("status").asText())
+                .isEqualTo("DRAFT");
+
+        // 套用到零件：生成该零件的新草稿路线，工序/工步与典型一致，典型本身不动
+        JsonNode applied = call(post("/api/v1/capp/routings/{id}/apply", typicalId), admin,
+                json(Map.of("objectId", targetItem, "name", "轴类工艺（套用）")));
+        long appliedId = applied.path("id").asLong();
+        assertThat(applied.path("objectId").asLong()).isEqualTo(targetItem);
+        assertThat(applied.path("objectCode").asText()).isNotBlank();
+        assertThat(applied.path("typical").asBoolean()).isFalse();
+        assertThat(applied.path("status").asText()).isEqualTo("DRAFT");
+        assertThat(applied.path("versionNo").asInt()).isEqualTo(1);
+        assertThat(applied.path("name").asText()).isEqualTo("轴类工艺（套用）");
+        assertThat(applied.path("steps")).hasSize(2);
+        assertThat(applied.path("totalMinutes").decimalValue()).isEqualByComparingTo("5.2");
+
+        // 再次套用：版本号接着该零件的最大值递增
+        JsonNode appliedAgain = call(post("/api/v1/capp/routings/{id}/apply", typicalId), admin,
+                json(Map.of("objectId", targetItem)));
+        assertThat(appliedAgain.path("versionNo").asInt()).isEqualTo(2);
+        assertThat(appliedAgain.path("name").asText()).isEqualTo("轴类典型工艺");
+
+        // 零件路线不能「套用」（只有典型工艺可以）
+        mockMvc.perform(post("/api/v1/capp/routings/{id}/apply", appliedId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("objectId", sourceItem))))
+                .andExpect(status().isBadRequest());
+
+        // 套用后正常走「发布 → 归档」，且典型工艺不受影响
+        JsonNode appliedReleased = call(post("/api/v1/capp/routings/{id}/release", appliedId), admin, null);
+        assertThat(appliedReleased.path("status").asText()).isEqualTo("RELEASED");
+        assertThat(call(get("/api/v1/capp/routings/{id}", typicalId), admin, null)
+                .path("status").asText()).isEqualTo("RELEASED");
+    }
+
     // ------------------------------------------------------------------ 工具
 
     private Map<String, Object> substep(int seqNo, String name, String content, Long resourceId,

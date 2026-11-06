@@ -1,11 +1,15 @@
 <template>
   <div class="page">
     <div class="toolbar">
+      <el-radio-group v-model="viewMode" @change="reload">
+        <el-radio-button value="part">零件工艺</el-radio-button>
+        <el-radio-button value="typical">典型工艺库</el-radio-button>
+      </el-radio-group>
       <el-input
         v-model="keyword"
-        placeholder="路线编码 / 名称 / 零件"
+        :placeholder="isTypicalView ? '典型工艺编码 / 名称' : '路线编码 / 名称 / 零件'"
         clearable
-        style="width: 260px"
+        style="width: 240px"
         @keyup.enter="reload"
         @clear="reload"
       />
@@ -15,14 +19,16 @@
         <el-option label="已归档" value="ARCHIVED" />
       </el-select>
       <el-button type="primary" @click="reload">查询</el-button>
-      <el-button v-if="canWrite" type="primary" plain @click="openCreate">新建工艺路线</el-button>
-      <span class="hint">一个零件同一时刻只保留一条「已发布」路线，发布新版本时旧版本自动归档</span>
+      <el-button v-if="canWrite" type="primary" plain @click="openCreate">
+        {{ isTypicalView ? '新建典型工艺' : '新建工艺路线' }}
+      </el-button>
+      <span class="hint">{{ viewHint }}</span>
     </div>
 
     <el-table v-loading="loading" :data="rows" border stripe>
       <el-table-column prop="code" label="路线编码" width="130" />
       <el-table-column prop="name" label="路线名称" min-width="160" show-overflow-tooltip />
-      <el-table-column label="零件" min-width="200" show-overflow-tooltip>
+      <el-table-column v-if="!isTypicalView" label="零件" min-width="200" show-overflow-tooltip>
         <template #default="{ row }">
           <span class="mono">{{ row.objectCode }}</span>
           <span class="sub">{{ row.objectName }}</span>
@@ -47,12 +53,14 @@
       <el-table-column label="更新时间" width="160">
         <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
       </el-table-column>
-      <el-table-column v-if="canWrite" label="操作" width="220" fixed="right">
+      <el-table-column v-if="canWrite" label="操作" width="320" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openDetail(row.id)">查看</el-button>
           <el-button v-if="row.status === 'DRAFT'" link type="primary" @click="openEdit(row.id)">编辑</el-button>
           <el-button v-if="row.status === 'DRAFT'" link type="success" @click="onRelease(row)">发布</el-button>
           <el-button v-if="row.status === 'RELEASED'" link type="warning" @click="onArchive(row)">归档</el-button>
+          <el-button v-if="isTypicalView" link type="primary" @click="openApply(row)">套用到零件</el-button>
+          <el-button v-else link type="primary" @click="onSaveAsTypical(row)">另存为典型</el-button>
           <el-button link type="primary" @click="onCopy(row)">复制</el-button>
           <el-button v-if="row.status === 'DRAFT'" link type="danger" @click="onDelete(row)">删除</el-button>
         </template>
@@ -78,7 +86,10 @@
       destroy-on-close
     >
       <el-form label-width="90px">
-        <el-form-item label="零件" required>
+        <el-form-item v-if="isTypicalView" label="工艺类型">
+          <el-tag type="info" size="small">典型工艺（不绑定零件，可套用到任意零件）</el-tag>
+        </el-form-item>
+        <el-form-item v-else label="零件" required>
           <el-select
             v-model="form.objectId"
             filterable
@@ -254,6 +265,41 @@
       </template>
     </el-dialog>
 
+    <!-- 套用典型工艺到零件：生成该零件的一条新草稿路线，典型工艺本身不消耗 -->
+    <el-dialog v-model="applyVisible" title="套用典型工艺到零件" width="560px">
+      <el-form label-width="90px">
+        <el-form-item label="典型工艺">
+          <el-input :model-value="applySource ? `${applySource.code} ${applySource.name}` : ''" readonly />
+        </el-form-item>
+        <el-form-item label="目标零件" required>
+          <el-select
+            v-model="applyForm.objectId"
+            filterable
+            remote
+            reserve-keyword
+            placeholder="输入零件编码/名称搜索"
+            :remote-method="searchItems"
+            :loading="itemsLoading"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in items"
+              :key="item.id"
+              :label="`${item.code} ${item.name}`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="路线名称">
+          <el-input v-model="applyForm.name" maxlength="200" placeholder="不填则沿用典型工艺名称" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="applyVisible = false">取消</el-button>
+        <el-button type="primary" :loading="applying" @click="onApply">生成草稿路线</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 工步编辑：只改本地草稿，随「保存路线」一并整表提交（工序号变化不会丢工步） -->
     <el-drawer v-model="substepVisible" :title="substepTitle" size="1000px">
       <el-table :data="substepDraft" border size="small">
@@ -358,6 +404,20 @@ const page = ref(1)
 const size = ref(20)
 const keyword = ref('')
 const status = ref<string>('')
+/** 视图：零件工艺路线 / 典型工艺库（同一张表，typical 标记区分）。 */
+const viewMode = ref<'part' | 'typical'>('part')
+const isTypicalView = computed(() => viewMode.value === 'typical')
+const viewHint = computed(() =>
+  isTypicalView.value
+    ? '典型工艺不绑零件，可在任意零件上「套用」生成新的草稿路线'
+    : '一个零件同一时刻只保留一条「已发布」路线，发布新版本时旧版本自动归档'
+)
+
+/** 套用典型工艺到零件。 */
+const applyVisible = ref(false)
+const applying = ref(false)
+const applySource = ref<RoutingRow | null>(null)
+const applyForm = reactive<{ objectId: string; name: string }>({ objectId: '', name: '' })
 
 const dialogVisible = ref(false)
 const readonly = ref(false)
@@ -382,20 +442,24 @@ const form = reactive<{
   remark: string
   ownerId: string | null
   steps: RoutingStep[]
+  /** 当前编辑对象是否为典型工艺（决定保存时是否要求零件）。 */
+  typical: boolean
 }>({
   name: '',
   objectId: '',
   applicability: '',
   remark: '',
   ownerId: null,
-  steps: []
+  steps: [],
+  typical: false
 })
 
 const dialogTitle = computed(() => {
+  const kind = form.typical ? '典型工艺' : '工艺路线'
   if (readonly.value) {
-    return '工艺路线详情'
+    return `${kind}详情`
   }
-  return form.id ? '编辑工艺路线' : '新建工艺路线'
+  return form.id ? `编辑${kind}` : `新建${kind}`
 })
 
 const substepTitle = computed(() => {
@@ -422,7 +486,8 @@ async function load(): Promise<void> {
       page: page.value,
       size: size.value,
       keyword: keyword.value || undefined,
-      status: status.value || undefined
+      status: status.value || undefined,
+      typical: isTypicalView.value ? true : undefined
     })
     rows.value = result.items
     total.value = result.total
@@ -488,11 +553,14 @@ function openCreate(): void {
     applicability: '',
     remark: '',
     ownerId: null,
-    steps: []
+    steps: [],
+    typical: isTypicalView.value
   })
   form.steps.push(emptyStep(10))
   dialogVisible.value = true
-  searchItems('')
+  if (!isTypicalView.value) {
+    searchItems('')
+  }
   searchUsers('')
 }
 
@@ -514,23 +582,27 @@ async function fillForm(id: string): Promise<void> {
     Object.assign(form, {
       id: detail.id,
       name: detail.name,
-      objectId: detail.objectId,
+      objectId: detail.objectId ?? '',
       applicability: detail.applicability ?? '',
       remark: detail.remark ?? '',
       ownerId: detail.ownerId ?? null,
-      steps: detail.steps.map((step) => ({ ...step }))
+      steps: detail.steps.map((step) => ({ ...step })),
+      typical: detail.typical === true
     })
     mergeBoundResources(form.steps)
     if (detail.ownerId && detail.ownerName) {
       users.value = [{ id: detail.ownerId, username: detail.ownerName, displayName: detail.ownerName } as ActorUserRow]
     }
-    items.value = [
-      {
-        id: detail.objectId,
-        code: detail.objectCode ?? '',
-        name: detail.objectName ?? ''
-      } as ItemSummary
-    ]
+    // 典型工艺不绑零件，没有零件候选可补
+    items.value = detail.objectId
+      ? [
+          {
+            id: detail.objectId,
+            code: detail.objectCode ?? '',
+            name: detail.objectName ?? ''
+          } as ItemSummary
+        ]
+      : []
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载详情失败')
   }
@@ -604,7 +676,7 @@ async function onResequence(): Promise<void> {
 }
 
 async function onSave(): Promise<void> {
-  if (!form.objectId) {
+  if (!form.typical && !form.objectId) {
     ElMessage.warning('请先选择零件')
     return
   }
@@ -620,7 +692,9 @@ async function onSave(): Promise<void> {
   try {
     const payload = {
       name: form.name.trim(),
-      objectId: form.objectId,
+      // 典型工艺不绑零件（后端 object_id 允许为空，语义由 typical 标记决定）
+      objectId: form.typical ? null : form.objectId,
+      typical: form.typical,
       applicability: form.applicability || null,
       remark: form.remark || null,
       ownerId: form.ownerId,
@@ -723,6 +797,66 @@ async function onDelete(row: RoutingRow): Promise<void> {
     await load()
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '删除失败')
+  }
+}
+
+/** 另存为典型工艺：把工序/工步整份拷进典型工艺库，源路线不动。 */
+async function onSaveAsTypical(row: RoutingRow): Promise<void> {
+  let name = `${row.name}（典型）`
+  try {
+    const result = await ElMessageBox.prompt('输入典型工艺名称（同公司内唯一）', '另存为典型工艺', {
+      inputValue: name,
+      inputValidator: (value: string) => (value && value.trim() ? true : '请输入名称'),
+      confirmButtonText: '保存',
+      cancelButtonText: '取消'
+    })
+    name = (result as { value?: string }).value?.trim() || name
+  } catch {
+    return
+  }
+  try {
+    const created = await cappApi.saveAsTypical(row.id, { name })
+    ElMessage.success(`已存为典型工艺 ${created.code}`)
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '另存为典型工艺失败')
+  }
+}
+
+/** 打开「套用到零件」弹窗。 */
+function openApply(row: RoutingRow): void {
+  applySource.value = row
+  applyForm.objectId = ''
+  applyForm.name = ''
+  applyVisible.value = true
+  items.value = []
+  searchItems('')
+}
+
+/** 套用：生成目标零件的一条新草稿路线，随后切回零件工艺视图便于继续编辑。 */
+async function onApply(): Promise<void> {
+  if (!applySource.value) {
+    return
+  }
+  if (!applyForm.objectId) {
+    ElMessage.warning('请选择目标零件')
+    return
+  }
+  applying.value = true
+  try {
+    const created = await cappApi.applyToPart(applySource.value.id, {
+      objectId: applyForm.objectId,
+      name: applyForm.name.trim() || undefined
+    })
+    ElMessage.success(`已生成草稿路线 ${created.code}`)
+    applyVisible.value = false
+    viewMode.value = 'part'
+    page.value = 1
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '套用典型工艺失败')
+  } finally {
+    applying.value = false
   }
 }
 

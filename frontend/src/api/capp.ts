@@ -81,11 +81,14 @@ export interface RoutingRow {
   id: string
   code: string
   name: string
-  objectId: string
+  /** 零件 id；典型工艺不绑零件，此为空。 */
+  objectId?: string | null
   objectCode?: string | null
   objectName?: string | null
   versionNo: number
   status: RoutingStatus
+  /** true = 典型工艺库条目（不绑零件，可套用到任意零件）。 */
+  typical?: boolean
   applicability?: string | null
   /** 工艺负责人（工艺分工）。 */
   ownerId?: string | null
@@ -106,11 +109,27 @@ export interface RoutingDetail extends RoutingRow {
 
 export interface RoutingSaveReq {
   name: string
-  objectId: string
+  /** 零件路线必填；typical=true（典型工艺）时留空。 */
+  objectId?: string | null
   applicability?: string | null
   remark?: string | null
   ownerId?: string | null
   steps: RoutingStep[]
+  /** true 表示存进典型工艺库（不绑零件）。 */
+  typical?: boolean
+}
+
+/** 另存为典型工艺入参。 */
+export interface TypicalSaveReq {
+  name: string
+  applicability?: string | null
+  remark?: string | null
+}
+
+/** 典型工艺套用到零件入参（name 不填则沿用典型工艺名）。 */
+export interface TypicalApplyReq {
+  objectId: string
+  name?: string
 }
 
 // ---------------------------------------------------------------- 工艺资源库（P6-3）
@@ -246,6 +265,8 @@ export const cappApi = {
     keyword?: string
     objectId?: string
     status?: string
+    /** true = 查典型工艺库；缺省查零件工艺路线。 */
+    typical?: boolean
   }): Promise<{ items: RoutingRow[]; total: number; page: number; size: number }> {
     return http.get(`/capp/routings`, params)
   },
@@ -274,6 +295,14 @@ export const cappApi = {
   /** 工艺过程树：工序 → 工步（与工序表同源）。 */
   processTree(id: string): Promise<ProcessTreeNode[]> {
     return http.get<ProcessTreeNode[]>(`/capp/routings/${id}/process-tree`)
+  },
+  /** 另存为典型工艺：把零件路线的工序/工步整份拷进典型工艺库。 */
+  saveAsTypical(id: string, req: TypicalSaveReq): Promise<RoutingDetail> {
+    return http.post<RoutingDetail>(`/capp/routings/${id}/save-as-typical`, req)
+  },
+  /** 套用典型工艺到零件：生成该零件的一条新草稿路线（典型本身不变）。 */
+  applyToPart(id: string, req: TypicalApplyReq): Promise<RoutingDetail> {
+    return http.post<RoutingDetail>(`/capp/routings/${id}/apply`, req)
   },
   remove(id: string): Promise<void> {
     return http.delete<void>(`/capp/routings/${id}`)
