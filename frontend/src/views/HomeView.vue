@@ -19,7 +19,7 @@
     <el-card shadow="never" class="phase">
       <template #header>
         <span>实施阶段</span>
-        <el-tag type="success" size="small" class="phase-tag">P0 已完成</el-tag>
+        <StatusDot tone="ok" label="P0 已完成" class="phase-tag" />
       </template>
       <el-steps :active="1" align-center finish-status="success">
         <el-step v-for="step in phases" :key="step.title" :title="step.title" :description="step.desc" />
@@ -41,6 +41,7 @@
 
 <script setup lang="ts">
 import { useUserStore } from '@/stores/user'
+import StatusDot from '@/components/StatusDot.vue'
 
 const userStore = useUserStore()
 
@@ -65,19 +66,19 @@ const phases = [
 .home {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .welcome-title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
-  color: #1f2d3d;
+  color: var(--plm-text-primary);
 }
 
 .welcome-sub {
-  margin-top: 8px;
-  color: #7b8698;
-  font-size: 13px;
+  margin-top: 6px;
+  color: var(--plm-text-secondary);
+  font-size: 12px;
 }
 
 .stat {
@@ -87,13 +88,14 @@ const phases = [
 .stat-value {
   font-size: 24px;
   font-weight: 700;
-  color: #24435f;
+  color: var(--plm-primary);
+  line-height: 1.2;
 }
 
 .stat-label {
-  margin-top: 6px;
-  color: #8a94a6;
-  font-size: 13px;
+  margin-top: 4px;
+  color: var(--plm-text-secondary);
+  font-size: 12px;
 }
 
 .phase-tag {
@@ -102,8 +104,9 @@ const phases = [
 
 .plan-list {
   margin: 0;
-  padding-left: 20px;
-  color: #4a5568;
-  line-height: 2;
+  padding-left: 18px;
+  color: var(--plm-text-regular);
+  font-size: 12px;
+  line-height: 1.9;
 }
 </style>

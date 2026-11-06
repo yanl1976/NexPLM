@@ -22,9 +22,7 @@
       </el-table-column>
       <el-table-column label="状态" width="100" align="center">
         <template #default="{ row }">
-          <el-tag :type="statusType(row.status)" size="small">
-            {{ SUPPLIER_STATUS_LABEL[row.status] ?? row.status }}
-          </el-tag>
+          <StatusDot :tone="statusTone(row.status)" :label="SUPPLIER_STATUS_LABEL[row.status] ?? row.status" />
         </template>
       </el-table-column>
       <el-table-column prop="contact" label="联系人" width="100">
@@ -41,7 +39,7 @@
       </el-table-column>
       <el-table-column label="评级" width="120" align="center">
         <template #default="{ row }">
-          <el-tag v-if="row.grade" :type="gradeType(row.grade)" size="small">{{ row.grade }} 级</el-tag>
+          <StatusDot v-if="row.grade" :tone="gradeTone(row.grade)" :label="`${row.grade} 级`" />
           <span v-else class="muted">未评级</span>
           <span v-if="row.ratingScore != null" class="score">{{ row.ratingScore }} 分</span>
         </template>
@@ -124,9 +122,7 @@
       <div v-if="detail" class="detail-body">
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="状态">
-            <el-tag :type="statusType(detail.status)" size="small">
-              {{ SUPPLIER_STATUS_LABEL[detail.status] ?? detail.status }}
-            </el-tag>
+            <StatusDot :tone="statusTone(detail.status)" :label="SUPPLIER_STATUS_LABEL[detail.status] ?? detail.status" />
           </el-descriptions-item>
           <el-descriptions-item label="类别">
             {{ SUPPLIER_CATEGORY_LABEL[detail.category] ?? detail.category }}
@@ -142,7 +138,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="评级">
             <template v-if="detail.grade">
-              <el-tag :type="gradeType(detail.grade)" size="small">{{ detail.grade }} 级</el-tag>
+              <StatusDot :tone="gradeTone(detail.grade)" :label="`${detail.grade} 级`" />
               <span class="score">{{ detail.ratingScore ?? '-' }} 分</span>
             </template>
             <span v-else class="muted">未评级</span>
@@ -168,7 +164,7 @@
           </el-table-column>
           <el-table-column label="首选" width="80" align="center">
             <template #default="{ row }">
-              <el-tag v-if="row.preferred" type="success" size="small">首选</el-tag>
+              <StatusDot v-if="row.preferred" tone="ok" label="首选" />
               <span v-else class="muted">-</span>
             </template>
           </el-table-column>
@@ -183,9 +179,10 @@
           </el-table-column>
           <el-table-column label="状态" width="90" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'" size="small">
-                {{ row.status === 'ACTIVE' ? '在用' : '停用' }}
-              </el-tag>
+              <StatusDot
+                :tone="row.status === 'ACTIVE' ? 'ok' : 'muted'"
+                :label="row.status === 'ACTIVE' ? '在用' : '停用'"
+              />
             </template>
           </el-table-column>
           <el-table-column v-if="canWrite" label="操作" width="120" align="center">
@@ -214,15 +211,16 @@
           </el-table-column>
           <el-table-column label="等级" width="80" align="center">
             <template #default="{ row }">
-              <el-tag v-if="row.grade" :type="gradeType(row.grade)" size="small">{{ row.grade }}</el-tag>
+              <StatusDot v-if="row.grade" :tone="gradeTone(row.grade)" :label="row.grade" />
               <span v-else class="muted">-</span>
             </template>
           </el-table-column>
           <el-table-column label="状态" width="90" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.status === 'CONFIRMED' ? 'success' : 'info'" size="small">
-                {{ RATING_STATUS_LABEL[row.status] ?? row.status }}
-              </el-tag>
+              <StatusDot
+                :tone="row.status === 'CONFIRMED' ? 'ok' : 'muted'"
+                :label="RATING_STATUS_LABEL[row.status] ?? row.status"
+              />
             </template>
           </el-table-column>
           <el-table-column label="操作" width="170" align="center">
@@ -261,9 +259,10 @@
           </el-table-column>
           <el-table-column label="状态" width="90" align="center">
             <template #default="{ row }">
-              <el-tag :type="admissionStatusType(row.status)" size="small">
-                {{ ADMISSION_STATUS_LABEL[row.status] ?? row.status }}
-              </el-tag>
+              <StatusDot
+                :tone="admissionStatusTone(row.status)"
+                :label="ADMISSION_STATUS_LABEL[row.status] ?? row.status"
+              />
             </template>
           </el-table-column>
           <el-table-column label="操作" width="190" align="center">
@@ -298,9 +297,7 @@
           <el-table-column prop="itemCount" label="零件" width="70" align="center" />
           <el-table-column label="状态" width="90" align="center">
             <template #default="{ row }">
-              <el-tag :type="issuanceStatusType(row.status)" size="small">
-                {{ ISSUANCE_STATUS_LABEL[row.status] ?? row.status }}
-              </el-tag>
+              <StatusDot :tone="issuanceStatusTone(row.status)" :label="ISSUANCE_STATUS_LABEL[row.status] ?? row.status" />
             </template>
           </el-table-column>
           <el-table-column label="操作" width="230" align="center">
@@ -536,9 +533,10 @@
           {{ ADMISSION_TYPE_LABEL[admissionDetail.type] ?? admissionDetail.type }}
         </el-descriptions-item>
         <el-descriptions-item label="状态">
-          <el-tag :type="admissionStatusType(admissionDetail.status)" size="small">
-            {{ ADMISSION_STATUS_LABEL[admissionDetail.status] ?? admissionDetail.status }}
-          </el-tag>
+          <StatusDot
+            :tone="admissionStatusTone(admissionDetail.status)"
+            :label="ADMISSION_STATUS_LABEL[admissionDetail.status] ?? admissionDetail.status"
+          />
         </el-descriptions-item>
         <el-descriptions-item label="计划日期">{{ admissionDetail.plannedDate || '-' }}</el-descriptions-item>
         <el-descriptions-item label="实际日期">{{ admissionDetail.actualDate || '-' }}</el-descriptions-item>
@@ -552,9 +550,7 @@
         <el-table-column prop="checkItem" label="检查项" min-width="220" show-overflow-tooltip />
         <el-table-column label="结果" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="admissionResultType(row.result)" size="small">
-              {{ ADMISSION_RESULT_LABEL[row.result] ?? row.result }}
-            </el-tag>
+            <StatusDot :tone="admissionResultTone(row.result)" :label="ADMISSION_RESULT_LABEL[row.result] ?? row.result" />
           </template>
         </el-table-column>
         <el-table-column prop="evidence" label="证据/说明" min-width="180" show-overflow-tooltip />
@@ -616,9 +612,10 @@
           {{ ISSUANCE_TYPE_LABEL[issuanceDetail.type] ?? issuanceDetail.type }}
         </el-descriptions-item>
         <el-descriptions-item label="状态">
-          <el-tag :type="issuanceStatusType(issuanceDetail.status)" size="small">
-            {{ ISSUANCE_STATUS_LABEL[issuanceDetail.status] ?? issuanceDetail.status }}
-          </el-tag>
+          <StatusDot
+            :tone="issuanceStatusTone(issuanceDetail.status)"
+            :label="ISSUANCE_STATUS_LABEL[issuanceDetail.status] ?? issuanceDetail.status"
+          />
         </el-descriptions-item>
         <el-descriptions-item label="发放时间">
           {{ formatTime(issuanceDetail.sentAt) }}
@@ -689,6 +686,7 @@ import { itemApi, type ItemSummary } from '@/api/item'
 import { orgApi, type OrgNode } from '@/api/system'
 import { useUserStore } from '@/stores/user'
 import RatingSchemeDialog from './RatingSchemeDialog.vue'
+import StatusDot from '@/components/StatusDot.vue'
 
 const userStore = useUserStore()
 const canWrite = computed(() => userStore.can('sup.supplier.write'))
@@ -1559,67 +1557,68 @@ function formatTime(value?: string | null): string {
   return value ? value.substring(0, 16).replace('T', ' ') : '-'
 }
 
-function issuanceStatusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
+type StatusTone = 'ok' | 'running' | 'warn' | 'danger' | 'muted'
+
+function issuanceStatusTone(value: string): StatusTone {
   if (value === 'RECEIVED') {
-    return 'success'
+    return 'ok'
   }
   if (value === 'SENT') {
-    return 'warning'
+    return 'warn'
   }
-  return 'info'
+  return 'muted'
 }
 
-function gradeType(grade: string): 'success' | 'primary' | 'info' | 'warning' | 'danger' {
+function gradeTone(grade: string): StatusTone {
   if (grade === 'A') {
-    return 'success'
+    return 'ok'
   }
   if (grade === 'B') {
-    return 'primary'
+    return 'running'
   }
   if (grade === 'C') {
-    return 'warning'
+    return 'warn'
   }
   if (grade === 'D') {
     return 'danger'
   }
-  return 'info'
+  return 'muted'
 }
 
-function admissionStatusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
+function admissionStatusTone(value: string): StatusTone {
   if (value === 'APPROVED') {
-    return 'success'
+    return 'ok'
   }
   if (value === 'SUBMITTED') {
-    return 'warning'
+    return 'warn'
   }
   if (value === 'REJECTED') {
     return 'danger'
   }
-  return 'info'
+  return 'muted'
 }
 
-function admissionResultType(value: string): 'success' | 'info' | 'danger' {
+function admissionResultTone(value: string): StatusTone {
   if (value === 'PASS') {
-    return 'success'
+    return 'ok'
   }
   if (value === 'FAIL') {
     return 'danger'
   }
-  return 'info'
+  return 'muted'
 }
 
-
-function statusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
+function statusTone(value: string): StatusTone {
   if (value === 'QUALIFIED') {
-    return 'success'
+    return 'ok'
   }
   if (value === 'PENDING') {
-    return 'warning'
+    return 'warn'
   }
   if (value === 'DISQUALIFIED') {
     return 'danger'
   }
-  return 'info'
+  return 'muted'
 }
 </script>
 
