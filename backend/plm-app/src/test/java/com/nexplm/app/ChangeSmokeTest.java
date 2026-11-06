@@ -300,6 +300,55 @@ class ChangeSmokeTest {
         assertThat(timeline.get(timeline.size() - 1).path("title").asText()).isEqualTo("关闭变更申请");
     }
 
+    /**
+     * 变更执行必须走生命周期唯一写入口：置 Released/Obsolete 留状态日志，
+     * 已在目标态时幂等，不再重复写日志。
+     */
+    @Test
+    void executeAdvancesLifecycleThroughSingleEntrance() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long releaseItem = createItem(admin, "执行发布零件");
+        long obsoleteItem = createItem(admin, "执行废弃零件");
+
+        long ecrId = call(post("/api/v1/chg/ecrs"), admin, json(Map.of(
+                "title", "生命周期执行验证", "changeType", "DESIGN", "receiverId", adminId)))
+                .path("id").asLong();
+        addAffected(admin, ecrId, releaseItem, "RELEASE");
+        addAffected(admin, ecrId, obsoleteItem, "OBSOLETE");
+        call(post("/api/v1/chg/ecrs/{id}/submit", ecrId), admin, null);
+        approveEcr(admin, ecrId);
+
+        JsonNode result = call(post("/api/v1/chg/ecrs/{id}/execute", ecrId), admin, null);
+        assertThat(result.path("succeeded").asInt()).isEqualTo(2);
+        assertThat(result.path("skipped").asInt()).isZero();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT lifecycle_state FROM plm_object WHERE id = ?", String.class, releaseItem))
+                .isEqualTo("Released");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT lifecycle_state FROM plm_object WHERE id = ?", String.class, obsoleteItem))
+                .isEqualTo("Obsolete");
+        // released_at / obsolete_at 由 transition 统一补，不再由变更执行自己写
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM plm_object WHERE id = ? AND released_at IS NOT NULL",
+                Integer.class, releaseItem)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM plm_object WHERE id = ? AND obsolete_at IS NOT NULL",
+                Integer.class, obsoleteItem)).isEqualTo(1);
+        // 状态日志：动作码来自生命周期定义，起点为草稿
+        assertThat(stateLogCount(releaseItem, "release", "Draft", "Released")).isEqualTo(1);
+        assertThat(stateLogCount(obsoleteItem, "obsolete", "Draft", "Obsolete")).isEqualTo(1);
+
+        // 幂等：对已发布对象再次发布，不报错也不重复写日志
+        long againEcr = createSubmittedEcr(admin, "重复发布", releaseItem, adminId, "RELEASE");
+        approveEcr(admin, againEcr);
+        JsonNode again = call(post("/api/v1/chg/ecrs/{id}/execute", againEcr), admin, null);
+        assertThat(again.path("succeeded").asInt()).isEqualTo(1);
+        assertThat(again.path("skipped").asInt()).isZero();
+        assertThat(stateLogCount(releaseItem, "release", "Draft", "Released")).isEqualTo(1);
+    }
+
     /** 影响分析：3 层 BOM 的向上/向下展开。 */
     @Test
     void impactAnalysisWalksBomBothDirections() throws Exception {
@@ -406,16 +455,44 @@ class ChangeSmokeTest {
 
     /** 建一张带受影响对象、带接收人的 ECR 并提交（提交即发起审批流程）。 */
     private long createSubmittedEcr(String token, String title, long objectId, long receiverId) throws Exception {
+        return createSubmittedEcr(token, title, objectId, receiverId, "REVISE");
+    }
+
+    private long createSubmittedEcr(String token, String title, long objectId, long receiverId,
+                                    String action) throws Exception {
         long ecrId = call(post("/api/v1/chg/ecrs"), token, json(Map.of(
                 "title", title, "changeType", "DESIGN", "receiverId", receiverId))).path("id").asLong();
+        addAffected(token, ecrId, objectId, action);
+        call(post("/api/v1/chg/ecrs/{id}/submit", ecrId), token, null);
+        return ecrId;
+    }
+
+    private void addAffected(String token, long ecrId, long objectId, String action) throws Exception {
         Map<String, Object> affected = new HashMap<>();
         affected.put("objectType", "PdmItem");
         affected.put("objectId", objectId);
         affected.put("relation", "AFFECTED");
-        affected.put("action", "REVISE");
+        affected.put("action", action);
         call(post("/api/v1/chg/ecrs/{id}/objects", ecrId), token, json(affected));
-        call(post("/api/v1/chg/ecrs/{id}/submit", ecrId), token, null);
-        return ecrId;
+    }
+
+    /** 走完初审 + 会签（同一接收人，两票全通过）。 */
+    private void approveEcr(String token, long ecrId) throws Exception {
+        JsonNode instances = call(get("/api/v1/workflow/instances?objectType=ChgEcr&objectId=" + ecrId),
+                token, null);
+        String pid = instances.get(0).path("processInstanceId").asText();
+        completeTask(token, pid);
+        completeTask(token, pid);
+        assertThat(call(get("/api/v1/chg/ecrs/{id}", ecrId), token, null).path("status").asText())
+                .isEqualTo("APPROVED");
+    }
+
+    private int stateLogCount(long objectId, String action, String from, String to) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(1) FROM plm_state_log
+                 WHERE object_id = ? AND action = ? AND from_state = ? AND to_state = ?
+                """, Integer.class, objectId, action, from, to);
+        return count == null ? 0 : count;
     }
 
     /** 办理实例当前的活动任务（本用例初审与会签都指派同一人，取首个任务即可）。 */

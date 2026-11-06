@@ -119,6 +119,20 @@ public class LifecycleService {
     }
 
     /**
+     * 预判某对象类型的 {@code fromState} 是否允许执行 {@code action}。
+     *
+     * <p>供批量业务（如变更执行）在事务内先行判定：非法迁移按「跳过」处理，而不是抛异常
+     * 把整批回滚。真正写状态仍必须走 {@link #transition}，这里只读不写。</p>
+     */
+    public boolean canTransition(String objectType, String fromState, String action) {
+        if (fromState == null || action == null) {
+            return false;
+        }
+        return definitionForType(objectType).transitions().stream()
+                .anyMatch(item -> item.from().equals(fromState) && item.action().equalsIgnoreCase(action));
+    }
+
+    /**
      * 保存生命周期定义（可视化设计器调用）。校验状态唯一、初始态存在、迁移端点合法。
      */
     @Transactional

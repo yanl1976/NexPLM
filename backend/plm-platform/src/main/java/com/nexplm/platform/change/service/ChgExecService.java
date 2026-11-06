@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.change.api.ChgDtos;
+import com.nexplm.platform.lifecycle.service.LifecycleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,21 +22,27 @@ import java.util.Set;
  * <p>执行语义：</p>
  * <ul>
  *   <li>{@code REVISE}：复制一行新版本对象（{@code revision+1, iteration=1, is_latest=true}），
- *       旧行 {@code is_latest=false}，并同步复制 {@code item_master}/{@code doc_master} 子表行；</li>
- *   <li>{@code OBSOLETE}：对象置 {@code Obsolete} 并写 {@code obsolete_at}；</li>
- *   <li>{@code RELEASE}：对象置 {@code Released} 并写 {@code released_at}。</li>
+ *       新行初态取该对象类型生命周期定义的 {@code initial}，旧行 {@code is_latest=false}，
+ *       并同步复制 {@code item_master}/{@code doc_master} 子表行；</li>
+ *   <li>{@code OBSOLETE}：走 {@code LifecycleService.transition(action=obsolete)} 置 {@code Obsolete}；</li>
+ *   <li>{@code RELEASE}：走 {@code LifecycleService.transition(action=release)} 置 {@code Released}。</li>
  * </ul>
- * <p>执行过程不吞异常：任一对象执行失败整批回滚，避免出现「一半升级、一半没升」的脏状态。</p>
+ * <p>状态只经生命周期唯一写入口改写（校验迁移 + 乐观锁 + 状态日志），本类不再直接 UPDATE
+ * {@code lifecycle_state}。定义里没有该迁移时按「跳过」处理并保持 {@code PENDING} 以便重试，
+ * 而不是抛异常；执行期其它失败仍整批回滚，避免出现「一半升级、一半没升」的脏状态。</p>
  */
 @Service
 public class ChgExecService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ChgStateMachine stateMachine;
+    private final LifecycleService lifecycleService;
 
-    public ChgExecService(JdbcTemplate jdbcTemplate, ChgStateMachine stateMachine) {
+    public ChgExecService(JdbcTemplate jdbcTemplate, ChgStateMachine stateMachine,
+                          LifecycleService lifecycleService) {
         this.jdbcTemplate = jdbcTemplate;
         this.stateMachine = stateMachine;
+        this.lifecycleService = lifecycleService;
     }
 
     // ------------------------------------------------------------------ ECN
@@ -202,8 +209,15 @@ public class ChgExecService {
             Integer newRevision = null;
             switch (action) {
                 case "REVISE" -> newRevision = revise(objectId, objectType, userId);
-                case "OBSOLETE" -> markState(objectId, "Obsolete", "obsolete_at", userId);
-                case "RELEASE" -> markState(objectId, "Released", "released_at", userId);
+                case "OBSOLETE", "RELEASE" -> {
+                    // 迁移合法性先判：定义不允许时按「跳过」计并保留 PENDING 供重试；
+                    // 若直接交给 transition 抛异常，会把整批事务回滚掉。
+                    if (!advanceState(objectId, "OBSOLETE".equals(action) ? "obsolete" : "release",
+                            ecrId, userId, messages)) {
+                        skipped++;
+                        continue;
+                    }
+                }
                 default -> {
                     skipped++;
                     messages.add("跳过对象 " + objectId + "：未知操作意图 " + action);
@@ -235,17 +249,19 @@ public class ChgExecService {
                 """, objectId);
         long newId = IdWorker.getId();
         int newRevision = ((Number) source.get("revision")).intValue() + 1;
+        // 新行初态不写死 'Draft'：跟随该对象类型生命周期定义的 initial
+        String initial = lifecycleService.definitionForType((String) source.get("object_type")).initial();
         jdbcTemplate.update("""
                         INSERT INTO plm_object (id, object_type, master_id, code, name, company_id, org_id,
                                                 owner_id, owner_group_id, security_level, lifecycle_state,
                                                 phase_state, workflow_state, revision, iteration, is_latest,
                                                 ext_json, version, created_by, updated_by)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?, 'NONE', ?, 1, true,
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NONE', ?, 1, true,
                                 CAST(? AS jsonb), 0, ?, ?)
                         """,
                 newId, source.get("object_type"), source.get("master_id"), source.get("code"),
                 source.get("name"), source.get("company_id"), source.get("org_id"), source.get("owner_id"),
-                source.get("owner_group_id"), source.get("security_level"), source.get("phase_state"),
+                source.get("owner_group_id"), source.get("security_level"), initial, source.get("phase_state"),
                 newRevision, source.get("ext_text"), userId, userId);
         jdbcTemplate.update("""
                 UPDATE plm_object SET is_latest = false, updated_by = ?, updated_at = now() WHERE id = ?
@@ -274,13 +290,33 @@ public class ChgExecService {
         }
     }
 
-    private void markState(long objectId, String state, String timeColumn, Long userId) {
-        jdbcTemplate.update("""
-                UPDATE plm_object
-                   SET lifecycle_state = ?, %s = now(), updated_by = ?, updated_at = now(),
-                       version = version + 1
-                 WHERE id = ? AND deleted = false
-                """.formatted(timeColumn), state, userId, objectId);
+    /**
+     * 走生命周期唯一写入口改写对象状态。
+     *
+     * @return {@code true} 表示已达成目标态（含「本来就在目标态」的幂等情形）；
+     *         {@code false} 表示对象缺失或定义不允许该迁移，由调用方按「跳过」处理
+     */
+    private boolean advanceState(long objectId, String action, long ecrId, Long userId, List<String> messages) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT object_type, lifecycle_state FROM plm_object WHERE id = ? AND deleted = false
+                """, objectId);
+        if (rows.isEmpty()) {
+            messages.add("跳过对象 " + objectId + "：对象不存在或已删除");
+            return false;
+        }
+        String objectType = (String) rows.get(0).get("object_type");
+        String current = (String) rows.get(0).get("lifecycle_state");
+        String target = "release".equals(action) ? "Released" : "Obsolete";
+        if (target.equals(current)) {
+            return true;   // 幂等：已在目标态，不重复写状态日志
+        }
+        if (!lifecycleService.canTransition(objectType, current, action)) {
+            messages.add("跳过对象 " + objectId + "：" + objectType + " 状态「" + current + "」不允许"
+                    + ("release".equals(action) ? "发布" : "废弃"));
+            return false;
+        }
+        lifecycleService.transition(objectId, action, "变更执行（ECR " + ecrId + "）", userId);
+        return true;
     }
 
     // ------------------------------------------------------------------ 影响分析
