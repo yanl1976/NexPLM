@@ -99,6 +99,124 @@ export interface ProjectSaveReq {
   members?: MemberSaveReq[] | null
 }
 
+// ---------------------------------------------------------------- WBS 任务（P7-2）
+
+export type TaskType = 'TASK' | 'MILESTONE'
+export type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED'
+
+export const TASK_TYPE_LABEL: Record<string, string> = {
+  TASK: '任务',
+  MILESTONE: '里程碑'
+}
+
+export const TASK_STATUS_LABEL: Record<string, string> = {
+  NOT_STARTED: '未开始',
+  IN_PROGRESS: '进行中',
+  DONE: '已完成',
+  BLOCKED: '受阻'
+}
+
+export const DEP_TYPE_LABEL: Record<string, string> = {
+  FS: '完成-开始',
+  SS: '开始-开始',
+  FF: '完成-完成',
+  SF: '开始-完成'
+}
+
+export interface ProjectTask {
+  id: string
+  projectId: string
+  parentId?: string | null
+  /** WBS 编码：1 / 1.2 / 1.2.3，由服务端生成。 */
+  wbsCode: string
+  name: string
+  type: TaskType
+  status: TaskStatus
+  sortNo: number
+  planStart?: string | null
+  planEnd?: string | null
+  actualStart?: string | null
+  actualEnd?: string | null
+  durationDays?: number | null
+  progress: number
+  ownerId?: string | null
+  ownerName?: string | null
+  remark?: string | null
+  childCount: number
+  children?: ProjectTask[]
+}
+
+export interface TaskDependency {
+  id: string
+  predTaskId: string
+  succTaskId: string
+  depType: string
+  lagDays: number
+  predName?: string | null
+  succName?: string | null
+}
+
+export interface TaskBoard {
+  projectId: string
+  projectCode: string
+  projectName: string
+  /** 项目进度＝叶子任务按工期加权（服务端汇总）。 */
+  projectProgress: number
+  rangeStart?: string | null
+  rangeEnd?: string | null
+  tasks: ProjectTask[]
+  dependencies: TaskDependency[]
+}
+
+/** 任务保存入参：没有 wbsCode —— 编码由服务端生成，顺序调整走 resequence。 */
+export interface TaskSaveReq {
+  name: string
+  parentId?: string | null
+  type?: string
+  status?: string
+  sortNo?: number
+  planStart?: string | null
+  planEnd?: string | null
+  actualStart?: string | null
+  actualEnd?: string | null
+  durationDays?: number | null
+  progress?: number
+  ownerId?: string | null
+  remark?: string | null
+}
+
+export interface DependencySaveReq {
+  predTaskId: string
+  succTaskId: string
+  depType?: string
+  lagDays?: number
+}
+
+export const taskApi = {
+  board(projectId: string): Promise<TaskBoard> {
+    return http.get<TaskBoard>(`/prj/projects/${projectId}/tasks`)
+  },
+  create(projectId: string, req: TaskSaveReq): Promise<TaskBoard> {
+    return http.post<TaskBoard>(`/prj/projects/${projectId}/tasks`, req)
+  },
+  update(taskId: string, req: TaskSaveReq): Promise<TaskBoard> {
+    return http.put<TaskBoard>(`/prj/tasks/${taskId}`, req)
+  },
+  remove(taskId: string): Promise<TaskBoard> {
+    return http.delete<TaskBoard>(`/prj/tasks/${taskId}`)
+  },
+  /** 按排序号重排 WBS 编码（1 / 1.2 / 1.2.3）。 */
+  resequence(projectId: string): Promise<TaskBoard> {
+    return http.post<TaskBoard>(`/prj/projects/${projectId}/tasks/resequence`)
+  },
+  createDependency(projectId: string, req: DependencySaveReq): Promise<TaskBoard> {
+    return http.post<TaskBoard>(`/prj/projects/${projectId}/task-dependencies`, req)
+  },
+  removeDependency(dependencyId: string): Promise<TaskBoard> {
+    return http.delete<TaskBoard>(`/prj/task-dependencies/${dependencyId}`)
+  }
+}
+
 export const epsApi = {
   tree(): Promise<EpsNode[]> {
     return http.get<EpsNode[]>('/prj/eps')

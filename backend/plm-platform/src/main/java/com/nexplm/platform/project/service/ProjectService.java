@@ -316,7 +316,12 @@ public class ProjectService {
         return detail(id, companyId);
     }
 
-    /** 删除：只允许草稿（执行中/已结项项目要留痕，走 close 结项而不是删除）。 */
+    /**
+     * 删除：只允许草稿（执行中/已结项项目要留痕，走 close 结项而不是删除）。
+     *
+     * <p>连带清理：成员、任务依赖、WBS 任务（软删）——草稿项目本就是「还没成立」的临时数据，
+     * 留一堆孤儿任务只会污染后续任务统计。</p>
+     */
     @Transactional
     public void delete(Long id, Long companyId) {
         ProjectDtos.ProjectDetail current = detail(id, companyId);
@@ -325,6 +330,11 @@ public class ProjectService {
                     "只有草稿状态的项目可以删除（当前状态：" + current.status() + "）");
         }
         jdbcTemplate.update("DELETE FROM prj_member WHERE project_id = ? AND company_id = ?", id, companyId);
+        jdbcTemplate.update("DELETE FROM prj_task_dep WHERE project_id = ? AND company_id = ?", id, companyId);
+        jdbcTemplate.update("""
+                UPDATE prj_task SET deleted = true, updated_at = now()
+                 WHERE project_id = ? AND company_id = ? AND deleted = false
+                """, id, companyId);
         jdbcTemplate.update("""
                 UPDATE prj_project SET deleted = true, updated_at = now()
                  WHERE id = ? AND company_id = ?

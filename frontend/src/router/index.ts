@@ -134,6 +134,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '项目管理' }
       },
       {
+        path: 'project/:id/tasks',
+        name: 'project-tasks',
+        component: () => import('@/views/project/ProjectTasksView.vue'),
+        meta: { title: 'WBS 任务' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),

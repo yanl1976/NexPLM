@@ -81,9 +81,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="memberCount" label="成员" width="70" align="center" />
-        <el-table-column v-if="canWrite" label="操作" width="260" fixed="right">
+        <el-table-column v-if="canWrite" label="操作" width="300" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row.id)">查看</el-button>
+            <el-button link type="primary" @click="openTasks(row.id)">任务/甘特</el-button>
             <el-button v-if="row.status !== 'CLOSED'" link type="primary" @click="openEdit(row.id)">编辑</el-button>
             <el-button v-if="row.status === 'DRAFT'" link type="success" @click="onActivate(row)">启动</el-button>
             <el-button v-if="row.status === 'ACTIVE'" link type="warning" @click="onPause(row)">暂停</el-button>
@@ -264,6 +265,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   epsApi,
@@ -279,6 +281,7 @@ import {
 import { workflowApi, type ActorUserRow } from '@/api/workflow'
 import { useUserStore } from '@/stores/user'
 
+const router = useRouter()
 const userStore = useUserStore()
 const canWrite = computed(() => userStore.can('prj.project.write'))
 const canWriteEps = computed(() => userStore.can('prj.eps.write'))
@@ -558,6 +561,10 @@ async function onDelete(row: ProjectRow): Promise<void> {
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '删除失败')
   }
+}
+
+function openTasks(id: string): void {
+  router.push(`/project/${id}/tasks`)
 }
 
 async function openDetail(id: string): Promise<void> {

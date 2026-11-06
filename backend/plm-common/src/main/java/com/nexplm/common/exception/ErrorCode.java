@@ -75,7 +75,11 @@ public enum ErrorCode {
     PRJ_STATE_INVALID("PRJ.STATE.INVALID", "当前项目状态不允许该操作", 409),
     PRJ_INVALID("PRJ.INVALID", "项目参数不合法", 400),
     PRJ_EPS_NOT_FOUND("PRJ.EPS.NOT_FOUND", "EPS 节点不存在", 404),
-    PRJ_EPS_IN_USE("PRJ.EPS.IN_USE", "EPS 节点下还有子节点或项目，不能删除", 409);
+    PRJ_EPS_IN_USE("PRJ.EPS.IN_USE", "EPS 节点下还有子节点或项目，不能删除", 409),
+    PRJ_TASK_NOT_FOUND("PRJ.TASK.NOT_FOUND", "任务不存在", 404),
+    PRJ_TASK_INVALID("PRJ.TASK.INVALID", "任务参数不合法", 400),
+    PRJ_TASK_IN_USE("PRJ.TASK.IN_USE", "任务下还有子任务，不能删除", 409),
+    PRJ_TASK_DEP_INVALID("PRJ.TASK_DEP.INVALID", "任务依赖不合法", 400);
 
     private final String code;
     private final String message;
