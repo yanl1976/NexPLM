@@ -365,6 +365,7 @@ public class QualityIssueService {
                 rs.getInt("round_no"), rs.getString("object_type"),
                 (Long) rs.getObject("object_id"), rs.getString("object_code"),
                 (Long) rs.getObject("project_id"), (Long) rs.getObject("supplier_id"),
+                (Long) rs.getObject("template_id"), rs.getString("template_code"),
                 (Long) rs.getObject("owner_id"), rs.getString("owner_name"),
                 rs.getString("reporter_name"),
                 rs.getObject("reported_at", OffsetDateTime.class), dueDate,

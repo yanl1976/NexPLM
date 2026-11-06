@@ -90,7 +90,9 @@ public enum ErrorCode {
     PRJ_TEMPLATE_INVALID("PRJ.TEMPLATE.INVALID", "项目模板不合法", 400),
     QLT_ISSUE_NOT_FOUND("QLT.ISSUE.NOT_FOUND", "质量问题不存在", 404),
     QLT_ISSUE_INVALID("QLT.ISSUE.INVALID", "质量问题数据不合法", 400),
-    QLT_ISSUE_STATE_INVALID("QLT.ISSUE.STATE.INVALID", "当前质量问题状态不允许该操作", 409);
+    QLT_ISSUE_STATE_INVALID("QLT.ISSUE.STATE.INVALID", "当前质量问题状态不允许该操作", 409),
+    QLT_TEMPLATE_NOT_FOUND("QLT.TEMPLATE.NOT_FOUND", "质量模板不存在", 404),
+    QLT_TEMPLATE_INVALID("QLT.TEMPLATE.INVALID", "质量模板数据不合法", 400);
 
     private final String code;
     private final String message;

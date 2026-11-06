@@ -18,6 +18,7 @@ public final class QualityIssueDtos {
     public record IssueRow(Long id, String code, String title, String source, String severity,
                            String status, int roundNo, String objectType, Long objectId,
                            String objectCode, Long projectId, Long supplierId,
+                           Long templateId, String templateCode,
                            Long ownerId, String ownerName, String reportedByName,
                            OffsetDateTime reportedAt, LocalDate dueDate, OffsetDateTime closedAt,
                            String verifyNote, int actionCount, int openActionCount, boolean overdue,
