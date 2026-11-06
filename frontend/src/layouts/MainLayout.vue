@@ -67,6 +67,7 @@
             <span>项目管理</span>
           </template>
           <el-menu-item index="/project">项目列表</el-menu-item>
+          <el-menu-item index="/project/portal">项目门户</el-menu-item>
           <el-menu-item index="/project/my-tasks">我的任务</el-menu-item>
           <el-menu-item index="/project/my-timesheets">我的工时</el-menu-item>
           <el-menu-item index="/project/templates">项目模板</el-menu-item>

@@ -152,6 +152,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '项目模板' }
       },
       {
+        path: 'project/portal',
+        name: 'project-portal',
+        component: () => import('@/views/project/ProjectPortalView.vue'),
+        meta: { title: '项目门户' }
+      },
+      {
         path: 'project/:id/tasks',
         name: 'project-tasks',
         component: () => import('@/views/project/ProjectTasksView.vue'),

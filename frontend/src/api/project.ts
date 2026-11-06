@@ -691,6 +691,84 @@ export const templateApi = {
   }
 }
 
+// ---------------------------------------------------------------- 项目门户三视图（P7-8）
+
+export interface PortalProjectCard {
+  id: string
+  code: string
+  name: string
+  type: string
+  status: ProjectStatus
+  progress: number
+  planStart?: string | null
+  planEnd?: string | null
+  managerName?: string | null
+  /** 落在"我"头上的任务数（门户第一屏回答"我要做什么"）。 */
+  myTaskCount: number
+  myOpenTaskCount: number
+  manager: boolean
+  member: boolean
+}
+
+export interface ManagedProjectRow {
+  id: string
+  code: string
+  name: string
+  status: ProjectStatus
+  progress: number
+  planStart?: string | null
+  planEnd?: string | null
+  /** null = 计划起止没填全，不判断快慢。 */
+  timeProgress?: number | null
+  /** progress − timeProgress，负数代表落后。 */
+  deviation?: number | null
+  taskCount: number
+  doneTaskCount: number
+  overdueTaskCount: number
+  pendingTimesheetCount: number
+  memberCount: number
+  managerName?: string | null
+}
+
+export interface PortfolioStatusCount {
+  status: string
+  count: number
+}
+
+export interface PortfolioRiskRow {
+  id: string
+  code: string
+  name: string
+  status: string
+  progress: number
+  timeProgress?: number | null
+  deviation?: number | null
+  planEnd?: string | null
+  overdueTaskCount: number
+}
+
+export interface PortfolioOverview {
+  totalProjects: number
+  activeProjects: number
+  closedProjects: number
+  overdueProjects: number
+  avgProgress: number
+  byStatus: PortfolioStatusCount[]
+  risks: PortfolioRiskRow[]
+}
+
+export const portalApi = {
+  myProjects(): Promise<PortalProjectCard[]> {
+    return http.get<PortalProjectCard[]>('/prj/portal/my-projects')
+  },
+  managedProjects(): Promise<ManagedProjectRow[]> {
+    return http.get<ManagedProjectRow[]>('/prj/portal/managed-projects')
+  },
+  portfolio(): Promise<PortfolioOverview> {
+    return http.get<PortfolioOverview>('/prj/portal/portfolio')
+  }
+}
+
 export const projectApi = {
   list(params: {
     page?: number
