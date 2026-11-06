@@ -187,25 +187,30 @@ public class CappVolumeService {
         Map<String, Object> counts = jdbcTemplate.queryForMap("""
                         SELECT
                           (SELECT COUNT(1) FROM capp_routing r
-                            WHERE r.company_id = ? AND r.object_id = ? AND r.deleted = false) AS route_count,
+                            WHERE r.company_id = ? AND r.object_id = ? AND r.deleted = false
+                              AND r.status <> 'ARCHIVED') AS route_count,
                           (SELECT COUNT(1) FROM capp_routing r
                             WHERE r.company_id = ? AND r.object_id = ? AND r.deleted = false
                               AND r.status = 'RELEASED') AS released_count,
                           (SELECT COUNT(1) FROM capp_routing_step s
                              JOIN capp_routing r ON r.id = s.routing_id
-                            WHERE r.company_id = ? AND r.object_id = ? AND r.deleted = false) AS step_count,
+                            WHERE r.company_id = ? AND r.object_id = ? AND r.deleted = false
+                              AND r.status <> 'ARCHIVED') AS step_count,
                           (SELECT COUNT(1) FROM capp_routing_step s
                              JOIN capp_routing r ON r.id = s.routing_id
                             WHERE r.company_id = ? AND r.object_id = ? AND r.deleted = false
+                              AND r.status <> 'ARCHIVED'
                               AND (COALESCE(s.setup_minutes, 0) + COALESCE(s.run_minutes, 0)) = 0)
                               AS zero_steps,
                           (SELECT COUNT(1) FROM capp_routing_step s
                              JOIN capp_routing r ON r.id = s.routing_id
                             WHERE r.company_id = ? AND r.object_id = ? AND r.deleted = false
+                              AND r.status <> 'ARCHIVED'
                               AND s.resource_id IS NULL) AS no_resource_steps,
                           (SELECT COUNT(1) FROM capp_routing_substep ss
                              JOIN capp_routing r ON r.id = ss.routing_id
-                            WHERE r.company_id = ? AND r.object_id = ? AND r.deleted = false)
+                            WHERE r.company_id = ? AND r.object_id = ? AND r.deleted = false
+                              AND r.status <> 'ARCHIVED')
                               AS substep_count,
                           (SELECT COUNT(1) FROM capp_card c
                             WHERE c.company_id = ? AND c.object_id = ? AND c.deleted = false)
