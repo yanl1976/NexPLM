@@ -9,41 +9,202 @@
             <span class="name">{{ detail?.name }}</span>
             <el-tag size="small" type="info">{{ detail?.revisionLabel }}</el-tag>
             <StatusDot :status="detail?.lifecycleState" :label="stateLabel(detail?.lifecycleState)" />
+            <StatusDot :tone="phaseTone(detail?.phaseState)" :label="`阶段：${phaseLabel(detail?.phaseState)}`" />
+            <StatusDot :tone="usingTone(detail?.usingState)" :label="`使用：${usingLabel(detail?.usingState)}`" />
+            <StatusDot
+              :tone="workflowTone(detail?.workflowState)"
+              :label="`流程：${workflowLabel(detail?.workflowState)}`"
+            />
             <StatusDot
               v-if="detail"
               :tone="detail.sourceType === 'BUY' ? 'warn' : 'ok'"
               :label="ITEM_SOURCE_LABEL[detail.sourceType] ?? detail.sourceType"
             />
+            <el-tag v-if="detail?.checkout" size="small" :type="detail.checkout.mine ? 'warning' : 'danger'">
+              {{ detail.checkout.mine ? '我已检出' : `${detail.checkout.userName || '他人'} 已检出` }}
+            </el-tag>
           </div>
-          <div>
+          <div class="head-actions">
+            <el-button v-if="canWrite && !detail?.checkout" @click="onCheckout">检出</el-button>
+            <el-button v-if="canWrite && detail?.checkout?.mine" @click="onCheckin">检入</el-button>
+            <el-button v-if="canWrite && detail?.checkout?.mine" @click="onCancelCheckout">撤销检出</el-button>
+            <el-button v-if="canWrite && detail?.lifecycleState === 'Released'" @click="onRevise">修订</el-button>
+            <el-dropdown v-if="canWrite" @command="onUsingStateChange">
+              <el-button>使用状态</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="(label, value) in ITEM_USING_STATE_LABEL" :key="value" :command="value">
+                    {{ label }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-button v-if="canWrite" @click="openEdit">编辑属性</el-button>
           </div>
         </div>
       </template>
 
-      <el-descriptions v-if="detail" :column="2" border>
-        <el-descriptions-item label="编码">{{ detail.code }}</el-descriptions-item>
-        <el-descriptions-item label="名称">{{ detail.name }}</el-descriptions-item>
-        <el-descriptions-item label="类型">
-          {{ ITEM_TYPE_LABEL[detail.itemType] ?? detail.itemType }}
-        </el-descriptions-item>
-        <el-descriptions-item label="供应方式">
-          {{ ITEM_SOURCE_LABEL[detail.sourceType] ?? detail.sourceType }}
-        </el-descriptions-item>
-        <el-descriptions-item label="规格型号">{{ detail.specification || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="材料">{{ detail.material || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="计量单位">{{ detail.unit || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="单件重量">{{ detail.weight ?? '-' }}</el-descriptions-item>
-        <el-descriptions-item label="标准号">{{ detail.stdCode || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="版本">{{ detail.revisionLabel }}</el-descriptions-item>
-        <el-descriptions-item label="生命周期">{{ stateLabel(detail.lifecycleState) }}</el-descriptions-item>
-        <el-descriptions-item label="更新时间">{{ formatTime(detail.updatedAt) }}</el-descriptions-item>
-        <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
-      </el-descriptions>
     </el-card>
 
     <el-card shadow="never">
       <el-tabs v-model="activeTab" @tab-change="onTabChange">
+        <el-tab-pane label="属性" name="props">
+          <div v-if="detail" class="props-layout">
+            <div class="props-thumb">
+              <el-empty description="暂无缩略图" :image-size="56" />
+            </div>
+            <div class="props-body">
+              <div class="prop-title">基本属性</div>
+              <el-descriptions :column="3" border size="small">
+                <el-descriptions-item label="编码">{{ detail.code }}</el-descriptions-item>
+                <el-descriptions-item label="名称">{{ detail.name }}</el-descriptions-item>
+                <el-descriptions-item label="类型">
+                  {{ ITEM_TYPE_LABEL[detail.itemType] ?? detail.itemType }}
+                </el-descriptions-item>
+                <el-descriptions-item label="供应方式">
+                  {{ ITEM_SOURCE_LABEL[detail.sourceType] ?? detail.sourceType }}
+                </el-descriptions-item>
+                <el-descriptions-item label="规格型号">{{ detail.specification || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="材料">{{ detail.material || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="计量单位">{{ detail.unit || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="单件重量">{{ detail.weight ?? '-' }}</el-descriptions-item>
+                <el-descriptions-item label="标准号">{{ detail.stdCode || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="版本">{{ detail.revisionLabel }}</el-descriptions-item>
+                <el-descriptions-item label="发布状态">{{ stateLabel(detail.lifecycleState) }}</el-descriptions-item>
+                <el-descriptions-item label="生命周期">{{ phaseLabel(detail.phaseState) }}</el-descriptions-item>
+                <el-descriptions-item label="使用状态">{{ usingLabel(detail.usingState) }}</el-descriptions-item>
+                <el-descriptions-item label="流程状态">{{ workflowLabel(detail.workflowState) }}</el-descriptions-item>
+                <el-descriptions-item label="发布时间">{{ formatTime(detail.releasedAt) }}</el-descriptions-item>
+                <el-descriptions-item label="创建人">{{ detail.createdByName || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="创建时间">{{ formatTime(detail.createdAt) }}</el-descriptions-item>
+                <el-descriptions-item label="修改人">{{ detail.updatedByName || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="修改时间">{{ formatTime(detail.updatedAt) }}</el-descriptions-item>
+                <el-descriptions-item label="备注" :span="3">{{ detail.remark || '-' }}</el-descriptions-item>
+              </el-descriptions>
+
+              <div class="prop-title">设计属性</div>
+              <el-descriptions :column="3" border size="small">
+                <el-descriptions-item label="供应商">{{ detail.designAttr?.provider || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="图号">{{ detail.designAttr?.dwgNo || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="产品类别">
+                  {{ detail.designAttr?.productCategory || '-' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="产品型号">{{ detail.designAttr?.productModel || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="产品规格">{{ detail.designAttr?.productSpec || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="毛坯种类">
+                  {{ detail.designAttr?.materialType || '-' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="毛坯种类2">
+                  {{ detail.designAttr?.materialType2 || '-' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="表面处理">
+                  {{ detail.designAttr?.surfaceTreatment || '-' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="是否工装">
+                  {{ detail.designAttr?.isTooling ? '是' : '否' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="重量单位">{{ detail.designAttr?.weightUnit || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="所属装配">{{ detail.designAttr?.montage || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="是否颜色件">
+                  {{ detail.designAttr?.colorItem ? '是' : '否' }}
+                </el-descriptions-item>
+              </el-descriptions>
+
+              <div v-if="detail.checkout" class="checkout-line">
+                检出信息：{{ detail.checkout.userName || detail.checkout.userId }} 于
+                {{ formatTime(detail.checkout.checkedOutAt) }} 检出
+                <span v-if="detail.checkout.expireAt">（锁到期 {{ formatTime(detail.checkout.expireAt) }}）</span>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="视图" name="views">
+          <div class="bom-toolbar">
+            <el-select v-model="newViewType" placeholder="视图类型" style="width: 150px">
+              <el-option
+                v-for="(label, value) in ITEM_VIEW_TYPE_LABEL"
+                :key="value"
+                :label="label"
+                :value="value"
+              />
+            </el-select>
+            <el-input v-model="newViewDesc" placeholder="视图描述（可空）" style="width: 220px" />
+            <el-button type="primary" :disabled="!canWrite" @click="onCreateView">新建视图</el-button>
+            <el-button @click="loadViews">刷新</el-button>
+            <span class="hint">BOM 行按视图类型归属；复制来源视图可带出结构</span>
+          </div>
+          <el-table v-loading="viewLoading" :data="views" border>
+            <el-table-column prop="viewTypeLabel" label="视图类型" width="130" />
+            <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
+            <el-table-column label="默认" width="80" align="center">
+              <template #default="{ row }">
+                <StatusDot v-if="row.isDefault" tone="ok" label="默认" />
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="发布状态" width="110">
+              <template #default="{ row }">
+                <StatusDot :status="row.lifecycleState" :label="stateLabel(row.lifecycleState)" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="bomLineCount" label="BOM 行数" width="100" align="center" />
+            <el-table-column label="创建时间" width="160">
+              <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="switchView(row.viewType)">看 BOM</el-button>
+                <el-button
+                  v-if="canWrite && !row.isDefault"
+                  link
+                  type="danger"
+                  @click="onRemoveView(row)"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="暂无视图" />
+            </template>
+          </el-table>
+        </el-tab-pane>
+
+        <el-tab-pane label="设计文档" name="docs">
+          <div class="bom-toolbar">
+            <el-button @click="loadDocs">刷新</el-button>
+            <span class="hint">零件通过对象关系关联的图文档（任一方向）</span>
+          </div>
+          <el-table v-loading="docLoading" :data="docs" border>
+            <el-table-column prop="code" label="文档编码" width="160" />
+            <el-table-column prop="name" label="名称" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="docType" label="文档类型" width="110" />
+            <el-table-column prop="relationType" label="关系" width="120" />
+            <el-table-column label="状态" width="110">
+              <template #default="{ row }">
+                <StatusDot :status="row.lifecycleState" :label="stateLabel(row.lifecycleState)" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="revisionLabel" label="版本" width="80" />
+            <el-table-column label="更新时间" width="160">
+              <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openDoc(row.id)">打开</el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="暂无关联的设计文档" />
+            </template>
+          </el-table>
+        </el-tab-pane>
+
+        <el-tab-pane label="可视化" name="visual">
+          <el-empty description="三维/二维轻量化预览尚未接入（旧系统按 PSE.setting 的查看器优先级调用本地查看器）" />
+        </el-tab-pane>
+
         <el-tab-pane label="BOM" name="bom">
           <div class="bom-toolbar">
             <el-radio-group v-model="bomView" @change="loadBom">
@@ -268,8 +429,112 @@
           </el-table>
         </el-tab-pane>
 
-        <el-tab-pane label="审批" name="workflow">
+        <el-tab-pane label="历史" name="versions">
+          <div class="bom-toolbar">
+            <el-button @click="loadVersions">刷新</el-button>
+            <span class="hint">大版本（修订）与小版本（检入）在旧系统分别对应 A / A.1 展示</span>
+          </div>
+          <el-table v-loading="versionLoading" :data="versions" border>
+            <el-table-column prop="revisionLabel" label="版本" width="100" />
+            <el-table-column label="发布状态" width="120">
+              <template #default="{ row }">
+                <StatusDot :status="row.lifecycleState" :label="stateLabel(row.lifecycleState)" />
+              </template>
+            </el-table-column>
+            <el-table-column label="当前" width="90" align="center">
+              <template #default="{ row }">
+                <StatusDot v-if="row.isLatest" tone="ok" label="最新" />
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="createdByName" label="创建人" width="110" />
+            <el-table-column label="创建时间" width="170">
+              <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column label="发布时间" width="170">
+              <template #default="{ row }">{{ formatTime(row.releasedAt) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <el-button v-if="row.id !== itemId" link type="primary" @click="openVersion(row.id)">打开</el-button>
+                <span v-else class="hint">当前</span>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="暂无历史版本" />
+            </template>
+          </el-table>
+        </el-tab-pane>
+
+        <el-tab-pane label="流程" name="workflow">
           <workflow-panel object-type="PdmItem" :object-id="itemId" @changed="load" />
+        </el-tab-pane>
+
+        <el-tab-pane label="权限" name="acl">
+          <div class="bom-toolbar">
+            <el-button @click="loadAcl">刷新</el-button>
+            <span class="hint">实例权限只读；授予与撤销在「系统管理 → 安全策略」或对象授权入口完成</span>
+          </div>
+          <el-table v-loading="subLoading" :data="aclRows" border>
+            <el-table-column label="被授权者类型" width="140">
+              <template #default="{ row }">{{ aclTypeLabel(row.actorType) }}</template>
+            </el-table-column>
+            <el-table-column label="被授权者" min-width="180">
+              <template #default="{ row }">{{ row.actorName || row.actorId || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="actions" label="操作" min-width="180" />
+            <el-table-column label="效果" width="100">
+              <template #default="{ row }">
+                <StatusDot
+                  :tone="row.effect === 'DENY' ? 'danger' : 'ok'"
+                  :label="row.effect === 'DENY' ? '拒绝' : '允许'"
+                />
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="暂无实例权限，按角色或数据作用域继承" />
+            </template>
+          </el-table>
+        </el-tab-pane>
+
+        <el-tab-pane label="日志" name="logs">
+          <div class="bom-toolbar">
+            <el-button @click="loadLogs">刷新</el-button>
+            <span class="hint">状态流转与审计事件合并按时间倒序</span>
+          </div>
+          <el-table v-loading="subLoading" :data="logs" border>
+            <el-table-column label="类型" width="90">
+              <template #default="{ row }">
+                <el-tag size="small" type="info">{{ row.logType === 'STATE' ? '状态' : '审计' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="action" label="动作" width="140" />
+            <el-table-column label="状态变化" width="180">
+              <template #default="{ row }">
+                <span v-if="row.fromState || row.toState">{{ row.fromState || '-' }} → {{ row.toState || '-' }}</span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="detail" label="说明" min-width="200" show-overflow-tooltip />
+            <el-table-column label="结果" width="90">
+              <template #default="{ row }">
+                <StatusDot
+                  :tone="row.result === 'SUCCESS' ? 'ok' : 'danger'"
+                  :label="row.result === 'SUCCESS' ? '成功' : row.result || '-'"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作人" width="110">
+              <template #default="{ row }">{{ row.operatorLabel || row.operatorId || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="ip" label="IP" width="130" />
+            <el-table-column label="时间" width="170">
+              <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="暂无日志" />
+            </template>
+          </el-table>
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -642,6 +907,69 @@
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="2" />
         </el-form-item>
+        <div class="form-section">设计属性</div>
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="供应商">
+              <el-input v-model="form.designAttr!.provider" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="图号">
+              <el-input v-model="form.designAttr!.dwgNo" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="产品类别">
+              <el-input v-model="form.designAttr!.productCategory" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="产品型号">
+              <el-input v-model="form.designAttr!.productModel" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="产品规格">
+              <el-input v-model="form.designAttr!.productSpec" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="毛坯种类">
+              <el-input v-model="form.designAttr!.materialType" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="毛坯种类2">
+              <el-input v-model="form.designAttr!.materialType2" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="表面处理">
+              <el-input v-model="form.designAttr!.surfaceTreatment" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="是否工装">
+              <el-switch v-model="form.designAttr!.isTooling" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="是否颜色件">
+              <el-switch v-model="form.designAttr!.colorItem" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="重量单位">
+              <el-input v-model="form.designAttr!.weightUnit" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="所属装配">
+              <el-input v-model="form.designAttr!.montage" />
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -652,7 +980,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ElMessage,
@@ -667,8 +995,12 @@ import {
   BOM_IMPORT_ACTION_LABEL,
   BOM_ISSUE_LABEL,
   BOM_VIEW_LABEL,
+  ITEM_PHASE_LABEL,
   ITEM_SOURCE_LABEL,
   ITEM_TYPE_LABEL,
+  ITEM_USING_STATE_LABEL,
+  ITEM_VIEW_TYPE_LABEL,
+  ITEM_WORKFLOW_LABEL,
   alternateApi,
   baselineApi,
   bomApi,
@@ -686,9 +1018,15 @@ import {
   type BomNode,
   type BomRollupRow,
   type BomSummaryRow,
+  type ItemAclRow,
+  type ItemDesignAttr,
   type ItemDetail,
+  type ItemDocRow,
+  type ItemLogRow,
   type ItemSaveReq,
   type ItemSummary,
+  type ItemVersionRow,
+  type ItemViewRow,
   type WhereUsedRow
 } from '@/api/item'
 import { DOC_STATE_LABEL } from '@/api/doc'
@@ -706,7 +1044,21 @@ const loading = ref(false)
 const saving = ref(false)
 const dialogVisible = ref(false)
 const formRef = ref<FormInstance>()
-const activeTab = ref('bom')
+// 默认落在「属性」页签（旧系统对象查看器物件的首屏）；支持 ?tab=acl 直达
+const activeTab = ref(typeof route.query.tab === 'string' ? route.query.tab : 'props')
+
+/** 属性 / 视图 / 设计文档 / 历史 / 权限 / 日志页签数据。 */
+const views = ref<ItemViewRow[]>([])
+const viewLoading = ref(false)
+const newViewType = ref('DESIGN')
+const newViewDesc = ref('')
+const docs = ref<ItemDocRow[]>([])
+const docLoading = ref(false)
+const versions = ref<ItemVersionRow[]>([])
+const versionLoading = ref(false)
+const logs = ref<ItemLogRow[]>([])
+const aclRows = ref<ItemAclRow[]>([])
+const subLoading = ref(false)
 
 const bomView = ref('DESIGN')
 /** 有效性时点：为空表示不按有效性筛选（对齐旧系统不传 VALIDITYQUERYDATA 的语义）。 */
@@ -796,6 +1148,23 @@ const diffResult = ref<BomBaselineDiff | null>(null)
 
 const canWrite = computed(() => userStore.can('pse.item.write'))
 
+function emptyDesignAttr(): ItemDesignAttr {
+  return {
+    provider: '',
+    dwgNo: '',
+    productCategory: '',
+    productModel: '',
+    productSpec: '',
+    materialType: '',
+    materialType2: '',
+    surfaceTreatment: '',
+    isTooling: false,
+    weightUnit: '',
+    montage: '',
+    colorItem: false
+  }
+}
+
 const form = reactive<ItemSaveReq>({
   name: '',
   itemType: 'PART',
@@ -805,7 +1174,8 @@ const form = reactive<ItemSaveReq>({
   unit: 'EA',
   weight: null,
   stdCode: '',
-  remark: ''
+  remark: '',
+  designAttr: emptyDesignAttr()
 })
 
 const rules: FormRules = {
@@ -815,6 +1185,70 @@ const rules: FormRules = {
 
 function stateLabel(state?: string | null): string {
   return state ? DOC_STATE_LABEL[state] ?? state : '-'
+}
+
+function phaseLabel(value?: string | null): string {
+  return value ? ITEM_PHASE_LABEL[value] ?? value : '未定义'
+}
+
+function phaseTone(value?: string | null): 'warn' | 'running' | 'ok' | 'muted' {
+  if (value === 'S') {
+    return 'warn'
+  }
+  if (value === 'A') {
+    return 'running'
+  }
+  if (value === 'B') {
+    return 'ok'
+  }
+  return 'muted'
+}
+
+function usingLabel(value?: string | null): string {
+  return ITEM_USING_STATE_LABEL[value ?? ''] ?? (value || '在用')
+}
+
+function usingTone(value?: string | null): 'ok' | 'warn' | 'muted' {
+  if (value === 'StopUsing') {
+    return 'warn'
+  }
+  if (value === 'GiveUp') {
+    return 'muted'
+  }
+  return 'ok'
+}
+
+function workflowLabel(value?: string | null): string {
+  return ITEM_WORKFLOW_LABEL[value ?? ''] ?? (value || '新建')
+}
+
+function workflowTone(value?: string | null): 'ok' | 'warn' | 'danger' | 'running' | 'muted' {
+  if (value === 'Approved' || value === 'Published') {
+    return 'ok'
+  }
+  if (value === 'Rejected') {
+    return 'danger'
+  }
+  if (value === 'Running') {
+    return 'running'
+  }
+  return 'muted'
+}
+
+function aclTypeLabel(actorType?: string | null): string {
+  if (actorType === 'USER') {
+    return '用户'
+  }
+  if (actorType === 'ROLE') {
+    return '角色'
+  }
+  if (actorType === 'ORG') {
+    return '组织'
+  }
+  if (actorType === 'GROUP') {
+    return '用户组'
+  }
+  return actorType || '-'
 }
 
 
@@ -854,6 +1288,7 @@ function openEdit(): void {
   form.weight = detail.value.weight ?? null
   form.stdCode = detail.value.stdCode ?? ''
   form.remark = detail.value.remark ?? ''
+  form.designAttr = { ...emptyDesignAttr(), ...(detail.value.designAttr ?? {}) }
   dialogVisible.value = true
 }
 
@@ -1091,6 +1526,163 @@ async function loadWhereUsed(): Promise<void> {
   }
 }
 
+// ------------------------------------------------------------ 视图 / 文档 / 历史 / 权限 / 日志
+
+async function loadViews(): Promise<void> {
+  viewLoading.value = true
+  try {
+    views.value = await itemApi.views(itemId.value)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载视图失败')
+  } finally {
+    viewLoading.value = false
+  }
+}
+
+async function onCreateView(): Promise<void> {
+  try {
+    await itemApi.createView(itemId.value, {
+      viewType: newViewType.value,
+      description: newViewDesc.value || undefined
+    })
+    newViewDesc.value = ''
+    ElMessage.success('视图已创建')
+    await loadViews()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '新建视图失败')
+  }
+}
+
+async function onRemoveView(row: ItemViewRow): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`确认删除视图「${row.viewTypeLabel}」？`, '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await itemApi.removeView(itemId.value, row.id)
+    ElMessage.success('视图已删除')
+    await loadViews()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除视图失败')
+  }
+}
+
+function switchView(viewType: string): void {
+  bomView.value = viewType
+  activeTab.value = 'bom'
+  loadBom()
+}
+
+async function loadDocs(): Promise<void> {
+  docLoading.value = true
+  try {
+    docs.value = await itemApi.docs(itemId.value)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载设计文档失败')
+  } finally {
+    docLoading.value = false
+  }
+}
+
+function openDoc(id: string): void {
+  router.push(`/docs/${id}`)
+}
+
+async function loadVersions(): Promise<void> {
+  versionLoading.value = true
+  try {
+    versions.value = await itemApi.versions(itemId.value)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载版本历史失败')
+  } finally {
+    versionLoading.value = false
+  }
+}
+
+function openVersion(id: string): void {
+  router.push({ name: 'item-detail', params: { id }, query: { tab: 'versions' } })
+}
+
+async function loadAcl(): Promise<void> {
+  subLoading.value = true
+  try {
+    aclRows.value = await itemApi.acl(itemId.value)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载权限失败')
+  } finally {
+    subLoading.value = false
+  }
+}
+
+async function loadLogs(): Promise<void> {
+  subLoading.value = true
+  try {
+    logs.value = await itemApi.logs(itemId.value)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载日志失败')
+  } finally {
+    subLoading.value = false
+  }
+}
+
+// ------------------------------------------------------------ 检出 / 检入 / 修订 / 使用状态
+
+async function onCheckout(): Promise<void> {
+  try {
+    detail.value = await itemApi.checkout(itemId.value)
+    ElMessage.success('已检出，可编辑')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '检出失败')
+  }
+}
+
+async function onCheckin(): Promise<void> {
+  try {
+    const created = await itemApi.checkin(itemId.value)
+    ElMessage.success(`已检入，新版本 ${created.revisionLabel}`)
+    router.push({ name: 'item-detail', params: { id: created.id }, query: { tab: 'versions' } })
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '检入失败')
+  }
+}
+
+async function onCancelCheckout(): Promise<void> {
+  try {
+    await itemApi.cancelCheckout(itemId.value)
+    ElMessage.success('已撤销检出')
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '撤销检出失败')
+  }
+}
+
+async function onRevise(): Promise<void> {
+  try {
+    await ElMessageBox.confirm('修订会生成新的大版本（回到草稿），旧版本保留可追溯。继续？', '修订', {
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    const created = await itemApi.revise(itemId.value)
+    ElMessage.success(`已修订，新版本 ${created.revisionLabel}`)
+    router.push({ name: 'item-detail', params: { id: created.id }, query: { tab: 'versions' } })
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '修订失败')
+  }
+}
+
+async function onUsingStateChange(usingState: string | number | object): Promise<void> {
+  try {
+    detail.value = await itemApi.changeUsingState(itemId.value, String(usingState))
+    ElMessage.success('使用状态已更新')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '更新使用状态失败')
+  }
+}
+
 function onTabChange(name: string): void {
   if (name === 'bom') {
     loadBom()
@@ -1102,6 +1694,16 @@ function onTabChange(name: string): void {
     loadBaselines()
   } else if (name === 'whereused') {
     loadWhereUsed()
+  } else if (name === 'views') {
+    loadViews()
+  } else if (name === 'docs') {
+    loadDocs()
+  } else if (name === 'versions') {
+    loadVersions()
+  } else if (name === 'acl') {
+    loadAcl()
+  } else if (name === 'logs') {
+    loadLogs()
   }
 }
 
@@ -1418,10 +2020,29 @@ function goBack(): void {
   router.push({ name: 'item-list' })
 }
 
-onMounted(async () => {
+async function reloadAll(): Promise<void> {
   await load()
-  await loadBom()
+  if (activeTab.value === 'bom') {
+    await loadBom()
+  } else if (activeTab.value === 'views') {
+    await loadViews()
+  } else if (activeTab.value === 'versions') {
+    await loadVersions()
+  } else if (activeTab.value === 'docs') {
+    await loadDocs()
+  } else if (activeTab.value === 'acl') {
+    await loadAcl()
+  } else if (activeTab.value === 'logs') {
+    await loadLogs()
+  }
+}
+
+// 打开历史版本时路由 id 变化，需要重新拉取该版本详情与对应页签数据
+watch(itemId, () => {
+  reloadAll()
 })
+
+onMounted(reloadAll)
 </script>
 
 <style scoped>
@@ -1500,5 +2121,63 @@ onMounted(async () => {
 
 :deep(.diff-row-changed) td.el-table__cell {
   background: var(--plm-highlight, #fff8d6);
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.head-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+/* 属性页签：左缩略图 + 右属性表（旧系统 ItemInfoPage 的版式） */
+.props-layout {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.props-thumb {
+  display: flex;
+  flex: 0 0 180px;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  border: 1px solid var(--plm-border, #dde3ea);
+  background: #fafbfc;
+}
+
+.props-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.prop-title {
+  margin: 10px 0 8px;
+  padding-left: 8px;
+  border-left: 3px solid var(--plm-primary, #1f5c8b);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.prop-title:first-child {
+  margin-top: 0;
+}
+
+.checkout-line {
+  margin-top: 10px;
+  color: var(--plm-warn, #e6a23c);
+  font-size: 12px;
+}
+
+.form-section {
+  margin: 6px 0 10px;
+  padding-left: 8px;
+  border-left: 3px solid var(--plm-primary, #1f5c8b);
+  font-weight: 600;
+  font-size: 13px;
 }
 </style>

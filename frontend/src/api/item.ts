@@ -1,6 +1,6 @@
 import { downloadFile, http, saveBlob, uploadFile } from './http'
 
-/** 零部件类型（与后端 V2 的 ItemType 枚举一致）。 */
+/** 零部件类型（与后端 V2 的 ItemType 枚举一致；注意外购件的码是 PURCHASE 不是 OUTSOURCE）。 */
 export const ITEM_TYPE_LABEL: Record<string, string> = {
   PRODUCT: '产品',
   ASSEMBLY: '部件',
@@ -9,13 +9,78 @@ export const ITEM_TYPE_LABEL: Record<string, string> = {
   TOOL: '工装',
   GAUGE: '量具',
   MOLD: '模具',
-  OUTSOURCE: '外购件'
+  PURCHASE: '外购件'
 }
 
 /** 供应方式。 */
 export const ITEM_SOURCE_LABEL: Record<string, string> = {
   MAKE: '自制',
   BUY: '外购'
+}
+
+/** 生命周期（plm_object.lifecycle_state）。 */
+export const ITEM_LIFECYCLE_LABEL: Record<string, string> = {
+  Draft: '草稿',
+  INIT: '草稿',
+  InWorkflow: '审批中',
+  Released: '已发布',
+  Obsolete: '已废弃'
+}
+
+/** 生命周期阶段（旧系统 STAGESTATEID：S 试制 / A 小批 / B 量产）。 */
+export const ITEM_PHASE_LABEL: Record<string, string> = {
+  S: '试制',
+  A: '小批',
+  B: '量产'
+}
+
+/** 使用状态（旧系统 STATEID）。 */
+export const ITEM_USING_STATE_LABEL: Record<string, string> = {
+  Using: '在用',
+  StopUsing: '停用',
+  GiveUp: '废弃'
+}
+
+/** 流程状态（旧系统 WORKFLOWSTATE）。 */
+export const ITEM_WORKFLOW_LABEL: Record<string, string> = {
+  New: '新建',
+  NONE: '新建',
+  Running: '审批中',
+  Approved: '已通过',
+  Rejected: '已驳回',
+  Published: '已发布'
+}
+
+/** 视图类型（旧系统 PSEITEMVIEW 的视图类型枚举）。 */
+export const ITEM_VIEW_TYPE_LABEL: Record<string, string> = {
+  DESIGN: '设计视图',
+  PROCESS: '工艺视图',
+  MANUFACTURE: '制造视图'
+}
+
+/** 设计属性（旧系统 PSEBASEFORM，独立表 item_design_attr）。 */
+export interface ItemDesignAttr {
+  provider?: string | null
+  dwgNo?: string | null
+  productCategory?: string | null
+  productModel?: string | null
+  productSpec?: string | null
+  materialType?: string | null
+  materialType2?: string | null
+  surfaceTreatment?: string | null
+  isTooling?: boolean
+  weightUnit?: string | null
+  montage?: string | null
+  colorItem?: boolean
+}
+
+/** 检出信息：谁在什么时间检出。 */
+export interface ItemCheckout {
+  userId: string
+  userName?: string | null
+  checkedOutAt: string
+  expireAt?: string | null
+  mine: boolean
 }
 
 export interface ItemSummary {
@@ -28,9 +93,21 @@ export interface ItemSummary {
   unit: string
   sourceType: string
   lifecycleState: string
+  /** 生命周期阶段 S/A/B（可能为空，旧数据未填）。 */
+  phaseState?: string | null
+  /** 使用状态 Using/StopUsing/GiveUp。 */
+  usingState?: string | null
+  /** 流程状态 New/Running/Approved…。 */
+  workflowState?: string | null
   revision: number
   iteration: number
   revisionLabel: string
+  createdBy?: string | null
+  createdByName?: string | null
+  updatedBy?: string | null
+  updatedByName?: string | null
+  releasedAt?: string | null
+  createdAt?: string | null
   updatedAt: string
 }
 
@@ -43,6 +120,8 @@ export interface ItemDetail extends ItemSummary {
   orgId?: string | null
   securityLevel: number
   createdAt: string
+  designAttr?: ItemDesignAttr | null
+  checkout?: ItemCheckout | null
 }
 
 export interface ItemSaveReq {
@@ -58,6 +137,95 @@ export interface ItemSaveReq {
   remark?: string | null
   orgId?: string | null
   securityLevel?: number
+  designAttr?: ItemDesignAttr | null
+}
+
+/** 列表查询条件（对齐旧系统 PSEITEM 的 8 项 + 材料/规格）。 */
+export interface ItemQuery {
+  page?: number
+  size?: number
+  keyword?: string
+  itemType?: string
+  sourceType?: string
+  usingState?: string
+  phaseState?: string
+  workflowState?: string
+  createdBy?: string
+  createdFrom?: string
+  createdTo?: string
+  releasedFrom?: string
+  releasedTo?: string
+  material?: string
+  specification?: string
+}
+
+/** 零件视图行（旧系统 PSEITEMVIEW）。 */
+export interface ItemViewRow {
+  id: string
+  viewType: string
+  viewTypeLabel: string
+  description?: string | null
+  isDefault: boolean
+  lifecycleState: string
+  workflowState?: string | null
+  bomLineCount: number
+  createdAt: string
+}
+
+/** 版本历史行。 */
+export interface ItemVersionRow {
+  id: string
+  revision: number
+  iteration: number
+  revisionLabel: string
+  lifecycleState: string
+  isLatest: boolean
+  createdBy?: string | null
+  createdByName?: string | null
+  createdAt: string
+  releasedAt?: string | null
+}
+
+/** 设计文档行（零件关联的图文档）。 */
+export interface ItemDocRow {
+  id: string
+  code: string
+  name: string
+  docType?: string | null
+  relationType?: string | null
+  lifecycleState: string
+  revisionLabel: string
+  updatedAt: string
+}
+
+/** 操作日志行。 */
+export interface ItemLogRow {
+  logType: string
+  action?: string | null
+  fromState?: string | null
+  toState?: string | null
+  detail?: string | null
+  result?: string | null
+  operatorId?: string | null
+  operatorLabel?: string | null
+  ip?: string | null
+  createdAt: string
+}
+
+/** 实例权限行（与图文档 ACL 同构）。 */
+export interface ItemAclRow {
+  actorType: string
+  actorId?: string | null
+  actorName?: string | null
+  actions?: string | null
+  effect?: string | null
+}
+
+export interface ItemBatchResult {
+  total: number
+  done: number
+  skipped: number
+  messages: string[]
 }
 
 /** BOM 视图（设计/工艺/制造）。 */
@@ -417,14 +585,8 @@ export const alternateApi = {
 }
 
 export const itemApi = {
-  list(params: {
-    page?: number
-    size?: number
-    keyword?: string
-    itemType?: string
-    sourceType?: string
-  }): Promise<{ items: ItemSummary[]; total: number; page: number; size: number }> {
-    return http.get('/items', params)
+  list(params: ItemQuery): Promise<{ items: ItemSummary[]; total: number; page: number; size: number }> {
+    return http.get('/items', { ...params } as Record<string, string | number | boolean | undefined>)
   },
   detail(id: string): Promise<ItemDetail> {
     return http.get<ItemDetail>(`/items/${id}`)
@@ -437,5 +599,76 @@ export const itemApi = {
   },
   remove(id: string): Promise<void> {
     return http.delete<void>(`/items/${id}`)
+  },
+  batchDelete(ids: string[]): Promise<ItemBatchResult> {
+    return http.post<ItemBatchResult>('/items/batch-delete', { ids })
+  },
+  changeUsingState(id: string, usingState: string): Promise<ItemDetail> {
+    return http.put<ItemDetail>(`/items/${id}/using-state`, { usingState })
+  },
+  checkout(id: string): Promise<ItemDetail> {
+    return http.post<ItemDetail>(`/items/${id}/checkout`)
+  },
+  checkin(id: string): Promise<ItemDetail> {
+    return http.post<ItemDetail>(`/items/${id}/checkin`)
+  },
+  cancelCheckout(id: string): Promise<void> {
+    return http.post<void>(`/items/${id}/cancel-checkout`)
+  },
+  revise(id: string): Promise<ItemDetail> {
+    return http.post<ItemDetail>(`/items/${id}/revise`)
+  },
+  versions(id: string): Promise<ItemVersionRow[]> {
+    return http.get<ItemVersionRow[]>(`/items/${id}/versions`)
+  },
+  views(id: string): Promise<ItemViewRow[]> {
+    return http.get<ItemViewRow[]>(`/items/${id}/views`)
+  },
+  createView(
+    id: string,
+    req: { viewType?: string; description?: string; copyFromViewId?: string }
+  ): Promise<ItemViewRow> {
+    return http.post<ItemViewRow>(`/items/${id}/views`, req)
+  },
+  removeView(id: string, viewId: string): Promise<void> {
+    return http.delete<void>(`/items/${id}/views/${viewId}`)
+  },
+  docs(id: string): Promise<ItemDocRow[]> {
+    return http.get<ItemDocRow[]>(`/items/${id}/docs`)
+  },
+  logs(id: string, limit?: number): Promise<ItemLogRow[]> {
+    return http.get<ItemLogRow[]>(`/items/${id}/logs`, { limit })
+  },
+  acl(id: string): Promise<ItemAclRow[]> {
+    return http.get<ItemAclRow[]>(`/items/${id}/acl`)
+  },
+  async exportFile(params: ItemQuery): Promise<void> {
+    const { blob, fileName } = await downloadFile(
+      '/items/export',
+      { ...params } as Record<string, string | number | boolean | undefined>
+    )
+    saveBlob(blob, fileName)
+  },
+  async downloadTemplate(): Promise<void> {
+    const { blob, fileName } = await downloadFile('/items/import/template')
+    saveBlob(blob, fileName)
+  },
+  previewImport(file: File): Promise<{
+    total: number
+    createCount: number
+    updateCount: number
+    errors: string[]
+    valid: boolean
+  }> {
+    return uploadFile('/items/import/preview', file)
+  },
+  importItems(file: File): Promise<{
+    total: number
+    created: number
+    updated: number
+    skipped: number
+    messages: string[]
+  }> {
+    return uploadFile('/items/import', file)
   }
 }

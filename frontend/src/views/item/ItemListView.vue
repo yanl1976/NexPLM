@@ -3,15 +3,33 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span class="title">零部件</span>
-          <el-button type="primary" @click="openCreate">新建零部件</el-button>
+          <span class="title">零部件管理</span>
+          <div class="toolbar">
+            <el-button v-if="canWrite" type="primary" @click="openCreate">新建</el-button>
+            <el-button v-if="canWrite" :disabled="selection.length !== 1" @click="openEdit()">编辑</el-button>
+            <el-button v-if="canWrite" :disabled="selection.length !== 1" @click="onCheckout">检出</el-button>
+            <el-button v-if="canWrite" :disabled="selection.length !== 1" @click="onCheckin">检入</el-button>
+            <el-button v-if="canWrite" :disabled="selection.length !== 1" @click="onCancelCheckout">撤销检出</el-button>
+            <el-button v-if="canDelete" :disabled="selection.length === 0" @click="onBatchDelete">删除</el-button>
+            <el-tooltip content="版本比较将在对象查看器「历史」页签中进行" placement="bottom">
+              <el-button disabled>比较</el-button>
+            </el-tooltip>
+            <el-button :disabled="selection.length !== 1" @click="openTab('acl')">授权</el-button>
+            <el-tooltip content="发起流程在对象查看器「流程」页签中进行" placement="bottom">
+              <el-button disabled>发起流程</el-button>
+            </el-tooltip>
+            <el-button v-if="canWrite" @click="openImport">导入</el-button>
+            <el-button @click="onExport">导出</el-button>
+            <ColumnSetting v-model="visibleColumns" :columns="COLUMN_DEFS" />
+            <el-button @click="load">刷新</el-button>
+          </div>
         </div>
       </template>
 
       <div class="filters">
         <el-input
           v-model="query.keyword"
-          placeholder="编码 / 名称 / 规格"
+          placeholder="编号 / 名称 / 规格"
           clearable
           class="filter-input"
           @keyup.enter="search"
@@ -19,45 +37,144 @@
         <el-select v-model="query.itemType" placeholder="类型" clearable class="filter-select">
           <el-option v-for="(label, value) in ITEM_TYPE_LABEL" :key="value" :label="label" :value="value" />
         </el-select>
+        <el-select v-model="query.usingState" placeholder="使用状态" clearable class="filter-select">
+          <el-option
+            v-for="(label, value) in ITEM_USING_STATE_LABEL"
+            :key="value"
+            :label="label"
+            :value="value"
+          />
+        </el-select>
         <el-select v-model="query.sourceType" placeholder="供应方式" clearable class="filter-select">
           <el-option v-for="(label, value) in ITEM_SOURCE_LABEL" :key="value" :label="label" :value="value" />
         </el-select>
         <el-button type="primary" @click="search">查询</el-button>
+        <el-button @click="resetQuery">重置</el-button>
+        <el-button link type="primary" @click="advanced = !advanced">
+          {{ advanced ? '收起' : '高级查询' }}
+        </el-button>
       </div>
 
-      <el-table v-loading="loading" :data="rows" border @row-click="openDetail">
-        <el-table-column prop="code" label="编码" width="140" />
-        <el-table-column prop="name" label="名称" min-width="200" show-overflow-tooltip />
-        <el-table-column label="类型" width="110">
+      <div v-show="advanced" class="filters filters-advanced">
+        <el-select v-model="query.phaseState" placeholder="生命周期阶段" clearable class="filter-select">
+          <el-option v-for="(label, value) in ITEM_PHASE_LABEL" :key="value" :label="label" :value="value" />
+        </el-select>
+        <el-select v-model="query.workflowState" placeholder="流程状态" clearable class="filter-select">
+          <el-option
+            v-for="(label, value) in ITEM_WORKFLOW_LABEL"
+            :key="value"
+            :label="label"
+            :value="value"
+          />
+        </el-select>
+        <el-input v-model="query.material" placeholder="材料" clearable class="filter-select" />
+        <el-input v-model="query.specification" placeholder="规格" clearable class="filter-select" />
+        <el-date-picker
+          v-model="createdRange"
+          type="daterange"
+          unlink-panels
+          start-placeholder="创建起"
+          end-placeholder="创建止"
+          value-format="YYYY-MM-DD"
+          class="filter-range"
+        />
+        <el-date-picker
+          v-model="releasedRange"
+          type="daterange"
+          unlink-panels
+          start-placeholder="发布起"
+          end-placeholder="发布止"
+          value-format="YYYY-MM-DD"
+          class="filter-range"
+        />
+      </div>
+
+      <el-table
+        v-loading="loading"
+        :data="rows"
+        border
+        row-key="id"
+        @row-click="openDetail"
+        @selection-change="onSelectionChange"
+        @header-dragend="onHeaderDragend"
+      >
+        <el-table-column type="selection" width="42" column-key="selection" />
+        <el-table-column v-if="show('code')" column-key="code" prop="code" label="编号" :width="width('code', 150)" />
+        <el-table-column
+          v-if="show('name')"
+          column-key="name"
+          prop="name"
+          label="名称"
+          min-width="200"
+          show-overflow-tooltip
+        />
+        <el-table-column v-if="show('itemType')" column-key="itemType" label="类型" width="100">
           <template #default="{ row }">{{ ITEM_TYPE_LABEL[row.itemType] ?? row.itemType }}</template>
         </el-table-column>
-        <el-table-column prop="specification" label="规格型号" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="material" label="材料" width="110" />
-        <el-table-column label="供应方式" width="100">
+        <el-table-column
+          v-if="show('specification')"
+          column-key="specification"
+          prop="specification"
+          label="规格型号"
+          min-width="150"
+          show-overflow-tooltip
+        />
+        <el-table-column v-if="show('material')" column-key="material" prop="material" label="材料" width="100" />
+        <el-table-column v-if="show('sourceType')" column-key="sourceType" label="供应方式" width="90">
           <template #default="{ row }">
             <StatusDot
               :tone="row.sourceType === 'BUY' ? 'warn' : 'ok'"
-              :label="ITEM_SOURCE_LABEL[row.sourceType] ?? row.sourceType"
+              :label="ITEM_SOURCE_LABEL[row.sourceType] ?? row.sourceType ?? '-'"
             />
           </template>
         </el-table-column>
-        <el-table-column prop="revisionLabel" label="版本" width="80" />
-        <el-table-column label="状态" width="100">
+        <el-table-column v-if="show('revisionLabel')" column-key="revisionLabel" prop="revisionLabel" label="版本" width="70" />
+        <el-table-column v-if="show('lifecycleState')" column-key="lifecycleState" label="发布状态" width="100">
           <template #default="{ row }">
-            <StatusDot :status="row.lifecycleState" :label="stateLabel(row.lifecycleState)" />
+            <StatusDot :status="row.lifecycleState" :label="ITEM_LIFECYCLE_LABEL[row.lifecycleState] ?? row.lifecycleState" />
           </template>
         </el-table-column>
-        <el-table-column label="更新时间" width="170">
+        <el-table-column v-if="show('phaseState')" column-key="phaseState" label="生命周期" width="90">
+          <template #default="{ row }">
+            <StatusDot :tone="phaseTone(row.phaseState)" :label="phaseLabel(row.phaseState)" />
+          </template>
+        </el-table-column>
+        <el-table-column v-if="show('usingState')" column-key="usingState" label="使用状态" width="90">
+          <template #default="{ row }">
+            <StatusDot :tone="usingTone(row.usingState)" :label="usingLabel(row.usingState)" />
+          </template>
+        </el-table-column>
+        <el-table-column v-if="show('workflowState')" column-key="workflowState" label="流程状态" width="90">
+          <template #default="{ row }">
+            <StatusDot :tone="workflowTone(row.workflowState)" :label="workflowLabel(row.workflowState)" />
+          </template>
+        </el-table-column>
+        <el-table-column v-if="show('releasedAt')" column-key="releasedAt" label="发布时间" width="150">
+          <template #default="{ row }">{{ formatTime(row.releasedAt) }}</template>
+        </el-table-column>
+        <el-table-column v-if="show('createdByName')" column-key="createdByName" prop="createdByName" label="创建人" width="100" />
+        <el-table-column v-if="show('createdAt')" column-key="createdAt" label="创建时间" width="150">
+          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column
+          v-if="show('updatedByName')"
+          column-key="updatedByName"
+          prop="updatedByName"
+          label="修改人"
+          width="100"
+        />
+        <el-table-column v-if="show('updatedAt')" column-key="updatedAt" label="修改时间" width="150">
           <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="openDetail(row)">打开</el-button>
-            <el-button link type="danger" @click.stop="onDelete(row)">删除</el-button>
+            <el-button v-if="canWrite" link type="primary" @click.stop="openEdit(row)">编辑</el-button>
+            <el-button v-if="canDelete" link type="danger" @click.stop="onDelete(row)">删除</el-button>
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty description="暂无零部件，点击「新建零部件」开始" />
+          <el-empty description="暂无零部件，点击「新建」开始" />
         </template>
       </el-table>
 
@@ -65,55 +182,180 @@
         v-model:current-page="query.page"
         v-model:page-size="query.size"
         :total="total"
-        :page-sizes="[20, 50, 100]"
-        layout="total, sizes, prev, pager, next"
+        :page-sizes="[20, 50, 100, 200]"
+        layout="total, sizes, prev, pager, next, jumper"
         class="pager"
         @current-change="load"
         @size-change="search"
       />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑零部件' : '新建零部件'" width="640px">
+    <!-- 新建 / 编辑：基本属性 + 设计属性（对齐旧系统 PSEBASEFORM） -->
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑零部件' : '新建零部件'" width="760px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-        <el-form-item label="编码">
-          <el-input v-model="form.code" placeholder="留空自动取号 PN-000001" :disabled="Boolean(editingId)" />
-        </el-form-item>
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="form.name" />
-        </el-form-item>
-        <el-form-item label="类型" prop="itemType">
-          <el-select v-model="form.itemType" style="width: 100%">
-            <el-option v-for="(label, value) in ITEM_TYPE_LABEL" :key="value" :label="label" :value="value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="供应方式">
-          <el-radio-group v-model="form.sourceType">
-            <el-radio value="MAKE">自制</el-radio>
-            <el-radio value="BUY">外购</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="规格型号">
-          <el-input v-model="form.specification" placeholder="如 M3 Z=24 / Φ50×120" />
-        </el-form-item>
-        <el-form-item label="材料">
-          <el-input v-model="form.material" placeholder="如 40Cr" />
-        </el-form-item>
-        <el-form-item label="计量单位">
-          <el-input v-model="form.unit" placeholder="EA / PCS / KG" />
-        </el-form-item>
-        <el-form-item label="单件重量">
-          <el-input-number v-model="form.weight" :min="0" :precision="4" :step="0.1" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="标准号">
-          <el-input v-model="form.stdCode" placeholder="标准件填写，如 GB/T 5783" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="form.remark" type="textarea" :rows="2" />
-        </el-form-item>
+        <div class="form-section">基本属性</div>
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="编码">
+              <el-input v-model="form.code" placeholder="留空自动取号 PN-000001" :disabled="Boolean(editingId)" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="名称" prop="name">
+              <el-input v-model="form.name" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="类型" prop="itemType">
+              <el-select v-model="form.itemType" style="width: 100%">
+                <el-option v-for="(label, value) in ITEM_TYPE_LABEL" :key="value" :label="label" :value="value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="供应方式">
+              <el-radio-group v-model="form.sourceType">
+                <el-radio value="MAKE">自制</el-radio>
+                <el-radio value="BUY">外购</el-radio>
+              </el-radio-group>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="规格型号">
+              <el-input v-model="form.specification" placeholder="如 M3 Z=24 / Φ50×120" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="材料">
+              <el-input v-model="form.material" placeholder="如 40Cr" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="计量单位">
+              <el-input v-model="form.unit" placeholder="EA / PCS / KG" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="单件重量">
+              <el-input-number v-model="form.weight" :min="0" :precision="4" :step="0.1" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="标准号">
+              <el-input v-model="form.stdCode" placeholder="标准件填写，如 GB/T 5783" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="备注">
+              <el-input v-model="form.remark" type="textarea" :rows="1" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <div class="form-section">设计属性</div>
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="供应商">
+              <el-input v-model="form.designAttr.provider" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="图号">
+              <el-input v-model="form.designAttr.dwgNo" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="产品类别">
+              <el-input v-model="form.designAttr.productCategory" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="产品型号">
+              <el-input v-model="form.designAttr.productModel" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="产品规格">
+              <el-input v-model="form.designAttr.productSpec" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="毛坯种类">
+              <el-input v-model="form.designAttr.materialType" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="毛坯种类2">
+              <el-input v-model="form.designAttr.materialType2" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="表面处理">
+              <el-input v-model="form.designAttr.surfaceTreatment" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="是否工装">
+              <el-switch v-model="form.designAttr.isTooling" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="是否颜色件">
+              <el-switch v-model="form.designAttr.colorItem" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="重量单位">
+              <el-input v-model="form.designAttr.weightUnit" placeholder="kg / g" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="所属装配">
+              <el-input v-model="form.designAttr.montage" />
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 导入：预演 → 确认 -->
+    <el-dialog v-model="importVisible" title="导入零部件（增量合并）" width="640px">
+      <div class="import-row">
+        <el-button @click="downloadTemplate">下载模板</el-button>
+        <el-upload :auto-upload="false" :show-file-list="false" accept=".xlsx,.xls" :on-change="onPickFile">
+          <el-button type="primary" plain>选择文件</el-button>
+        </el-upload>
+        <span v-if="importFile" class="hint">{{ importFile.name }}</span>
+      </div>
+      <el-alert
+        v-if="preview"
+        :type="preview.valid ? 'success' : 'warning'"
+        :closable="false"
+        show-icon
+        class="import-alert"
+      >
+        共 {{ preview.total }} 行：新建 {{ preview.createCount }} 行、更新 {{ preview.updateCount }} 行
+        <span v-if="preview.errors.length">，{{ preview.errors.length }} 条提示</span>
+      </el-alert>
+      <ul v-if="preview && preview.errors.length" class="import-errors">
+        <li v-for="(error, index) in preview.errors.slice(0, 10)" :key="index">{{ error }}</li>
+        <li v-if="preview.errors.length > 10">… 其余 {{ preview.errors.length - 10 }} 条略</li>
+      </ul>
+      <div v-if="importResult" class="import-result">
+        导入完成：新建 {{ importResult.created }}、更新 {{ importResult.updated }}、跳过
+        {{ importResult.skipped }}
+        <ul v-if="importResult.messages.length">
+          <li v-for="(message, index) in importResult.messages.slice(0, 10)" :key="index">{{ message }}</li>
+        </ul>
+      </div>
+      <template #footer>
+        <el-button @click="importVisible = false">关闭</el-button>
+        <el-button :disabled="!importFile" @click="onPreview">预演</el-button>
+        <el-button type="primary" :disabled="!importFile" :loading="importing" @click="onImport">确认导入</el-button>
       </template>
     </el-dialog>
   </div>
@@ -122,18 +364,48 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadFile } from 'element-plus'
 import {
+  ITEM_LIFECYCLE_LABEL,
+  ITEM_PHASE_LABEL,
   ITEM_SOURCE_LABEL,
   ITEM_TYPE_LABEL,
+  ITEM_USING_STATE_LABEL,
+  ITEM_WORKFLOW_LABEL,
   itemApi,
+  type ItemDesignAttr,
   type ItemSaveReq,
   type ItemSummary
 } from '@/api/item'
-import { DOC_STATE_LABEL } from '@/api/doc'
+import { useUserStore } from '@/stores/user'
 import StatusDot from '@/components/StatusDot.vue'
+import ColumnSetting from '@/components/ColumnSetting.vue'
+import type { ColumnDef } from '@/components/columnSetting'
 
 const router = useRouter()
+const userStore = useUserStore()
+const canWrite = userStore.can('pse.item.write')
+const canDelete = userStore.can('pse.item.delete')
+
+/** 列定义：对齐旧系统 PSEITEM 主列表 11 列 + 新系统扩展 5 列。 */
+const COLUMN_DEFS: ColumnDef[] = [
+  { key: 'code', label: '编号', fixed: true },
+  { key: 'name', label: '名称', fixed: true },
+  { key: 'itemType', label: '类型' },
+  { key: 'specification', label: '规格型号' },
+  { key: 'material', label: '材料' },
+  { key: 'sourceType', label: '供应方式' },
+  { key: 'revisionLabel', label: '版本' },
+  { key: 'lifecycleState', label: '发布状态' },
+  { key: 'phaseState', label: '生命周期' },
+  { key: 'usingState', label: '使用状态' },
+  { key: 'workflowState', label: '流程状态' },
+  { key: 'releasedAt', label: '发布时间' },
+  { key: 'createdByName', label: '创建人' },
+  { key: 'createdAt', label: '创建时间' },
+  { key: 'updatedByName', label: '修改人' },
+  { key: 'updatedAt', label: '修改时间' }
+]
 
 const rows = ref<ItemSummary[]>([])
 const total = ref(0)
@@ -142,16 +414,60 @@ const saving = ref(false)
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
 const formRef = ref<FormInstance>()
+const selection = ref<ItemSummary[]>([])
+const advanced = ref(false)
+const createdRange = ref<string[]>([])
+const releasedRange = ref<string[]>([])
+
+const importVisible = ref(false)
+const importFile = ref<File | null>(null)
+const preview = ref<{ total: number; createCount: number; updateCount: number; errors: string[]; valid: boolean } | null>(
+  null
+)
+const importResult = ref<{ total: number; created: number; updated: number; skipped: number; messages: string[] } | null>(
+  null
+)
+const importing = ref(false)
+
+const COLUMN_STORAGE_KEY = 'plm.item.columns'
+const WIDTH_STORAGE_KEY = 'plm.item.colWidths'
+const DEFAULT_COLUMNS = COLUMN_DEFS.map((column) => column.key)
+
+const visibleColumns = ref<string[]>(loadColumns())
+const colWidths = ref<Record<string, number>>(loadWidths())
 
 const query = reactive({
   page: 1,
   size: 20,
   keyword: '',
   itemType: '',
-  sourceType: ''
+  sourceType: '',
+  usingState: '',
+  phaseState: '',
+  workflowState: '',
+  material: '',
+  specification: ''
 })
 
-const form = reactive<ItemSaveReq>({
+function emptyDesignAttr(): ItemDesignAttr {
+  return {
+    provider: '',
+    dwgNo: '',
+    productCategory: '',
+    productModel: '',
+    productSpec: '',
+    materialType: '',
+    materialType2: '',
+    surfaceTreatment: '',
+    isTooling: false,
+    weightUnit: '',
+    montage: '',
+    colorItem: false
+  }
+}
+
+// 设计属性在弹窗里始终有对象（避免模板里到处判空）
+const form = reactive<ItemSaveReq & { designAttr: ItemDesignAttr }>({
   code: '',
   name: '',
   itemType: 'PART',
@@ -161,7 +477,8 @@ const form = reactive<ItemSaveReq>({
   unit: 'EA',
   weight: null,
   stdCode: '',
-  remark: ''
+  remark: '',
+  designAttr: emptyDesignAttr()
 })
 
 const rules: FormRules = {
@@ -169,8 +486,92 @@ const rules: FormRules = {
   itemType: [{ required: true, message: '请选择类型', trigger: 'change' }]
 }
 
-function stateLabel(state?: string | null): string {
-  return state ? DOC_STATE_LABEL[state] ?? state : '-'
+function loadColumns(): string[] {
+  try {
+    const raw = localStorage.getItem(COLUMN_STORAGE_KEY)
+    if (!raw) {
+      return [...DEFAULT_COLUMNS]
+    }
+    const parsed = JSON.parse(raw) as string[]
+    const valid = parsed.filter((key) => DEFAULT_COLUMNS.includes(key))
+    return valid.length ? valid : [...DEFAULT_COLUMNS]
+  } catch {
+    return [...DEFAULT_COLUMNS]
+  }
+}
+
+function loadWidths(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(WIDTH_STORAGE_KEY)
+    return raw ? (JSON.parse(raw) as Record<string, number>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function show(key: string): boolean {
+  return visibleColumns.value.includes(key)
+}
+
+function width(key: string, fallback: number): number {
+  return colWidths.value[key] ?? fallback
+}
+
+function onHeaderDragend(newWidth: number, _oldWidth: number, column: { columnKey?: string }): void {
+  const key = column?.columnKey
+  if (!key) {
+    return
+  }
+  colWidths.value = { ...colWidths.value, [key]: Math.round(newWidth) }
+  localStorage.setItem(WIDTH_STORAGE_KEY, JSON.stringify(colWidths.value))
+}
+
+function phaseLabel(value?: string | null): string {
+  return value ? ITEM_PHASE_LABEL[value] ?? value : '未定义'
+}
+
+function phaseTone(value?: string | null): 'warn' | 'running' | 'ok' | 'muted' {
+  if (value === 'S') {
+    return 'warn'
+  }
+  if (value === 'A') {
+    return 'running'
+  }
+  if (value === 'B') {
+    return 'ok'
+  }
+  return 'muted'
+}
+
+function usingLabel(value?: string | null): string {
+  return ITEM_USING_STATE_LABEL[value ?? ''] ?? (value || '在用')
+}
+
+function usingTone(value?: string | null): 'ok' | 'warn' | 'muted' {
+  if (value === 'StopUsing') {
+    return 'warn'
+  }
+  if (value === 'GiveUp') {
+    return 'muted'
+  }
+  return 'ok'
+}
+
+function workflowLabel(value?: string | null): string {
+  return ITEM_WORKFLOW_LABEL[value ?? ''] ?? (value || '新建')
+}
+
+function workflowTone(value?: string | null): 'ok' | 'warn' | 'danger' | 'running' | 'muted' {
+  if (value === 'Approved' || value === 'Published') {
+    return 'ok'
+  }
+  if (value === 'Rejected') {
+    return 'danger'
+  }
+  if (value === 'Running') {
+    return 'running'
+  }
+  return 'muted'
 }
 
 function formatTime(value?: string | null): string {
@@ -188,7 +589,16 @@ async function load(): Promise<void> {
       size: query.size,
       keyword: query.keyword || undefined,
       itemType: query.itemType || undefined,
-      sourceType: query.sourceType || undefined
+      sourceType: query.sourceType || undefined,
+      usingState: query.usingState || undefined,
+      phaseState: query.phaseState || undefined,
+      workflowState: query.workflowState || undefined,
+      material: query.material || undefined,
+      specification: query.specification || undefined,
+      createdFrom: createdRange.value?.[0] || undefined,
+      createdTo: createdRange.value?.[1] || undefined,
+      releasedFrom: releasedRange.value?.[0] || undefined,
+      releasedTo: releasedRange.value?.[1] || undefined
     })
     rows.value = page.items
     total.value = page.total
@@ -204,6 +614,24 @@ function search(): void {
   load()
 }
 
+function resetQuery(): void {
+  query.keyword = ''
+  query.itemType = ''
+  query.sourceType = ''
+  query.usingState = ''
+  query.phaseState = ''
+  query.workflowState = ''
+  query.material = ''
+  query.specification = ''
+  createdRange.value = []
+  releasedRange.value = []
+  search()
+}
+
+function onSelectionChange(items: ItemSummary[]): void {
+  selection.value = items
+}
+
 function openCreate(): void {
   editingId.value = null
   form.code = ''
@@ -216,7 +644,33 @@ function openCreate(): void {
   form.weight = null
   form.stdCode = ''
   form.remark = ''
+  form.designAttr = emptyDesignAttr()
   dialogVisible.value = true
+}
+
+async function openEdit(row?: ItemSummary): Promise<void> {
+  const target = row ?? selection.value[0]
+  if (!target) {
+    return
+  }
+  try {
+    const detail = await itemApi.detail(target.id)
+    editingId.value = detail.id
+    form.code = detail.code
+    form.name = detail.name
+    form.itemType = detail.itemType
+    form.sourceType = detail.sourceType ?? 'MAKE'
+    form.specification = detail.specification ?? ''
+    form.material = detail.material ?? ''
+    form.unit = detail.unit ?? 'EA'
+    form.weight = detail.weight ?? null
+    form.stdCode = detail.stdCode ?? ''
+    form.remark = detail.remark ?? ''
+    form.designAttr = { ...emptyDesignAttr(), ...(detail.designAttr ?? {}) }
+    dialogVisible.value = true
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载详情失败')
+  }
 }
 
 async function onSave(): Promise<void> {
@@ -260,8 +714,145 @@ async function onDelete(row: ItemSummary): Promise<void> {
   }
 }
 
+async function onBatchDelete(): Promise<void> {
+  if (!selection.value.length) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确认删除选中的 ${selection.value.length} 个零部件？`, '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    const result = await itemApi.batchDelete(selection.value.map((row) => row.id))
+    ElMessage.success(`删除完成：成功 ${result.done}，跳过 ${result.skipped}`)
+    if (result.messages.length) {
+      ElMessage.warning(result.messages.slice(0, 3).join('；'))
+    }
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量删除失败')
+  }
+}
+
+async function onCheckout(): Promise<void> {
+  const target = selection.value[0]
+  if (!target) {
+    return
+  }
+  try {
+    await itemApi.checkout(target.id)
+    ElMessage.success('已检出，可编辑')
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '检出失败')
+  }
+}
+
+async function onCheckin(): Promise<void> {
+  const target = selection.value[0]
+  if (!target) {
+    return
+  }
+  try {
+    const detail = await itemApi.checkin(target.id)
+    ElMessage.success(`已检入，新版本 ${detail.revisionLabel}`)
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '检入失败')
+  }
+}
+
+async function onCancelCheckout(): Promise<void> {
+  const target = selection.value[0]
+  if (!target) {
+    return
+  }
+  try {
+    await itemApi.cancelCheckout(target.id)
+    ElMessage.success('已撤销检出')
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '撤销检出失败')
+  }
+}
+
+async function onExport(): Promise<void> {
+  try {
+    await itemApi.exportFile({
+      keyword: query.keyword || undefined,
+      itemType: query.itemType || undefined,
+      sourceType: query.sourceType || undefined,
+      usingState: query.usingState || undefined,
+      phaseState: query.phaseState || undefined,
+      workflowState: query.workflowState || undefined
+    })
+    ElMessage.success('已导出')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出失败')
+  }
+}
+
+function openImport(): void {
+  importFile.value = null
+  preview.value = null
+  importResult.value = null
+  importVisible.value = true
+}
+
+function onPickFile(file: UploadFile): void {
+  importFile.value = file.raw ?? null
+  preview.value = null
+  importResult.value = null
+}
+
+async function downloadTemplate(): Promise<void> {
+  try {
+    await itemApi.downloadTemplate()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '下载模板失败')
+  }
+}
+
+async function onPreview(): Promise<void> {
+  if (!importFile.value) {
+    return
+  }
+  try {
+    preview.value = await itemApi.previewImport(importFile.value)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '预演失败')
+  }
+}
+
+async function onImport(): Promise<void> {
+  if (!importFile.value) {
+    return
+  }
+  importing.value = true
+  try {
+    importResult.value = await itemApi.importItems(importFile.value)
+    ElMessage.success(
+      `导入完成：新建 ${importResult.value.created}、更新 ${importResult.value.updated}、跳过 ${importResult.value.skipped}`
+    )
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导入失败')
+  } finally {
+    importing.value = false
+  }
+}
+
 function openDetail(row: ItemSummary): void {
   router.push({ name: 'item-detail', params: { id: row.id } })
+}
+
+function openTab(tab: string): void {
+  const target = selection.value[0]
+  if (!target) {
+    return
+  }
+  router.push({ name: 'item-detail', params: { id: target.id }, query: { tab } })
 }
 
 onMounted(load)
@@ -271,37 +862,95 @@ onMounted(load)
 .page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .title {
   font-weight: 600;
 }
 
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
 .filters {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.filters-advanced {
+  padding-top: 8px;
+  border-top: 1px dashed var(--plm-border, #dde3ea);
 }
 
 .filter-input {
-  width: 260px;
+  width: 240px;
 }
 
 .filter-select {
-  width: 150px;
+  width: 140px;
+}
+
+.filter-range {
+  width: 260px;
 }
 
 .pager {
   margin-top: 12px;
   justify-content: flex-end;
+}
+
+.form-section {
+  margin: 4px 0 10px;
+  padding-left: 8px;
+  border-left: 3px solid var(--plm-primary, #1f5c8b);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.import-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.import-alert {
+  margin-top: 10px;
+}
+
+.import-errors,
+.import-result ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--plm-danger, #d64541);
+  font-size: 12px;
+}
+
+.import-result {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.hint {
+  color: var(--plm-text-secondary, #5b6778);
+  font-size: 12px;
 }
 
 :deep(.el-table__row) {
