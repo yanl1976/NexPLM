@@ -3,11 +3,15 @@ package com.nexplm.platform.change.api;
 import com.nexplm.common.api.PageResult;
 import com.nexplm.common.api.Result;
 import com.nexplm.common.audit.Audit;
+import com.nexplm.platform.change.service.ChgExcelService;
 import com.nexplm.platform.change.service.ChgService;
 import com.nexplm.platform.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,11 +31,14 @@ public class ChgController {
 
     private final ChgService chgService;
     private final com.nexplm.platform.change.service.ChgExecService execService;
+    private final ChgExcelService excelService;
 
     public ChgController(ChgService chgService,
-                         com.nexplm.platform.change.service.ChgExecService execService) {
+                         com.nexplm.platform.change.service.ChgExecService execService,
+                         ChgExcelService excelService) {
         this.chgService = chgService;
         this.execService = execService;
+        this.excelService = excelService;
     }
 
     @Operation(summary = "变更申请列表（按状态/关键字筛选）")
@@ -168,6 +175,21 @@ public class ChgController {
                                                             @RequestParam(defaultValue = "3") int depth,
                                                             @RequestParam(defaultValue = "DESIGN") String viewType) {
         return Result.ok(execService.impact(id, CurrentUser.companyId(), depth, viewType));
+    }
+
+    @Operation(summary = "导出影响分析（xlsx，口径与页面一致）")
+    @GetMapping("/ecrs/{id}/impact/export")
+    @PreAuthorize("hasAuthority('chg.ecr.read')")
+    public ResponseEntity<byte[]> exportImpact(@PathVariable Long id,
+                                               @RequestParam(defaultValue = "3") int depth,
+                                               @RequestParam(defaultValue = "DESIGN") String viewType) {
+        byte[] content = excelService.exportImpact(id, CurrentUser.companyId(), depth, viewType);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"chg-impact-" + id + ".xlsx\"")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(content);
     }
 
     @Operation(summary = "执行变更（受影响对象批量升版/废弃/发布）")

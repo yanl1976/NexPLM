@@ -3,10 +3,14 @@ package com.nexplm.app;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -15,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
@@ -24,9 +29,11 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -323,6 +330,22 @@ class ChangeSmokeTest {
         }
         assertThat(upDepths.get(String.valueOf(subAssembly))).isEqualTo(1);
         assertThat(upDepths.get(String.valueOf(assembly))).isEqualTo(2);
+
+        // 导出影响分析：xlsx 二进制，行数/表头与页面口径一致
+        MvcResult exported = mockMvc.perform(
+                        get("/api/v1/chg/ecrs/{id}/impact/export?depth=3&viewType=DESIGN", downEcr)
+                                .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("chg-impact-")))
+                .andReturn();
+        byte[] bytes = exported.getResponse().getContentAsByteArray();
+        assertThat(bytes.length).isGreaterThan(0);
+        try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+            Sheet sheet = workbook.getSheetAt(0);
+            assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("方向");
+            // lastRowNum 是 0 基下标：表头占 0，数据行 N 条则末行下标 = N
+            assertThat(sheet.getLastRowNum()).isEqualTo(down.size());
+        }
     }
 
     private void insertBomLine(long parentId, long childId) {

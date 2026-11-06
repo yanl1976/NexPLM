@@ -1,4 +1,4 @@
-import { http } from './http'
+import { downloadFile, http, saveBlob } from './http'
 
 /** 变更申请列表行。 */
 export interface EcrRow {
@@ -151,6 +151,11 @@ export const changeApi = {
   },
   impact(ecrId: string, depth = 3, viewType = 'DESIGN') {
     return http.get<ImpactRow[]>(`/chg/ecrs/${ecrId}/impact`, { depth, viewType })
+  },
+  /** 导出影响分析 xlsx（后端复用同一 impact 查询，口径与页面一致）。 */
+  async exportImpact(ecrId: string, depth = 3, viewType = 'DESIGN'): Promise<void> {
+    const { blob, fileName } = await downloadFile(`/chg/ecrs/${ecrId}/impact/export`, { depth, viewType })
+    saveBlob(blob, fileName)
   },
   createEcn(ecrId: string, body: { title: string; executorId?: string | null; planDate?: string | null; remark?: string | null }) {
     return http.post<EcnRow>(`/chg/ecrs/${ecrId}/ecns`, body)

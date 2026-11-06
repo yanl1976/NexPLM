@@ -344,6 +344,7 @@
         </template>
       </el-table>
       <template #footer>
+        <el-button :loading="impactExporting" @click="onExportImpact">导出 Excel</el-button>
         <el-button @click="impactVisible = false">关闭</el-button>
       </template>
     </el-dialog>
@@ -497,6 +498,7 @@ const problemForm = reactive<{ description: string; dueDate: string | null }>({
 })
 const impactVisible = ref(false)
 const impactLoading = ref(false)
+const impactExporting = ref(false)
 const impactDepth = ref(3)
 const impactRows = ref<ImpactRow[]>([])
 
@@ -890,6 +892,21 @@ async function loadImpact(): Promise<void> {
     ElMessage.error(error instanceof Error ? error.message : '影响分析失败')
   } finally {
     impactLoading.value = false
+  }
+}
+
+async function onExportImpact(): Promise<void> {
+  if (!detail.value) {
+    return
+  }
+  impactExporting.value = true
+  try {
+    await changeApi.exportImpact(detail.value.id, impactDepth.value)
+    ElMessage.success('已导出影响分析')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出失败')
+  } finally {
+    impactExporting.value = false
   }
 }
 
