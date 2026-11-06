@@ -51,6 +51,13 @@ public class ChgController {
         return Result.ok(chgService.detail(id, CurrentUser.companyId()));
     }
 
+    @Operation(summary = "变更追踪时间线（申请→评审→通知→执行→关闭）")
+    @GetMapping("/ecrs/{id}/timeline")
+    @PreAuthorize("hasAuthority('chg.ecr.read')")
+    public Result<java.util.List<ChgDtos.TimelineEvent>> timeline(@PathVariable Long id) {
+        return Result.ok(chgService.timeline(id, CurrentUser.companyId()));
+    }
+
     @Operation(summary = "新建变更申请（自动生成 ECR-xxxxxx）")
     @PostMapping("/ecrs")
     @PreAuthorize("hasAuthority('chg.ecr.write')")

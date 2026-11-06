@@ -17,8 +17,11 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -272,6 +275,22 @@ class ChangeSmokeTest {
                    AND o.is_latest = true AND o.deleted = false AND o.lifecycle_state = 'Draft'
                 """, Integer.class, itemId);
         assertThat(newCount).isEqualTo(1);
+
+        // 追踪时间线：申请 → 评审 → 通知 → 执行 → 关闭，全程可回溯
+        call(post("/api/v1/chg/ecrs/{id}/close", ecrId), admin, null);
+        JsonNode timeline = call(get("/api/v1/chg/ecrs/{id}/timeline", ecrId), admin, null);
+        assertThat(timeline.size()).isGreaterThanOrEqualTo(10);
+        assertThat(timeline.get(0).path("stage").asText()).isEqualTo("CREATE");
+        Set<String> stages = new HashSet<>();
+        timeline.forEach(node -> stages.add(node.path("stage").asText()));
+        assertThat(stages).contains("CREATE", "REVIEW", "APPROVE", "NOTICE", "PROBLEM", "EXECUTE", "CLOSE");
+        OffsetDateTime previous = OffsetDateTime.MIN;
+        for (JsonNode node : timeline) {
+            OffsetDateTime time = OffsetDateTime.parse(node.path("time").asText());
+            assertThat(time.isBefore(previous)).as("时间线必须按时间升序").isFalse();
+            previous = time;
+        }
+        assertThat(timeline.get(timeline.size() - 1).path("title").asText()).isEqualTo("关闭变更申请");
     }
 
     /** 影响分析：3 层 BOM 的向上/向下展开。 */

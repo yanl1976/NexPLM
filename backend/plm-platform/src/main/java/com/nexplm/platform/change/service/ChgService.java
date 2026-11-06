@@ -15,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -296,6 +298,197 @@ public class ChgService {
         if (deleted == 0) {
             throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "关联对象不存在：" + linkId);
         }
+    }
+
+    // ------------------------------------------------------------------ 时间线
+
+    /**
+     * 变更追踪时间线：申请 → 评审（流程意见）→ 通知 → 执行 → 关闭。
+     *
+     * <p>不新建事件表，全部由既有数据派生，避免两处写状态：</p>
+     * <ul>
+     *   <li>创建/关闭取 {@code chg_ecr}（{@code created_at} / {@code closed_at}）；</li>
+     *   <li>评审段取 {@code wf_comment}（经 {@code wf_instance_link} 按 object_type=ChgEcr 关联），
+     *       流程归档取实例终态 {@code ended_at}；早期没有流程的历史单据用 {@code approved_at} 兜底；</li>
+     *   <li>通知/问题取 {@code chg_ecn}/{@code chg_problem} 的三个时间戳；</li>
+     *   <li>执行取 {@code chg_object} 中 {@code exec_status='DONE'} 行的 {@code updated_at}。</li>
+     * </ul>
+     */
+    public List<ChgDtos.TimelineEvent> timeline(Long id, Long companyId) {
+        detail(id, companyId); // 存在性与数据隔离校验
+        List<ChgDtos.TimelineEvent> events = new ArrayList<>();
+        appendWorkflowEvents(events, id);
+        appendEcrEvents(events, id);
+        appendEcnEvents(events, id);
+        appendProblemEvents(events, id);
+        appendExecutionEvents(events, id);
+        events.removeIf(event -> event.time() == null);
+        events.sort(Comparator.comparing(ChgDtos.TimelineEvent::time));
+        return events;
+    }
+
+    private void appendEcrEvents(List<ChgDtos.TimelineEvent> events, Long ecrId) {
+        // 已有流程归档事件时不再重复「批准」，仅历史单据（无流程直接批准）走兜底
+        boolean approvedRecorded = events.stream().anyMatch(event -> "APPROVE".equals(event.stage()));
+        jdbcTemplate.query("""
+                SELECT e.created_at, e.approved_at, e.closed_at,
+                       cu.display_name AS creator_name, uu.display_name AS updater_name
+                  FROM chg_ecr e
+                  LEFT JOIN sys_user cu ON cu.id = e.created_by
+                  LEFT JOIN sys_user uu ON uu.id = e.updated_by
+                 WHERE e.id = ?
+                """, rs -> {
+            events.add(new ChgDtos.TimelineEvent(rs.getObject("created_at", OffsetDateTime.class),
+                    "CREATE", "创建变更申请", rs.getString("creator_name"), null));
+            if (!approvedRecorded) {
+                events.add(new ChgDtos.TimelineEvent(rs.getObject("approved_at", OffsetDateTime.class),
+                        "APPROVE", "变更申请批准", null, "无流程归档记录，按批准时间回填"));
+            }
+            OffsetDateTime closedAt = rs.getObject("closed_at", OffsetDateTime.class);
+            if (closedAt != null) {
+                events.add(new ChgDtos.TimelineEvent(closedAt, "CLOSE", "关闭变更申请",
+                        rs.getString("updater_name"), null));
+            }
+        }, ecrId);
+    }
+
+    private void appendWorkflowEvents(List<ChgDtos.TimelineEvent> events, Long ecrId) {
+        Set<String> withdrawn = new HashSet<>();
+        jdbcTemplate.query("""
+                SELECT DISTINCT c.process_instance_id AS pid
+                  FROM wf_comment c
+                  JOIN wf_instance_link l ON l.process_instance_id = c.process_instance_id
+                 WHERE l.object_type = 'ChgEcr' AND l.object_id = ? AND c.action = 'WITHDRAW'
+                """, rs -> {
+            withdrawn.add(rs.getString("pid"));
+        }, ecrId);
+
+        jdbcTemplate.query("""
+                SELECT c.action, c.comment_text, c.created_at, u.display_name AS actor_name
+                  FROM wf_comment c
+                  JOIN wf_instance_link l ON l.process_instance_id = c.process_instance_id
+                  LEFT JOIN sys_user u ON u.id = c.user_id
+                 WHERE l.object_type = 'ChgEcr' AND l.object_id = ?
+                 ORDER BY c.created_at, c.id
+                """, rs -> {
+            String action = rs.getString("action");
+            events.add(new ChgDtos.TimelineEvent(rs.getObject("created_at", OffsetDateTime.class),
+                    workflowStage(action), workflowTitle(action), rs.getString("actor_name"),
+                    rs.getString("comment_text")));
+        }, ecrId);
+
+        jdbcTemplate.query("""
+                SELECT process_instance_id, status, ended_at
+                  FROM wf_instance_link
+                 WHERE object_type = 'ChgEcr' AND object_id = ?
+                 ORDER BY started_at
+                """, rs -> {
+            String status = rs.getString("status");
+            String pid = rs.getString("process_instance_id");
+            OffsetDateTime endedAt = rs.getObject("ended_at", OffsetDateTime.class);
+            if ("COMPLETED".equals(status)) {
+                events.add(new ChgDtos.TimelineEvent(endedAt, "APPROVE", "审批流程归档", null,
+                        "会签全部通过，变更申请转为已批准"));
+            } else if ("TERMINATED".equals(status) && !withdrawn.contains(pid)) {
+                // 发起人主动撤回已由 WITHDRAW 意见覆盖，这里只补「外部终止」
+                events.add(new ChgDtos.TimelineEvent(endedAt, "WITHDRAW", "审批流程终止", null,
+                        "流程被终止，变更申请回到草稿"));
+            }
+        }, ecrId);
+    }
+
+    private void appendEcnEvents(List<ChgDtos.TimelineEvent> events, Long ecrId) {
+        jdbcTemplate.query("""
+                SELECT n.code, n.title, n.created_at, n.issued_at, n.closed_at,
+                       u.display_name AS creator_name
+                  FROM chg_ecn n
+                  LEFT JOIN sys_user u ON u.id = n.created_by
+                 WHERE n.ecr_id = ? AND n.deleted = false
+                 ORDER BY n.id
+                """, rs -> {
+            String code = rs.getString("code");
+            events.add(new ChgDtos.TimelineEvent(rs.getObject("created_at", OffsetDateTime.class),
+                    "NOTICE", "下发变更通知 " + code, rs.getString("creator_name"), rs.getString("title")));
+            OffsetDateTime issuedAt = rs.getObject("issued_at", OffsetDateTime.class);
+            if (issuedAt != null) {
+                events.add(new ChgDtos.TimelineEvent(issuedAt, "NOTICE", "签发变更通知 " + code, null, null));
+            }
+            OffsetDateTime closedAt = rs.getObject("closed_at", OffsetDateTime.class);
+            if (closedAt != null) {
+                events.add(new ChgDtos.TimelineEvent(closedAt, "CLOSE", "关闭变更通知 " + code, null, null));
+            }
+        }, ecrId);
+    }
+
+    private void appendProblemEvents(List<ChgDtos.TimelineEvent> events, Long ecrId) {
+        jdbcTemplate.query("""
+                SELECT p.code, p.description, p.created_at, p.closed_at, u.display_name AS creator_name
+                  FROM chg_problem p
+                  JOIN chg_ecn n ON n.id = p.ecn_id
+                  LEFT JOIN sys_user u ON u.id = p.created_by
+                 WHERE n.ecr_id = ? AND p.deleted = false
+                 ORDER BY p.id
+                """, rs -> {
+            String code = rs.getString("code");
+            events.add(new ChgDtos.TimelineEvent(rs.getObject("created_at", OffsetDateTime.class),
+                    "PROBLEM", "登记变更问题 " + code, rs.getString("creator_name"),
+                    rs.getString("description")));
+            OffsetDateTime closedAt = rs.getObject("closed_at", OffsetDateTime.class);
+            if (closedAt != null) {
+                events.add(new ChgDtos.TimelineEvent(closedAt, "CLOSE", "关闭变更问题 " + code, null, null));
+            }
+        }, ecrId);
+    }
+
+    private void appendExecutionEvents(List<ChgDtos.TimelineEvent> events, Long ecrId) {
+        jdbcTemplate.query("""
+                SELECT o.action, o.revision_from, o.revision_to, o.updated_at, p.code AS object_code
+                  FROM chg_object o
+                  LEFT JOIN plm_object p ON p.id = o.object_id
+                 WHERE o.ecr_id = ? AND o.exec_status = 'DONE'
+                 ORDER BY o.updated_at, o.id
+                """, rs -> {
+            String action = rs.getString("action");
+            Object from = rs.getObject("revision_from");
+            Object to = rs.getObject("revision_to");
+            String detail = "REVISE".equals(action)
+                    ? "v" + (from == null ? "-" : from) + " → v" + (to == null ? "-" : to)
+                    : actionLabel(action);
+            events.add(new ChgDtos.TimelineEvent(rs.getObject("updated_at", OffsetDateTime.class),
+                    "EXECUTE", "执行变更：" + actionLabel(action) + " " + rs.getString("object_code"),
+                    null, detail));
+        }, ecrId);
+    }
+
+    private static String workflowStage(String action) {
+        return switch (action) {
+            case "APPROVE" -> "APPROVE";
+            case "REJECT" -> "REJECT";
+            case "WITHDRAW" -> "WITHDRAW";
+            default -> "REVIEW";
+        };
+    }
+
+    private static String workflowTitle(String action) {
+        return switch (action) {
+            case "START" -> "提交审批（发起流程）";
+            case "APPROVE" -> "审批通过";
+            case "REJECT" -> "驳回";
+            case "WITHDRAW" -> "撤回流程";
+            case "ADD_SIGNER" -> "加签";
+            case "REMIND" -> "超时催办";
+            case "COMMENT" -> "审批意见";
+            default -> "流程事件 " + action;
+        };
+    }
+
+    private static String actionLabel(String action) {
+        return switch (action) {
+            case "REVISE" -> "升版";
+            case "OBSOLETE" -> "废弃";
+            case "RELEASE" -> "发布";
+            default -> action;
+        };
     }
 
     // ------------------------------------------------------------------ 工具

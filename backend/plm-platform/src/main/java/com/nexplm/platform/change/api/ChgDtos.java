@@ -99,4 +99,13 @@ public final class ChgDtos {
                             String code, String name, String lifecycleState,
                             int revision, int iteration, boolean linked) {
     }
+
+    /**
+     * 变更追踪时间线事件（申请 → 评审 → 通知 → 执行 → 关闭）。
+     * <p>{@code stage} 供前端配色：CREATE / REVIEW / APPROVE / REJECT / WITHDRAW /
+     * NOTICE / PROBLEM / EXECUTE / CLOSE。</p>
+     */
+    public record TimelineEvent(OffsetDateTime time, String stage, String title,
+                                String actorName, String detail) {
+    }
 }

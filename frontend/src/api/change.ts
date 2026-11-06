@@ -135,7 +135,20 @@ export interface ImpactRow {
   linked: boolean
 }
 
+/** 变更追踪时间线事件（申请→评审→通知→执行→关闭）。 */
+export interface TimelineEvent {
+  time: string | null
+  stage: 'CREATE' | 'REVIEW' | 'APPROVE' | 'REJECT' | 'WITHDRAW' | 'NOTICE' | 'PROBLEM' | 'EXECUTE' | 'CLOSE'
+  title: string
+  actorName?: string | null
+  detail?: string | null
+}
+
 export const changeApi = {
+  /** 变更追踪时间线：由 ECR / 流程意见 / 通知 / 问题 / 执行记录派生。 */
+  timeline(ecrId: string) {
+    return http.get<TimelineEvent[]>(`/chg/ecrs/${ecrId}/timeline`)
+  },
   impact(ecrId: string, depth = 3, viewType = 'DESIGN') {
     return http.get<ImpactRow[]>(`/chg/ecrs/${ecrId}/impact`, { depth, viewType })
   },

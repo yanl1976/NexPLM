@@ -222,6 +222,23 @@
             </template>
           </el-table>
         </div>
+        <div class="section">
+          <div class="section-title">变更追踪</div>
+          <el-timeline v-if="timelineRows.length">
+            <el-timeline-item
+              v-for="(item, index) in timelineRows"
+              :key="index"
+              :timestamp="formatTime(item.time)"
+              :type="stageType(item.stage)"
+              placement="top"
+            >
+              <div class="tl-title">{{ item.title }}</div>
+              <div v-if="item.actorName" class="tl-meta">操作人：{{ item.actorName }}</div>
+              <div v-if="item.detail" class="tl-meta">{{ item.detail }}</div>
+            </el-timeline-item>
+          </el-timeline>
+          <el-empty v-else description="暂无追踪记录" />
+        </div>
       </div>
     </el-drawer>
 
@@ -401,7 +418,8 @@ import {
   type EcrRow,
   type EcrSaveReq,
   type ImpactRow,
-  type ProblemRow
+  type ProblemRow,
+  type TimelineEvent
 } from '@/api/change'
 import { workflowApi, type ActorUserRow } from '@/api/workflow'
 import WorkflowPanel from '@/components/WorkflowPanel.vue'
@@ -439,6 +457,7 @@ const query = reactive({ keyword: '', status: '', page: 1, size: 20 })
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detail = ref<EcrDetail | null>(null)
+const timelineRows = ref<TimelineEvent[]>([])
 
 const formVisible = ref(false)
 const saving = ref(false)
@@ -534,11 +553,32 @@ async function openDetail(id: string): Promise<void> {
   detailVisible.value = true
   detailLoading.value = true
   try {
-    detail.value = await changeApi.detail(id)
+    const [ecr, timeline] = await Promise.all([changeApi.detail(id), changeApi.timeline(id)])
+    detail.value = ecr
+    timelineRows.value = timeline
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载详情失败')
   } finally {
     detailLoading.value = false
+  }
+}
+
+/** 时间线节点配色：批准/执行绿、驳回/撤回红、通知/问题橙、关闭灰。 */
+function stageType(stage: TimelineEvent['stage']): 'primary' | 'success' | 'warning' | 'danger' | 'info' {
+  switch (stage) {
+    case 'APPROVE':
+    case 'EXECUTE':
+      return 'success'
+    case 'REJECT':
+    case 'WITHDRAW':
+      return 'danger'
+    case 'NOTICE':
+    case 'PROBLEM':
+      return 'warning'
+    case 'CLOSE':
+      return 'info'
+    default:
+      return 'primary'
   }
 }
 
@@ -954,5 +994,17 @@ onMounted(load)
   display: flex;
   gap: 8px;
   margin-top: 12px;
+}
+
+.tl-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tl-meta {
+  margin-top: 2px;
+  color: #909399;
+  font-size: 12px;
+  word-break: break-all;
 }
 </style>
