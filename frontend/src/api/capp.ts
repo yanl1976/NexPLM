@@ -394,3 +394,84 @@ export const cardApi = {
     saveBlob(blob, fileName)
   }
 }
+
+// ---------------------------------------------------------------- 工时定额（P6-6）
+
+/** 定额规则：opType / workCenter 留空表示通配（两者都空 = 全局默认）。 */
+export interface TimeRuleRow {
+  id: string
+  code: string
+  name: string
+  opType?: string | null
+  workCenter?: string | null
+  setupBaseMinutes: number
+  setupFactor: number
+  runFactor: number
+  batchQty: number
+  priority: number
+  enabled: boolean
+  remark?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface TimeRuleSaveReq {
+  name: string
+  opType?: string | null
+  workCenter?: string | null
+  setupBaseMinutes?: number | null
+  setupFactor?: number | null
+  runFactor?: number | null
+  batchQty?: number | null
+  priority?: number | null
+  enabled?: boolean | null
+  remark?: string | null
+}
+
+/** 单道工序的定额明细（原始工时 → 定额工时）。 */
+export interface TimeStepRow {
+  seqNo: number
+  name: string
+  opType: string
+  workCenter?: string | null
+  rawSetup: number
+  rawRun: number
+  setupEffective: number
+  runEffective: number
+  ruleCode?: string | null
+  ruleName?: string | null
+}
+
+/** 试算结果：单件工时不含准备工时，批量工时 = 准备合计 + 单件 × 批量。 */
+export interface TimeCalcResult {
+  routingId: string
+  routingCode: string
+  objectCode?: string | null
+  objectName?: string | null
+  batchQty: number
+  steps: TimeStepRow[]
+  totalSetupEffective: number
+  singlePieceMinutes: number
+  batchMinutes: number
+  matchedSteps: number
+  unmatchedSteps: number
+}
+
+export const timeApi = {
+  list(params?: { keyword?: string; enabled?: boolean }): Promise<TimeRuleRow[]> {
+    return http.get<TimeRuleRow[]>(`/capp/time-rules`, params)
+  },
+  create(req: TimeRuleSaveReq): Promise<TimeRuleRow> {
+    return http.post<TimeRuleRow>(`/capp/time-rules`, req)
+  },
+  update(id: string, req: TimeRuleSaveReq): Promise<TimeRuleRow> {
+    return http.put<TimeRuleRow>(`/capp/time-rules/${id}`, req)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/capp/time-rules/${id}`)
+  },
+  /** 只读试算：规则或路线改动后重查即得新值。 */
+  calc(routingId: string, batchQty?: number): Promise<TimeCalcResult> {
+    return http.get<TimeCalcResult>(`/capp/time-calc`, { routingId, batchQty })
+  }
+}

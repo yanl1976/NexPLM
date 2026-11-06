@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -438,7 +439,94 @@ class CappSmokeTest {
         call(delete("/api/v1/capp/routings/{id}", routingId), admin, null);
     }
 
+    /**
+     * P6-6 工时定额：规则匹配优先级 + 单件/批量口径 + 规则改动后重算。
+     *
+     * <p>覆盖：工作中心+类型 &gt; 类型 &gt; 全局默认的命中顺序；准备工时基准与系数、单件系数；
+     * 单件工时合计不含准备工时；批量工时 = 准备合计 + 单件 × 批量；改系数后重算生效；
+     * 无规则时按原值且标注 unmatched。</p>
+     */
+    @Test
+    void timeRuleMatchingAndCalc() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long itemId = createItem(admin, "定额零件");
+        long routingId = call(post("/api/v1/capp/routings"), admin,
+                json(routing("定额路线", itemId, steps(
+                        step(10, "粗车", "MACHINING", "机加车间", 0.5, 1.5),
+                        step(20, "终检", "INSPECTION", "检验站", 0.1, 0.2))))).path("id").asLong();
+
+        long globalRule = call(post("/api/v1/capp/time-rules"), admin, json(timeRule(
+                "全局默认", null, null, "0.1", "1", "1", 100))).path("id").asLong();
+        long typeRule = call(post("/api/v1/capp/time-rules"), admin, json(timeRule(
+                "机加类型", "MACHINING", null, "0.2", "2", "1.5", 50))).path("id").asLong();
+        long centerRule = call(post("/api/v1/capp/time-rules"), admin, json(timeRule(
+                "机加车间", "MACHINING", "机加车间", "0.3", "1", "2", 100))).path("id").asLong();
+        assertThat(call(get("/api/v1/capp/time-rules"), admin, null)).hasSize(3);
+
+        // 工序1 命中「机加车间」（得分 3）：准备 0.3 + 0.5×1.0 = 0.80，单件 1.5×2.0 = 3.00
+        // 工序2 命中「全局默认」（得分 0）：准备 0.1 + 0.1×1.0 = 0.20，单件 0.2×1.0 = 0.20
+        JsonNode calc = call(get("/api/v1/capp/time-calc?routingId=" + routingId + "&batchQty=10"),
+                admin, null);
+        assertThat(calc.path("matchedSteps").asInt()).isEqualTo(2);
+        assertThat(calc.path("unmatchedSteps").asInt()).isZero();
+        assertThat(calc.path("steps").get(0).path("ruleCode").asText()).startsWith("TR-");
+        assertThat(calc.path("steps").get(0).path("setupEffective").asDouble()).isCloseTo(0.80, within(0.001));
+        assertThat(calc.path("steps").get(0).path("runEffective").asDouble()).isCloseTo(3.00, within(0.001));
+        assertThat(calc.path("steps").get(1).path("setupEffective").asDouble()).isCloseTo(0.20, within(0.001));
+        assertThat(calc.path("totalSetupEffective").asDouble()).isCloseTo(1.00, within(0.001));
+        assertThat(calc.path("singlePieceMinutes").asDouble()).isCloseTo(3.20, within(0.001));
+        // 批量 10：1.00 + 3.20×10
+        assertThat(calc.path("batchMinutes").asDouble()).isCloseTo(33.00, within(0.001));
+
+        // 改系数后重算：机加车间 runFactor 2.0 → 1.0，单件变 1.5+0.2=1.70，批量 = 1.00 + 17.00
+        call(put("/api/v1/capp/time-rules/{id}", centerRule), admin,
+                json(timeRule("机加车间", "MACHINING", "机加车间", "0.3", "1", "1", 100)));
+        JsonNode recalc = call(get("/api/v1/capp/time-calc?routingId=" + routingId + "&batchQty=10"),
+                admin, null);
+        assertThat(recalc.path("steps").get(0).path("runEffective").asDouble()).isCloseTo(1.50, within(0.001));
+        assertThat(recalc.path("singlePieceMinutes").asDouble()).isCloseTo(1.70, within(0.001));
+        assertThat(recalc.path("batchMinutes").asDouble()).isCloseTo(18.00, within(0.001));
+
+        // 系数非法（<= 0）被拒绝
+        Map<String, Object> badRule = timeRule("非法系数", null, null, "0", "0", "1", 100);
+        mockMvc.perform(post("/api/v1/capp/time-rules")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(badRule)))
+                .andExpect(status().isBadRequest());
+
+        // 删光规则 → 全部按原值并标注 unmatched
+        call(delete("/api/v1/capp/time-rules/{id}", globalRule), admin, null);
+        call(delete("/api/v1/capp/time-rules/{id}", typeRule), admin, null);
+        call(delete("/api/v1/capp/time-rules/{id}", centerRule), admin, null);
+        JsonNode plain = call(get("/api/v1/capp/time-calc?routingId=" + routingId + "&batchQty=10"),
+                admin, null);
+        assertThat(plain.path("matchedSteps").asInt()).isZero();
+        assertThat(plain.path("unmatchedSteps").asInt()).isEqualTo(2);
+        assertThat(plain.path("totalSetupEffective").asDouble()).isCloseTo(0.60, within(0.001));
+        assertThat(plain.path("singlePieceMinutes").asDouble()).isCloseTo(1.70, within(0.001));
+        assertThat(plain.path("batchMinutes").asDouble()).isCloseTo(17.60, within(0.001));
+
+        call(delete("/api/v1/capp/routings/{id}", routingId), admin, null);
+    }
+
     // ------------------------------------------------------------------ 工具
+
+    private Map<String, Object> timeRule(String name, String opType, String workCenter,
+                                         String setupBase, String setupFactor, String runFactor,
+                                         int priority) {
+        Map<String, Object> rule = new HashMap<>();
+        rule.put("name", name);
+        rule.put("opType", opType);
+        rule.put("workCenter", workCenter);
+        rule.put("setupBaseMinutes", new java.math.BigDecimal(setupBase));
+        rule.put("setupFactor", new java.math.BigDecimal(setupFactor));
+        rule.put("runFactor", new java.math.BigDecimal(runFactor));
+        rule.put("batchQty", 1);
+        rule.put("priority", priority);
+        rule.put("enabled", true);
+        return rule;
+    }
 
     private Map<String, Object> column(String field, String title, String align, int width) {
         Map<String, Object> column = new HashMap<>();

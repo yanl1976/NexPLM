@@ -66,6 +66,7 @@ public enum ErrorCode {
     CAPP_TEMPLATE_NOT_FOUND("CAPP.TEMPLATE.NOT_FOUND", "工艺卡片模板不存在", 404),
     CAPP_TEMPLATE_STATE_INVALID("CAPP.TEMPLATE.STATE.INVALID", "当前模板状态不允许该操作", 409),
     CAPP_CARD_NOT_FOUND("CAPP.CARD.NOT_FOUND", "工艺卡片不存在", 404),
+    CAPP_TIME_RULE_NOT_FOUND("CAPP.TIME_RULE.NOT_FOUND", "工时定额规则不存在", 404),
     CAPP_CARD_INVALID("CAPP.CARD.INVALID", "工艺卡片不合法", 400);
 
     private final String code;

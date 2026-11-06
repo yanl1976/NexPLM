@@ -98,6 +98,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '工艺卡片' }
       },
       {
+        path: 'capp/time',
+        name: 'capp-time',
+        component: () => import('@/views/capp/TimeView.vue'),
+        meta: { title: '工时定额' }
+      },
+      {
         path: 'workflow/definitions',
         name: 'workflow-definitions',
         component: () => import('@/views/workflow/DefinitionView.vue'),
