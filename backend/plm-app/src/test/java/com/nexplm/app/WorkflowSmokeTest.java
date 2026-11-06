@@ -65,6 +65,56 @@ class WorkflowSmokeTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    /**
+     * 选人检索 + 已走过节点：前端「加签选人」与「驳回选节点」依赖这两个接口。
+     * <p>关键点：选人走 {@code wf.task.read} 门槛，普通业务用户（非管理员）也能用。</p>
+     */
+    @Test
+    void actorUsersAndActivitiesFeedRejectPicker() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long pickerId = createUser(admin, "wf_picker", "选人可用");
+        String picker = login("wf_picker", "Passw0rd!");
+
+        // 1. 非管理员也能选人（对比 /system/users 需要 system.user.manage）
+        JsonNode users = call(get("/api/v1/workflow/actors/users").param("keyword", "wf_picker"), picker, null);
+        assertThat(users.size()).isEqualTo(1);
+        assertThat(users.get(0).path("username").asText()).isEqualTo("wf_picker");
+        assertThat(users.get(0).path("id").asLong()).isEqualTo(pickerId);
+
+        // 2. 发起并初审通过，历史节点应含初审与会签
+        long itemId = createItem(admin, "选人零件");
+        JsonNode started = start(admin, itemId, adminId, List.of(adminId, pickerId));
+        String pid = started.path("processInstanceId").asText();
+        call(post("/api/v1/workflow/tasks/{taskId}/complete",
+                        started.path("activeTasks").get(0).path("taskId").asText()), admin,
+                json(Map.of("comment", "初审通过")));
+
+        JsonNode activities = call(get("/api/v1/workflow/instances/{id}/activities", pid), admin, null);
+        assertThat(activities.findValuesAsText("key")).contains("initialReview", "countersign");
+
+        // 3. 详情补全发起人姓名与意见人姓名，前端不再展示裸 id
+        JsonNode detail = call(get("/api/v1/workflow/instances/{id}", pid), admin, null);
+        assertThat(detail.path("startedByName").asText()).isNotBlank();
+        boolean hasCommentUserNames = false;
+        for (JsonNode comment : detail.path("comments")) {
+            if (!comment.path("userName").asText().isEmpty()) {
+                hasCommentUserNames = true;
+                break;
+            }
+        }
+        assertThat(hasCommentUserNames).isTrue();
+
+        // 4. 对象维度实例列表（对象详情「审批」页签）
+        JsonNode instances = call(get("/api/v1/workflow/instances")
+                        .param("objectType", "PdmItem").param("objectId", String.valueOf(itemId)),
+                admin, null);
+        assertThat(instances.size()).isEqualTo(1);
+        assertThat(instances.get(0).path("processInstanceId").asText()).isEqualTo(pid);
+        assertThat(instances.get(0).path("status").asText()).isEqualTo("RUNNING");
+        assertThat(instances.get(0).path("currentActivities").size()).isGreaterThan(0);
+    }
+
     @Test
     void countersignPassesOnlyWhenAllApprove() throws Exception {
         String admin = login("admin", "Admin@12345");

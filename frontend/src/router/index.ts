@@ -56,6 +56,24 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '工作空间' }
       },
       {
+        path: 'workflow',
+        name: 'workflow-center',
+        component: () => import('@/views/workflow/WorkflowCenterView.vue'),
+        meta: { title: '流程中心' }
+      },
+      {
+        path: 'workflow/instance/:id',
+        name: 'workflow-instance',
+        component: () => import('@/views/workflow/WorkflowInstanceView.vue'),
+        meta: { title: '流程详情' }
+      },
+      {
+        path: 'workflow/delegate',
+        name: 'workflow-delegate',
+        component: () => import('@/views/workflow/DelegateView.vue'),
+        meta: { title: '委托设置' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),

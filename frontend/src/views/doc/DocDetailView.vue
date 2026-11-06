@@ -151,14 +151,12 @@
             </template>
           </el-table>
 
-          <div v-else-if="tab.tabType === 'WORKFLOW'" class="placeholder">
-            <el-empty description="审批流程将在 P4 阶段接入，当前文档尚未进入流程">
-              <el-descriptions :column="1" border>
-                <el-descriptions-item label="流程状态">{{ detail?.workflowState || 'NONE' }}</el-descriptions-item>
-                <el-descriptions-item label="生命周期">{{ stateLabel(detail?.lifecycleState) }}</el-descriptions-item>
-              </el-descriptions>
-            </el-empty>
-          </div>
+          <workflow-panel
+            v-else-if="tab.tabType === 'WORKFLOW'"
+            object-type="PdmDoc"
+            :object-id="docId"
+            @changed="load"
+          />
 
           <el-table v-else-if="tab.tabType === 'ACL'" v-loading="subLoading" :data="aclRows" border>
             <el-table-column label="被授权者类型" width="130">
@@ -373,6 +371,7 @@ import {
 } from '@/api/doc'
 import { metaApi, type MetaTabDef } from '@/api/system'
 import { workspaceApi } from '@/api/workspace'
+import WorkflowPanel from '@/components/WorkflowPanel.vue'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()

@@ -265,6 +265,10 @@
             </template>
           </el-table>
         </el-tab-pane>
+
+        <el-tab-pane label="审批" name="workflow">
+          <workflow-panel object-type="PdmItem" :object-id="itemId" @changed="load" />
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -680,6 +684,7 @@ import {
   type WhereUsedRow
 } from '@/api/item'
 import { DOC_STATE_LABEL } from '@/api/doc'
+import WorkflowPanel from '@/components/WorkflowPanel.vue'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()

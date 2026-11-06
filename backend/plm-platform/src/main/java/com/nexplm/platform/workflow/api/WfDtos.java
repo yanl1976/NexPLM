@@ -40,6 +40,14 @@ public final class WfDtos {
     public record AssigneeTypeRow(String type, String label) {
     }
 
+    /**
+     * 选人用的精简用户项。
+     * <p>与用户管理页的 {@code IamDtos.UserRow} 区分：只暴露选人所必需的三列，
+     * 且不要求 {@code system.user.manage} 权限（对齐旧系统「登录即可选人」）。</p>
+     */
+    public record ActorUserRow(Long id, String username, String displayName) {
+    }
+
     public record StartResp(String processInstanceId, String processKey, String businessKey,
                             List<TaskRow> activeTasks) {
     }
@@ -132,13 +140,21 @@ public final class WfDtos {
     }
 
     public record CommentRow(String taskId, String taskKey, String action, String comment,
-                             Long userId, OffsetDateTime createdAt) {
+                             Long userId, String userName, OffsetDateTime createdAt) {
     }
 
     public record InstanceDetail(String processInstanceId, String processKey, String businessKey,
                                  String objectType, Long objectId, String objectCode, String objectName,
-                                 String status, Long startedBy, OffsetDateTime startedAt, OffsetDateTime endedAt,
+                                 String status, Long startedBy, String startedByName,
+                                 OffsetDateTime startedAt, OffsetDateTime endedAt,
                                  List<TaskRow> activeTasks, List<CommentRow> comments) {
+    }
+
+    /**
+     * 流程已走过的用户任务节点（供驳回选择目标节点）。
+     * <p>只列历史出现过的节点，避免前端把用户指到从未执行过的节点。</p>
+     */
+    public record ActivityRow(String key, String name, OffsetDateTime firstEnteredAt) {
     }
 
     public record PageResult<T>(long total, List<T> items) {

@@ -35,6 +35,14 @@
           </template>
           <el-menu-item index="/item">零部件</el-menu-item>
         </el-sub-menu>
+        <el-sub-menu index="/wf">
+          <template #title>
+            <el-icon><Checked /></el-icon>
+            <span>流程审批</span>
+          </template>
+          <el-menu-item index="/workflow">流程中心</el-menu-item>
+          <el-menu-item index="/workflow/delegate">委托设置</el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/change" disabled>
           <el-icon><Refresh /></el-icon>
           <span>变更管理（P5）</span>
@@ -71,6 +79,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Calendar,
+  Checked,
   Document,
   HomeFilled,
   Operation,
@@ -93,6 +102,12 @@ const activeMenu = computed(() => {
   }
   if (route.path.startsWith('/item')) {
     return '/item'
+  }
+  if (route.path === '/workflow/delegate') {
+    return '/workflow/delegate'
+  }
+  if (route.path.startsWith('/workflow')) {
+    return '/workflow'
   }
   return route.path
 })

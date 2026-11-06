@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -352,16 +353,18 @@ public class WorkflowService {
     public WfDtos.InstanceDetail instance(String processInstanceId) {
         List<WfDtos.InstanceDetail> rows = jdbcTemplate.query("""
                         SELECT l.process_instance_id, l.process_key, l.business_key, l.object_type, l.object_id,
-                               l.status, l.started_by, l.started_at, l.ended_at, o.code, o.name
+                               l.status, l.started_by, su.display_name AS started_by_name,
+                               l.started_at, l.ended_at, o.code, o.name
                           FROM wf_instance_link l
                           LEFT JOIN plm_object o ON o.id = l.object_id
+                          LEFT JOIN sys_user su ON su.id = l.started_by
                          WHERE l.process_instance_id = ?
                         """,
                 (rs, rowNum) -> new WfDtos.InstanceDetail(
                         rs.getString("process_instance_id"), rs.getString("process_key"),
                         rs.getString("business_key"), rs.getString("object_type"), rs.getLong("object_id"),
                         rs.getString("code"), rs.getString("name"), rs.getString("status"),
-                        rs.getLong("started_by"),
+                        rs.getLong("started_by"), rs.getString("started_by_name"),
                         rs.getObject("started_at", OffsetDateTime.class),
                         rs.getObject("ended_at", OffsetDateTime.class),
                         List.of(), List.of()),
@@ -374,8 +377,25 @@ public class WorkflowService {
                 .processInstanceId(processInstanceId).count() > 0;
         return new WfDtos.InstanceDetail(base.processInstanceId(), base.processKey(), base.businessKey(),
                 base.objectType(), base.objectId(), base.objectCode(), base.objectName(),
-                running ? "RUNNING" : finalStatus(processInstanceId), base.startedBy(),
+                running ? "RUNNING" : finalStatus(processInstanceId), base.startedBy(), base.startedByName(),
                 base.startedAt(), base.endedAt(), activeTasks(processInstanceId), comments(processInstanceId));
+    }
+
+    /**
+     * 已走过的用户任务节点（驳回目标候选）。
+     * <p>取历史活动实例去重：只暴露「曾经进入过」的 userTask，防止把流程指到从未执行过的节点。</p>
+     */
+    public List<WfDtos.ActivityRow> activities(String processInstanceId) {
+        Map<String, WfDtos.ActivityRow> unique = new LinkedHashMap<>();
+        historyService.createHistoricActivityInstanceQuery()
+                .processInstanceId(processInstanceId)
+                .activityType("userTask")
+                .orderByHistoricActivityInstanceStartTime().asc()
+                .list()
+                .forEach(activity -> unique.putIfAbsent(activity.getActivityId(),
+                        new WfDtos.ActivityRow(activity.getActivityId(), activity.getActivityName(),
+                                toOffsetDateTime(activity.getStartTime()))));
+        return new ArrayList<>(unique.values());
     }
 
     /** 已办：历史任务（按结束时间倒序）。 */
@@ -440,6 +460,39 @@ public class WorkflowService {
                         activities.getOrDefault(row.processInstanceId(), List.of())))
                 .toList();
         return new WfDtos.PageResult<>(total == null ? 0 : total, enriched);
+    }
+
+    /**
+     * 某个业务对象的流程实例列表（对象详情页「审批」页签用）。
+     * <p>对象维度的实例通常很少，不做分页；按发起时间倒序。</p>
+     */
+    public List<WfDtos.InstanceRow> objectInstances(String objectType, Long objectId) {
+        List<WfDtos.InstanceRow> rows = jdbcTemplate.query("""
+                        SELECT l.process_instance_id, l.process_key, l.object_type, l.object_id, l.status,
+                               l.started_by, l.started_at, l.ended_at, o.code, o.name
+                          FROM wf_instance_link l
+                          LEFT JOIN plm_object o ON o.id = l.object_id
+                         WHERE l.object_type = ? AND l.object_id = ?
+                         ORDER BY l.started_at DESC
+                        """,
+                (rs, rowNum) -> new WfDtos.InstanceRow(rs.getString("process_instance_id"),
+                        rs.getString("process_key"), rs.getString("object_type"), rs.getLong("object_id"),
+                        rs.getString("code"), rs.getString("name"), rs.getString("status"),
+                        rs.getLong("started_by"),
+                        rs.getObject("started_at", OffsetDateTime.class),
+                        rs.getObject("ended_at", OffsetDateTime.class), List.of()),
+                objectType, objectId);
+        if (rows.isEmpty()) {
+            return rows;
+        }
+        Map<String, List<String>> activities = loadActiveActivities(
+                rows.stream().map(WfDtos.InstanceRow::processInstanceId).toList());
+        return rows.stream()
+                .map(row -> new WfDtos.InstanceRow(row.processInstanceId(), row.processKey(),
+                        row.objectType(), row.objectId(), row.objectCode(), row.objectName(), row.status(),
+                        row.startedBy(), row.startedAt(), row.endedAt(),
+                        activities.getOrDefault(row.processInstanceId(), List.of())))
+                .toList();
     }
 
     /**
@@ -531,6 +584,33 @@ public class WorkflowService {
         return assigneeResolvers.supported().stream()
                 .map(info -> new WfDtos.AssigneeTypeRow(info.type(), info.label()))
                 .toList();
+    }
+
+    /**
+     * 选人用的用户检索：仅返回启用状态、未删除的同公司用户。
+     *
+     * <p>与 {@code /system/users} 的区别是权限门槛为 {@code wf.task.read}，
+     * 普通审批人也能选人（对齐旧系统「登录即可选人」的交互，见 EXP-20261106-12）。</p>
+     */
+    public List<WfDtos.ActorUserRow> searchActorUsers(Long companyId, String keyword, int limit) {
+        int max = Math.min(Math.max(limit, 1), 100);
+        String sqlBase = """
+                SELECT id, username, display_name
+                  FROM sys_user
+                 WHERE company_id = ? AND deleted = false AND status = 'ACTIVE'
+                """;
+        if (keyword == null || keyword.isBlank()) {
+            return jdbcTemplate.query(sqlBase + " ORDER BY display_name LIMIT ?",
+                    (rs, rowNum) -> new WfDtos.ActorUserRow(
+                            rs.getLong("id"), rs.getString("username"), rs.getString("display_name")),
+                    companyId, max);
+        }
+        String like = "%" + keyword.trim() + "%";
+        return jdbcTemplate.query(sqlBase
+                        + " AND (username ILIKE ? OR display_name ILIKE ?) ORDER BY display_name LIMIT ?",
+                (rs, rowNum) -> new WfDtos.ActorUserRow(
+                        rs.getLong("id"), rs.getString("username"), rs.getString("display_name")),
+                companyId, like, like, max);
     }
 
     /** 初审人：优先执行人声明（必须解析为唯一用户），否则用显式 approverId。 */
@@ -678,14 +758,16 @@ public class WorkflowService {
 
     private List<WfDtos.CommentRow> comments(String processInstanceId) {
         return jdbcTemplate.query("""
-                        SELECT task_id, task_key, action, comment_text, user_id, created_at
-                          FROM wf_comment
-                         WHERE process_instance_id = ?
-                         ORDER BY created_at, id
+                        SELECT c.task_id, c.task_key, c.action, c.comment_text, c.user_id,
+                               u.display_name AS user_name, c.created_at
+                          FROM wf_comment c
+                          LEFT JOIN sys_user u ON u.id = c.user_id
+                         WHERE c.process_instance_id = ?
+                         ORDER BY c.created_at, c.id
                         """,
                 (rs, rowNum) -> new WfDtos.CommentRow(rs.getString("task_id"), rs.getString("task_key"),
                         rs.getString("action"), rs.getString("comment_text"), rs.getLong("user_id"),
-                        rs.getObject("created_at", OffsetDateTime.class)),
+                        rs.getString("user_name"), rs.getObject("created_at", OffsetDateTime.class)),
                 processInstanceId);
     }
 

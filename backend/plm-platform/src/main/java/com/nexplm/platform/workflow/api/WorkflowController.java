@@ -66,6 +66,14 @@ public class WorkflowController {
         return Result.ok(workflowService.startedInstances(CurrentUser.userId(), page, size));
     }
 
+    @Operation(summary = "业务对象的流程实例列表（对象详情审批页签）")
+    @GetMapping("/instances")
+    @PreAuthorize("hasAuthority('wf.task.read')")
+    public Result<List<WfDtos.InstanceRow>> objectInstances(@RequestParam String objectType,
+                                                            @RequestParam Long objectId) {
+        return Result.ok(workflowService.objectInstances(objectType, objectId));
+    }
+
     @Operation(summary = "批量办理（逐条独立，失败项回带原因）")
     @PostMapping("/tasks/batch-complete")
     @PreAuthorize("hasAuthority('wf.task.audit')")
@@ -110,6 +118,13 @@ public class WorkflowController {
         return Result.ok(workflowService.instance(id));
     }
 
+    @Operation(summary = "已走过的用户任务节点（驳回目标候选）")
+    @GetMapping("/instances/{id}/activities")
+    @PreAuthorize("hasAuthority('wf.task.read')")
+    public Result<List<WfDtos.ActivityRow>> activities(@PathVariable String id) {
+        return Result.ok(workflowService.activities(id));
+    }
+
     @Operation(summary = "流程绑定列表")
     @GetMapping("/bindings")
     @PreAuthorize("hasAuthority('wf.process.manage')")
@@ -138,6 +153,14 @@ public class WorkflowController {
     @PreAuthorize("hasAuthority('wf.task.read')")
     public Result<List<WfDtos.AssigneeTypeRow>> assigneeTypes() {
         return Result.ok(workflowService.assigneeTypes());
+    }
+
+    @Operation(summary = "可指派人员检索（选人用；普通审批人可用，不要求用户管理权限）")
+    @GetMapping("/actors/users")
+    @PreAuthorize("hasAuthority('wf.task.read')")
+    public Result<List<WfDtos.ActorUserRow>> actorUsers(@RequestParam(required = false) String keyword,
+                                                        @RequestParam(defaultValue = "50") int limit) {
+        return Result.ok(workflowService.searchActorUsers(CurrentUser.companyId(), keyword, limit));
     }
 
     @Operation(summary = "超时催办（扫描超过 N 小时未办理的任务并留痕，同窗口内幂等）")
