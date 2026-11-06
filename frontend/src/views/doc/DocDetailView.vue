@@ -8,8 +8,8 @@
             <span class="code">{{ detail?.code }}</span>
             <span class="name">{{ detail?.name }}</span>
             <el-tag size="small" type="info">{{ detail?.revisionLabel }}</el-tag>
-            <el-tag size="small" :type="stateTag(detail?.lifecycleState)">{{ stateLabel(detail?.lifecycleState) }}</el-tag>
-            <el-tag v-if="!detail?.isLatest" size="small" type="warning">历史版本</el-tag>
+            <StatusDot :status="detail?.lifecycleState" :label="stateLabel(detail?.lifecycleState)" />
+            <StatusDot v-if="!detail?.isLatest" tone="warn" label="历史版本" />
           </div>
           <div>
             <el-button @click="openPreview()">预览</el-button>
@@ -102,12 +102,12 @@
             <el-table-column prop="revisionLabel" label="版本" width="100" />
             <el-table-column label="状态" width="120">
               <template #default="{ row }">
-                <el-tag size="small" :type="stateTag(row.lifecycleState)">{{ stateLabel(row.lifecycleState) }}</el-tag>
+                <StatusDot :status="row.lifecycleState" :label="stateLabel(row.lifecycleState)" />
               </template>
             </el-table-column>
             <el-table-column label="是否最新" width="110">
               <template #default="{ row }">
-                <el-tag v-if="row.isLatest" size="small" type="success">最新</el-tag>
+                <StatusDot v-if="row.isLatest" tone="ok" label="最新" />
                 <span v-else>-</span>
               </template>
             </el-table-column>
@@ -136,7 +136,7 @@
             <el-table-column prop="revisionLabel" label="版本" width="90" />
             <el-table-column label="状态" width="110">
               <template #default="{ row }">
-                <el-tag size="small" :type="stateTag(row.lifecycleState)">{{ stateLabel(row.lifecycleState) }}</el-tag>
+                <StatusDot :status="row.lifecycleState" :label="stateLabel(row.lifecycleState)" />
               </template>
             </el-table-column>
             <el-table-column label="操作" width="100" fixed="right">
@@ -168,9 +168,10 @@
             <el-table-column prop="actions" label="操作" min-width="160" />
             <el-table-column label="效果" width="100">
               <template #default="{ row }">
-                <el-tag size="small" :type="row.effect === 'DENY' ? 'danger' : 'success'">
-                  {{ row.effect === 'DENY' ? '拒绝' : '允许' }}
-                </el-tag>
+                <StatusDot
+                  :tone="row.effect === 'DENY' ? 'danger' : 'ok'"
+                  :label="row.effect === 'DENY' ? '拒绝' : '允许'"
+                />
               </template>
             </el-table-column>
             <el-table-column label="来源" width="110">
@@ -209,9 +210,10 @@
             </el-table-column>
             <el-table-column label="结果" width="90">
               <template #default="{ row }">
-                <el-tag size="small" :type="row.result === 'SUCCESS' ? 'success' : 'danger'">
-                  {{ row.result === 'SUCCESS' ? '成功' : row.result || '-' }}
-                </el-tag>
+                <StatusDot
+                  :tone="row.result === 'SUCCESS' ? 'ok' : 'danger'"
+                  :label="row.result === 'SUCCESS' ? '成功' : row.result || '-'"
+                />
               </template>
             </el-table-column>
             <el-table-column prop="detail" label="详情" min-width="220" show-overflow-tooltip />
@@ -372,6 +374,7 @@ import {
 import { metaApi, type MetaTabDef } from '@/api/system'
 import { workspaceApi } from '@/api/workspace'
 import WorkflowPanel from '@/components/WorkflowPanel.vue'
+import StatusDot from '@/components/StatusDot.vue'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
@@ -490,18 +493,6 @@ function stateLabel(value?: string): string {
   return value ? DOC_STATE_LABEL[value] ?? value : '-'
 }
 
-function stateTag(state?: string): 'success' | 'info' | 'warning' | 'danger' {
-  if (state === 'Released') {
-    return 'success'
-  }
-  if (state === 'InWorkflow') {
-    return 'warning'
-  }
-  if (state === 'Obsolete') {
-    return 'danger'
-  }
-  return 'info'
-}
 
 async function load(): Promise<void> {
   if (!docId.value) {

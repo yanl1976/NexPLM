@@ -8,10 +8,12 @@
             <span class="code">{{ detail?.code }}</span>
             <span class="name">{{ detail?.name }}</span>
             <el-tag size="small" type="info">{{ detail?.revisionLabel }}</el-tag>
-            <el-tag size="small" :type="stateTag(detail?.lifecycleState)">{{ stateLabel(detail?.lifecycleState) }}</el-tag>
-            <el-tag v-if="detail" size="small" :type="detail.sourceType === 'BUY' ? 'warning' : 'success'">
-              {{ ITEM_SOURCE_LABEL[detail.sourceType] ?? detail.sourceType }}
-            </el-tag>
+            <StatusDot :status="detail?.lifecycleState" :label="stateLabel(detail?.lifecycleState)" />
+            <StatusDot
+              v-if="detail"
+              :tone="detail.sourceType === 'BUY' ? 'warn' : 'ok'"
+              :label="ITEM_SOURCE_LABEL[detail.sourceType] ?? detail.sourceType"
+            />
           </div>
           <div>
             <el-button v-if="canWrite" @click="openEdit">编辑属性</el-button>
@@ -685,6 +687,7 @@ import {
 } from '@/api/item'
 import { DOC_STATE_LABEL } from '@/api/doc'
 import WorkflowPanel from '@/components/WorkflowPanel.vue'
+import StatusDot from '@/components/StatusDot.vue'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -808,18 +811,6 @@ function stateLabel(state?: string | null): string {
   return state ? DOC_STATE_LABEL[state] ?? state : '-'
 }
 
-function stateTag(state?: string | null): 'success' | 'info' | 'warning' | 'danger' {
-  switch (state) {
-    case 'Released':
-      return 'success'
-    case 'InWorkflow':
-      return 'warning'
-    case 'Obsolete':
-      return 'danger'
-    default:
-      return 'info'
-  }
-}
 
 function formatTime(value?: string | null): string {
   return value ? value.replace('T', ' ').slice(0, 19) : '-'

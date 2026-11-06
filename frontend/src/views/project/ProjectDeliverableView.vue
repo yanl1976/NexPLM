@@ -3,9 +3,10 @@
     <div class="toolbar">
       <el-button link type="primary" @click="back">← 返回项目列表</el-button>
       <span class="prj-title">{{ board?.projectCode }} {{ board?.projectName }}</span>
-      <el-tag :type="board?.ready ? 'success' : 'danger'" size="small">
-        {{ board?.ready ? '交付物齐套' : `缺 ${board?.missingTotal ?? 0} 项` }}
-      </el-tag>
+      <StatusDot
+        :tone="board?.ready ? 'ok' : 'danger'"
+        :label="board?.ready ? '交付物齐套' : `缺 ${board?.missingTotal ?? 0} 项`"
+      />
       <el-button @click="load">刷新</el-button>
       <span class="hint">齐套只看「必需输出」：对象已删除/已废弃算缺件，未发布只提醒不拦提交</span>
     </div>
@@ -56,9 +57,7 @@
               <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip />
               <el-table-column label="对象状态" width="110" align="center">
                 <template #default="{ row: item }">
-                  <el-tag :type="stateTagType(item.state)" size="small">
-                    {{ DELIVERABLE_STATE_LABEL[item.state] ?? item.state }}
-                  </el-tag>
+                  <StatusDot :tone="stateTone(item.state)" :label="DELIVERABLE_STATE_LABEL[item.state] ?? item.state" />
                 </template>
               </el-table-column>
               <el-table-column label="齐套必需" width="100" align="center">
@@ -93,9 +92,7 @@
       <el-table-column prop="taskName" label="任务名称" min-width="220" show-overflow-tooltip />
       <el-table-column label="任务状态" width="100" align="center">
         <template #default="{ row }">
-          <el-tag :type="statusTagType(row.status)" size="small">
-            {{ TASK_STATUS_LABEL[row.status] ?? row.status }}
-          </el-tag>
+          <StatusDot :tone="statusTone(row.status)" :label="TASK_STATUS_LABEL[row.status] ?? row.status" />
         </template>
       </el-table-column>
       <el-table-column label="必需输出" width="110" align="center">
@@ -103,7 +100,7 @@
       </el-table-column>
       <el-table-column label="齐套情况" width="150" align="center">
         <template #default="{ row }">
-          <el-tag :type="completenessTagType(row)" size="small">{{ completenessText(row) }}</el-tag>
+          <StatusDot :tone="completenessTone(row)" :label="completenessText(row)" />
         </template>
       </el-table-column>
       <el-table-column v-if="canWrite" label="操作" width="110" align="center">
@@ -187,6 +184,7 @@ import {
   type TaskCompleteness,
   type TaskStatus
 } from '@/api/project'
+import StatusDot from '@/components/StatusDot.vue'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -330,37 +328,37 @@ function completenessText(task: TaskCompleteness): string {
   return '齐套'
 }
 
-function completenessTagType(task: TaskCompleteness): 'success' | 'warning' | 'danger' | 'info' {
+function completenessTone(task: TaskCompleteness): 'ok' | 'warn' | 'danger' | 'muted' {
   if (task.missingCount > 0) {
     return 'danger'
   }
   if (task.requiredCount === 0) {
-    return 'info'
+    return 'muted'
   }
-  return task.unreleasedCount > 0 ? 'warning' : 'success'
+  return task.unreleasedCount > 0 ? 'warn' : 'ok'
 }
 
-function stateTagType(state: string): 'success' | 'warning' | 'danger' | 'info' {
+function stateTone(state: string): 'ok' | 'warn' | 'danger' {
   if (state === 'OK') {
-    return 'success'
+    return 'ok'
   }
   if (state === 'UNRELEASED') {
-    return 'warning'
+    return 'warn'
   }
   return 'danger'
 }
 
-function statusTagType(value: TaskStatus): 'success' | 'info' | 'warning' | 'danger' {
+function statusTone(value: TaskStatus): 'ok' | 'warn' | 'danger' | 'running' | 'muted' {
   if (value === 'DONE') {
-    return 'success'
+    return 'ok'
   }
   if (value === 'SUBMITTED') {
-    return 'warning'
+    return 'warn'
   }
   if (value === 'BLOCKED') {
     return 'danger'
   }
-  return value === 'IN_PROGRESS' ? 'warning' : 'info'
+  return value === 'IN_PROGRESS' ? 'running' : 'muted'
 }
 </script>
 

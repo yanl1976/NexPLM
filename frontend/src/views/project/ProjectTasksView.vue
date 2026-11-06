@@ -3,7 +3,7 @@
     <div class="toolbar">
       <el-button link type="primary" @click="back">← 返回项目列表</el-button>
       <span class="prj-title">{{ board?.projectCode }} {{ board?.projectName }}</span>
-      <el-tag type="success" size="small">项目进度 {{ board?.projectProgress ?? 0 }}%</el-tag>
+      <StatusDot tone="ok" :label="`项目进度 ${board?.projectProgress ?? 0}%`" />
       <el-button v-if="canWrite" type="primary" plain @click="openCreate(null)">新增一级任务</el-button>
       <el-button v-if="canWrite" :loading="resequencing" @click="onResequence">WBS 编码重排</el-button>
       <el-button type="success" plain @click="openDeliverables">交付物与齐套</el-button>
@@ -23,9 +23,7 @@
           </el-table-column>
           <el-table-column label="状态" width="90" align="center">
             <template #default="{ row }">
-              <el-tag :type="statusTagType(row.status)" size="small">
-                {{ TASK_STATUS_LABEL[row.status] ?? row.status }}
-              </el-tag>
+              <StatusDot :tone="statusTone(row.status)" :label="TASK_STATUS_LABEL[row.status] ?? row.status" />
             </template>
           </el-table-column>
           <el-table-column label="计划起止" width="190" align="center">
@@ -285,6 +283,7 @@ import {
   type TaskStatus
 } from '@/api/project'
 import { workflowApi, type ActorUserRow } from '@/api/workflow'
+import StatusDot from '@/components/StatusDot.vue'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -693,14 +692,17 @@ async function onDeleteDep(dep: TaskDependency): Promise<void> {
   }
 }
 
-function statusTagType(value: TaskStatus): 'success' | 'info' | 'warning' | 'danger' {
+function statusTone(value: TaskStatus): 'ok' | 'warn' | 'danger' | 'running' | 'muted' {
   if (value === 'DONE') {
-    return 'success'
+    return 'ok'
+  }
+  if (value === 'SUBMITTED') {
+    return 'warn'
   }
   if (value === 'BLOCKED') {
     return 'danger'
   }
-  return value === 'IN_PROGRESS' ? 'warning' : 'info'
+  return value === 'IN_PROGRESS' ? 'running' : 'muted'
 }
 </script>
 
