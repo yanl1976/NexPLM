@@ -64,9 +64,10 @@
         </el-table-column>
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)" size="small">
-              {{ PROJECT_STATUS_LABEL[row.status as ProjectStatus] ?? row.status }}
-            </el-tag>
+            <StatusDot
+              :tone="statusTone(row.status)"
+              :label="PROJECT_STATUS_LABEL[row.status as ProjectStatus] ?? row.status"
+            />
           </template>
         </el-table-column>
         <el-table-column label="优先级" width="80" align="center">
@@ -317,6 +318,7 @@ import {
   type ProjectTemplateRow
 } from '@/api/project'
 import { workflowApi, type ActorUserRow } from '@/api/workflow'
+import StatusDot from '@/components/StatusDot.vue'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -763,14 +765,14 @@ async function onEpsDelete(): Promise<void> {
   }
 }
 
-function statusTagType(value: ProjectStatus): 'success' | 'info' | 'warning' | 'danger' {
+function statusTone(value: ProjectStatus): 'ok' | 'danger' | 'running' | 'muted' {
   if (value === 'ACTIVE') {
-    return 'success'
+    return 'ok'
   }
   if (value === 'CLOSED') {
-    return 'info'
+    return 'muted'
   }
-  return value === 'PAUSED' ? 'danger' : 'warning'
+  return value === 'PAUSED' ? 'danger' : 'running'
 }
 </script>
 

@@ -1,0 +1,216 @@
+/*
+ * NexPLM 设计令牌（见 docs/09-UI风格分析与融合方案.md）
+ *
+ * 来源：旧系统 PLMSOFT 的 BasePage.css（微软雅黑 12px、#479CD1 主色、#D8F0FC 选中、#FFFFCC 高亮）
+ *      + SIPM 方案截图（深蓝品牌条、红黄绿灯、密集表格、差异并排对比）。
+ * 原则：信息密度优先，圆角近直角，用细线而不是阴影，状态用色点而不是彩色大标签。
+ */
+
+:root {
+  /* ---- 基础排版 ---- */
+  --plm-font-family: 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', 'Segoe UI', sans-serif;
+  --plm-font-base: 12px;
+  --plm-font-table: 13px;
+  --plm-line-height: 20px;
+
+  /* ---- 色彩 ---- */
+  --plm-primary: #1f5c8b;
+  --plm-primary-hover: #2e76ae;
+  --plm-primary-light: #d8f0fc;      /* 旧系统选中/悬停浅蓝 */
+  --plm-highlight: #fff8d6;           /* 差异/命中高亮浅黄 */
+  --plm-topbar-from: #1b3a57;
+  --plm-topbar-to: #24557d;
+  --plm-sider-bg: #f7f9fb;
+  --plm-border: #dde4ec;
+  --plm-border-light: #e8edf3;
+  --plm-table-head: #eef2f6;
+  --plm-bg-page: #f2f5f8;
+  --plm-text-primary: #24313f;
+  --plm-text-regular: #4a5a6a;
+  --plm-text-secondary: #7b8a9a;
+
+  /* ---- 状态语义（SIPM 红黄绿灯 + 色点） ---- */
+  --plm-ok: #2e9e5b;
+  --plm-running: #1f7ac0;
+  --plm-warn: #e6a23c;
+  --plm-danger: #d64541;
+  --plm-muted: #8a94a6;
+
+  /* ---- 密度 ---- */
+  --plm-space-1: 4px;
+  --plm-space-2: 8px;
+  --plm-space-3: 12px;
+  --plm-row-height: 28px;
+  --plm-radius: 2px;
+  --plm-topbar-height: 44px;
+  --plm-sider-width: 200px;
+  --plm-sider-collapsed: 48px;
+}
+
+/* ===================== Element Plus 变量覆盖 ===================== */
+:root {
+  --el-color-primary: #1f5c8b;
+  --el-color-primary-light-3: #2e76ae;
+  --el-color-primary-light-5: #6b9dc0;
+  --el-color-primary-light-7: #b3d0e4;
+  --el-color-primary-light-8: #d8f0fc;
+  --el-color-primary-light-9: #eaf5fc;
+  --el-color-success: #2e9e5b;
+  --el-color-warning: #e6a23c;
+  --el-color-danger: #d64541;
+  --el-color-error: #d64541;
+  --el-font-family: var(--plm-font-family);
+  --el-font-size-base: var(--plm-font-base);
+  --el-font-size-small: 12px;
+  --el-font-size-extra-small: 11px;
+  --el-border-radius-base: var(--plm-radius);
+  --el-border-radius-small: var(--plm-radius);
+  --el-border-color: var(--plm-border);
+  --el-border-color-light: var(--plm-border);
+  --el-border-color-lighter: var(--plm-border-light);
+  --el-text-color-primary: var(--plm-text-primary);
+  --el-text-color-regular: var(--plm-text-regular);
+  --el-text-color-secondary: var(--plm-text-secondary);
+  --el-fill-color-light: #f5fafe;
+  --el-fill-color-blank: #fff;
+  --el-bg-color-page: #f2f5f8;
+  --el-box-shadow-light: none;
+}
+
+body {
+  font-family: var(--plm-font-family);
+  font-size: var(--plm-font-base);
+  color: var(--plm-text-primary);
+}
+
+/* ===================== 表格：紧凑、细线、无斑马纹 ===================== */
+.el-table {
+  font-size: var(--plm-font-table);
+  --el-table-border-color: var(--plm-border);
+  --el-table-header-bg-color: var(--plm-table-head);
+  --el-table-row-hover-bg-color: #f5fafe;
+  --el-table-current-row-bg-color: var(--plm-primary-light);
+}
+
+.el-table th.el-table__cell {
+  height: 30px;
+  padding: 4px 0;
+  background: var(--plm-table-head);
+  color: #33475b;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.el-table td.el-table__cell {
+  padding: 3px 0;
+}
+
+.el-table .cell {
+  line-height: var(--plm-line-height);
+  padding: 0 8px;
+}
+
+/* 无斑马纹：靠 hover 与单行加粗区分，避免整页重影 */
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: transparent;
+}
+
+/* ===================== 容器类：去阴影、近直角 ===================== */
+.el-card {
+  border-radius: var(--plm-radius);
+  border: 1px solid var(--plm-border);
+  box-shadow: none !important;
+}
+
+.el-card__header {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--plm-border-light);
+}
+
+.el-card__body {
+  padding: 12px;
+}
+
+.el-button {
+  border-radius: var(--plm-radius);
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  border-radius: var(--plm-radius);
+}
+
+.el-tag {
+  border-radius: var(--plm-radius);
+}
+
+.el-dialog,
+.el-drawer {
+  border-radius: var(--plm-radius);
+}
+
+.el-dialog__header {
+  padding: 10px 16px;
+  margin-right: 0;
+  border-bottom: 1px solid var(--plm-border-light);
+}
+
+.el-dialog__body {
+  padding: 12px 16px;
+}
+
+/* 表单：字段间距收紧，label 统一灰字 */
+.el-form-item {
+  margin-bottom: 10px;
+}
+
+.el-form-item__label {
+  color: var(--plm-text-secondary);
+  font-size: 12px;
+}
+
+/* 分页靠右、去掉多余留白 */
+.el-pagination {
+  padding: 8px 0 0;
+  justify-content: flex-end;
+}
+
+/* 描述列表/空状态收紧 */
+.el-descriptions__label {
+  color: var(--plm-text-secondary);
+}
+
+.el-empty {
+  padding: 16px 0;
+}
+
+/* ===================== 移动端回退：保证触控可用 ===================== */
+@media (max-width: 768px) {
+  :root {
+    --el-font-size-base: 14px;
+  }
+
+  body {
+    font-size: 14px;
+  }
+
+  .el-table {
+    font-size: 14px;
+  }
+
+  .el-table th.el-table__cell {
+    height: 38px;
+    font-size: 13px;
+  }
+
+  .el-table .cell {
+    line-height: 22px;
+  }
+
+  .el-button {
+    min-height: 32px;
+  }
+}

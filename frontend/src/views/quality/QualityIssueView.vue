@@ -22,16 +22,15 @@
       </el-table-column>
       <el-table-column label="严重度" width="90" align="center">
         <template #default="{ row }">
-          <el-tag :type="severityType(row.severity)" size="small">
-            {{ ISSUE_SEVERITY_LABEL[row.severity] ?? row.severity }}
-          </el-tag>
+          <StatusDot
+            :tone="severityTone(row.severity)"
+            :label="ISSUE_SEVERITY_LABEL[row.severity] ?? row.severity"
+          />
         </template>
       </el-table-column>
       <el-table-column label="状态" width="100" align="center">
         <template #default="{ row }">
-          <el-tag :type="statusType(row.status)" size="small">
-            {{ ISSUE_STATUS_LABEL[row.status] ?? row.status }}
-          </el-tag>
+          <StatusDot :tone="statusTone(row.status)" :label="ISSUE_STATUS_LABEL[row.status] ?? row.status" />
         </template>
       </el-table-column>
       <el-table-column label="轮次" width="70" align="center">
@@ -72,9 +71,10 @@
       <div v-if="detail" class="detail-body">
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="状态">
-            <el-tag :type="statusType(detail.issue.status)" size="small">
-              {{ ISSUE_STATUS_LABEL[detail.issue.status] ?? detail.issue.status }}
-            </el-tag>
+            <StatusDot
+              :tone="statusTone(detail.issue.status)"
+              :label="ISSUE_STATUS_LABEL[detail.issue.status] ?? detail.issue.status"
+            />
             <span class="round-badge">第 {{ detail.issue.roundNo }} 轮</span>
           </el-descriptions-item>
           <el-descriptions-item label="严重度">
@@ -299,6 +299,7 @@ import {
   type TemplateRow
 } from '@/api/quality'
 import { workflowApi, type ActorUserRow } from '@/api/workflow'
+import StatusDot from '@/components/StatusDot.vue'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
@@ -644,27 +645,27 @@ async function onVerify(passed: boolean): Promise<void> {
   }
 }
 
-function statusType(value: IssueStatus): 'success' | 'info' | 'warning' | 'danger' {
+function statusTone(value: IssueStatus): 'ok' | 'running' | 'warn' | 'danger' | 'muted' {
   if (value === 'CLOSED') {
-    return 'success'
+    return 'ok'
   }
   if (value === 'VERIFYING') {
-    return 'warning'
+    return 'warn'
   }
   if (value === 'OPEN') {
     return 'danger'
   }
-  return 'info'
+  return 'running'
 }
 
-function severityType(value: IssueSeverity): 'success' | 'info' | 'warning' | 'danger' {
+function severityTone(value: IssueSeverity): 'danger' | 'warn' | 'muted' {
   if (value === 'CRITICAL') {
     return 'danger'
   }
   if (value === 'MAJOR') {
-    return 'warning'
+    return 'warn'
   }
-  return 'info'
+  return 'muted'
 }
 </script>
 

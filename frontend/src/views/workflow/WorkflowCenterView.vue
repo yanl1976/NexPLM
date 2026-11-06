@@ -79,8 +79,8 @@
             </el-table-column>
             <el-table-column label="结果" min-width="160" show-overflow-tooltip>
               <template #default="{ row }">
-                <el-tag v-if="row.deleteReason" size="small" type="warning">{{ row.deleteReason }}</el-tag>
-                <el-tag v-else size="small" type="success">已完成</el-tag>
+                <StatusDot v-if="row.deleteReason" tone="warn" :label="row.deleteReason" />
+                <StatusDot v-else tone="ok" label="已完成" />
               </template>
             </el-table-column>
             <el-table-column label="操作" width="100" fixed="right">
@@ -114,7 +114,7 @@
             </el-table-column>
             <el-table-column label="状态" width="110">
               <template #default="{ row }">
-                <el-tag size="small" :type="statusTag(row.status)">{{ statusLabel(row.status) }}</el-tag>
+                <StatusDot :tone="statusTone(row.status)" :label="statusLabel(row.status)" />
               </template>
             </el-table-column>
             <el-table-column label="当前节点" min-width="180" show-overflow-tooltip>
@@ -214,6 +214,7 @@ import {
   type InstanceRow,
   type TaskRow
 } from '@/api/workflow'
+import StatusDot from '@/components/StatusDot.vue'
 
 const router = useRouter()
 
@@ -299,16 +300,16 @@ function statusLabel(status: string): string {
   }
 }
 
-function statusTag(status: string): 'success' | 'info' | 'warning' | 'danger' {
+function statusTone(status: string): 'ok' | 'running' | 'danger' | 'muted' {
   switch (status) {
     case 'COMPLETED':
-      return 'success'
+      return 'ok'
     case 'RUNNING':
-      return 'warning'
+      return 'running'
     case 'TERMINATED':
       return 'danger'
     default:
-      return 'info'
+      return 'muted'
   }
 }
 

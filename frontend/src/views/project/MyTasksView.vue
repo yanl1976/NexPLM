@@ -15,9 +15,7 @@
       <el-table-column prop="name" label="任务名称" min-width="180" show-overflow-tooltip />
       <el-table-column label="状态" width="90" align="center">
         <template #default="{ row }">
-          <el-tag :type="statusTagType(row.status)" size="small">
-            {{ TASK_STATUS_LABEL[row.status] ?? row.status }}
-          </el-tag>
+          <StatusDot :tone="statusTone(row.status)" :label="TASK_STATUS_LABEL[row.status] ?? row.status" />
         </template>
       </el-table-column>
       <el-table-column label="计划起止" width="190" align="center">
@@ -57,6 +55,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { taskApi, TASK_STATUS_LABEL, type MyTaskRow, type TaskStatus } from '@/api/project'
+import StatusDot from '@/components/StatusDot.vue'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -156,16 +155,16 @@ async function onReject(task: MyTaskRow): Promise<void> {
   }
 }
 
-function statusTagType(value: TaskStatus): 'success' | 'info' | 'warning' | 'danger' {
+function statusTone(value: TaskStatus): 'ok' | 'warn' | 'danger' | 'running' | 'muted' {
   if (value === 'DONE') {
-    return 'success'
+    return 'ok'
   }
   if (value === 'SUBMITTED') {
-    return 'warning'
+    return 'warn'
   }
   if (value === 'BLOCKED') {
     return 'danger'
   }
-  return value === 'IN_PROGRESS' ? 'warning' : 'info'
+  return value === 'IN_PROGRESS' ? 'running' : 'muted'
 }
 </script>

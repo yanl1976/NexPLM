@@ -31,14 +31,12 @@
         </el-table-column>
         <el-table-column label="优先级" width="90">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.priority === 'HIGH' ? 'danger' : row.priority === 'LOW' ? 'info' : ''">
-              {{ PRIORITY_LABEL[row.priority] ?? row.priority }}
-            </el-tag>
+            <StatusDot :tone="priorityTone(row.priority)" :label="PRIORITY_LABEL[row.priority] ?? row.priority" />
           </template>
         </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="{ row }">
-            <el-tag size="small" :type="statusTag(row.status)">{{ STATUS_LABEL[row.status] ?? row.status }}</el-tag>
+            <StatusDot :status="row.status" :label="STATUS_LABEL[row.status] ?? row.status" />
           </template>
         </el-table-column>
         <el-table-column label="申请人" width="120">
@@ -74,9 +72,7 @@
       <div v-if="detail" v-loading="detailLoading">
         <div class="detail-head">
           <span class="code">{{ detail.code }}</span>
-          <el-tag size="small" :type="statusTag(detail.status)">
-            {{ STATUS_LABEL[detail.status] ?? detail.status }}
-          </el-tag>
+          <StatusDot :status="detail.status" :label="STATUS_LABEL[detail.status] ?? detail.status" />
           <div class="actions">
             <el-button v-if="detail.status === 'DRAFT'" size="small" @click="openEdit">编辑</el-button>
             <el-button v-if="detail.status === 'DRAFT'" size="small" type="primary" @click="onSubmit">提交评审</el-button>
@@ -192,9 +188,10 @@
             <el-table-column prop="title" label="标题" min-width="180" />
             <el-table-column label="状态" width="110">
               <template #default="{ row }">
-                <el-tag size="small" :type="row.status === 'CLOSED' ? 'success' : 'warning'">
-                  {{ ECN_LABEL[row.status] ?? row.status }}
-                </el-tag>
+                <StatusDot
+                  :tone="row.status === 'CLOSED' ? 'ok' : 'running'"
+                  :label="ECN_LABEL[row.status] ?? row.status"
+                />
               </template>
             </el-table-column>
             <el-table-column prop="executorName" label="执行人" width="110" />
@@ -281,9 +278,10 @@
         <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.status === 'CLOSED' ? 'success' : 'warning'">
-              {{ row.status === 'CLOSED' ? '已关闭' : '待处理' }}
-            </el-tag>
+            <StatusDot
+              :tone="row.status === 'CLOSED' ? 'ok' : 'danger'"
+              :label="row.status === 'CLOSED' ? '已关闭' : '待处理'"
+            />
           </template>
         </el-table-column>
         <el-table-column label="要求关闭" width="120">
@@ -424,6 +422,7 @@ import {
 } from '@/api/change'
 import { workflowApi, type ActorUserRow } from '@/api/workflow'
 import WorkflowPanel from '@/components/WorkflowPanel.vue'
+import StatusDot from '@/components/StatusDot.vue'
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: '草稿',
@@ -506,20 +505,15 @@ function formatTime(value?: string | null): string {
   return value ? value.replace('T', ' ').slice(0, 19) : '-'
 }
 
-function statusTag(status: string): 'success' | 'info' | 'warning' | 'danger' {
-  switch (status) {
-    case 'CLOSED':
-      return 'success'
-    case 'APPROVED':
-    case 'NOTICED':
-    case 'EXECUTING':
-      return 'warning'
-    case 'REJECTED':
-    case 'CANCELLED':
-      return 'danger'
-    default:
-      return 'info'
+/** 优先级只表达紧急程度，不是流程状态，因此直接指定色调。 */
+function priorityTone(priority: string): 'danger' | 'running' | 'muted' {
+  if (priority === 'HIGH') {
+    return 'danger'
   }
+  if (priority === 'LOW') {
+    return 'muted'
+  }
+  return 'running'
 }
 
 async function load(): Promise<void> {

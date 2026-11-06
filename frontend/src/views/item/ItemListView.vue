@@ -35,15 +35,16 @@
         <el-table-column prop="material" label="材料" width="110" />
         <el-table-column label="供应方式" width="100">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.sourceType === 'BUY' ? 'warning' : 'success'">
-              {{ ITEM_SOURCE_LABEL[row.sourceType] ?? row.sourceType }}
-            </el-tag>
+            <StatusDot
+              :tone="row.sourceType === 'BUY' ? 'warn' : 'ok'"
+              :label="ITEM_SOURCE_LABEL[row.sourceType] ?? row.sourceType"
+            />
           </template>
         </el-table-column>
         <el-table-column prop="revisionLabel" label="版本" width="80" />
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag size="small" :type="stateTag(row.lifecycleState)">{{ stateLabel(row.lifecycleState) }}</el-tag>
+            <StatusDot :status="row.lifecycleState" :label="stateLabel(row.lifecycleState)" />
           </template>
         </el-table-column>
         <el-table-column label="更新时间" width="170">
@@ -130,6 +131,7 @@ import {
   type ItemSummary
 } from '@/api/item'
 import { DOC_STATE_LABEL } from '@/api/doc'
+import StatusDot from '@/components/StatusDot.vue'
 
 const router = useRouter()
 
@@ -169,19 +171,6 @@ const rules: FormRules = {
 
 function stateLabel(state?: string | null): string {
   return state ? DOC_STATE_LABEL[state] ?? state : '-'
-}
-
-function stateTag(state?: string | null): 'success' | 'info' | 'warning' | 'danger' {
-  switch (state) {
-    case 'Released':
-      return 'success'
-    case 'InWorkflow':
-      return 'warning'
-    case 'Obsolete':
-      return 'danger'
-    default:
-      return 'info'
-  }
 }
 
 function formatTime(value?: string | null): string {

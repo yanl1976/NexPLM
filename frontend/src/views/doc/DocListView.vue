@@ -71,7 +71,7 @@
         <el-table-column prop="revisionLabel" label="版本" width="80" />
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="stateTag(row.lifecycleState)" size="small">{{ stateLabel(row.lifecycleState) }}</el-tag>
+            <StatusDot :status="row.lifecycleState" :label="stateLabel(row.lifecycleState)" />
           </template>
         </el-table-column>
         <el-table-column prop="fileCount" label="文件数" width="80" />
@@ -214,7 +214,7 @@
         <el-table-column prop="ownerName" label="创建人" width="110" />
         <el-table-column label="共享" width="80">
           <template #default="{ row }">
-            <el-tag v-if="row.shared" size="small" type="success">共享</el-tag>
+            <StatusDot v-if="row.shared" tone="ok" label="共享" />
             <span v-else>-</span>
           </template>
         </el-table-column>
@@ -337,6 +337,7 @@ import {
   type DocSummary
 } from '@/api/doc'
 import { metaApi } from '@/api/system'
+import StatusDot from '@/components/StatusDot.vue'
 
 const router = useRouter()
 
@@ -414,19 +415,6 @@ function sourceLabel(value: string): string {
 
 function stateLabel(value: string): string {
   return DOC_STATE_LABEL[value] ?? value
-}
-
-function stateTag(state: string): 'success' | 'info' | 'warning' | 'danger' {
-  if (state === 'Released') {
-    return 'success'
-  }
-  if (state === 'InWorkflow') {
-    return 'warning'
-  }
-  if (state === 'Obsolete') {
-    return 'danger'
-  }
-  return 'info'
 }
 
 async function load(): Promise<void> {

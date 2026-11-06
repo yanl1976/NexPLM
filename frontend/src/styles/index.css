@@ -10,10 +10,11 @@ body,
   padding: 0;
 }
 
+/* 排版与配色统一走令牌（见 styles/design-tokens.css），此处只做兜底 */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  color: #303133;
-  background: #f4f6fa;
+  font-family: var(--plm-font-family, 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', 'Segoe UI', sans-serif);
+  color: var(--plm-text-primary, #24313f);
+  background: var(--plm-bg-page, #f2f5f8);
 }
 
 a {
