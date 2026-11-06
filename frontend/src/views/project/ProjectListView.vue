@@ -46,6 +46,7 @@
         <el-checkbox v-model="includeSubtree" :disabled="!currentEps" @change="reload">含子目录</el-checkbox>
         <el-button type="primary" @click="reload">查询</el-button>
         <el-button v-if="canWrite" type="primary" plain @click="openCreate">立项</el-button>
+        <el-button v-if="canWrite" type="success" plain @click="openFromTemplate">从模板立项</el-button>
         <span class="hint">当前目录：{{ currentEps ? currentEps.name : '全部项目' }}</span>
       </div>
 
@@ -227,6 +228,41 @@
       </template>
     </el-dialog>
 
+    <!-- 从模板立项 -->
+    <el-dialog v-model="tplDialogVisible" title="从模板立项" width="560px" destroy-on-close>
+      <el-form label-width="100px">
+        <el-form-item label="项目模板" required>
+          <el-select v-model="tplForm.templateId" filterable placeholder="选择模板" style="width: 100%">
+            <el-option
+              v-for="item in templates"
+              :key="item.id"
+              :label="`${item.code} ${item.name}（${item.taskCount} 任务 / ${item.folderCount} 目录）`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="项目名称" required>
+          <el-input v-model="tplForm.name" maxlength="200" placeholder="如 XX 产品研发项目" />
+        </el-form-item>
+        <el-form-item label="计划开始" required>
+          <el-date-picker v-model="tplForm.planStart" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          <span class="hint">模板任务按「相对开工日偏移」自动推算计划起止</span>
+        </el-form-item>
+        <el-form-item label="EPS 目录">
+          <el-select v-model="tplForm.epsId" clearable placeholder="不归类" style="width: 100%">
+            <el-option v-for="node in epsOptions" :key="node.id" :label="node.label" :value="node.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="优先级">
+          <el-input-number v-model="tplForm.priority" :min="1" :max="5" :controls="false" style="width: 120px" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="tplDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="tplSaving" @click="onFromTemplate">立项并生成任务</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 详情 -->
     <el-drawer v-model="detailVisible" :title="detailTitle" size="640px">
       <el-descriptions v-if="detail" :column="2" border>
@@ -270,13 +306,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   epsApi,
   projectApi,
+  templateApi,
   MEMBER_ROLE_LABEL,
   PROJECT_STATUS_LABEL,
   PROJECT_TYPE_LABEL,
   type EpsNode,
   type ProjectDetail,
   type ProjectRow,
-  type ProjectStatus
+  type ProjectStatus,
+  type ProjectTemplateRow
 } from '@/api/project'
 import { workflowApi, type ActorUserRow } from '@/api/workflow'
 import { useUserStore } from '@/stores/user'
@@ -312,6 +350,77 @@ const epsOptions = computed(() => {
   walk(epsTreeData.value, 0)
   return options
 })
+
+// 从模板立项（P7-6）
+const tplDialogVisible = ref(false)
+const tplSaving = ref(false)
+const templates = ref<ProjectTemplateRow[]>([])
+const tplForm = reactive<{
+  templateId: string
+  name: string
+  planStart: string
+  epsId: string | null
+  priority: number
+}>({
+  templateId: '',
+  name: '',
+  planStart: today(),
+  epsId: null,
+  priority: 3
+})
+
+async function openFromTemplate(): Promise<void> {
+  tplForm.templateId = ''
+  tplForm.name = ''
+  tplForm.planStart = today()
+  tplForm.epsId = currentEps.value?.id ?? null
+  tplForm.priority = 3
+  tplSaving.value = false
+  try {
+    const page = await templateApi.list({ enabled: true, page: 1, size: 100 })
+    templates.value = page.items
+    if (!templates.value.length) {
+      ElMessage.warning('还没有启用的项目模板，请先在「项目模板」里维护')
+      return
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载模板失败')
+    return
+  }
+  tplDialogVisible.value = true
+}
+
+async function onFromTemplate(): Promise<void> {
+  if (!tplForm.templateId || !tplForm.name.trim() || !tplForm.planStart) {
+    ElMessage.warning('请选择模板并填写项目名称与计划开始日')
+    return
+  }
+  tplSaving.value = true
+  try {
+    const project = await templateApi.fromTemplate({
+      templateId: tplForm.templateId,
+      name: tplForm.name.trim(),
+      planStart: tplForm.planStart,
+      epsId: tplForm.epsId,
+      priority: tplForm.priority
+    })
+    ElMessage.success(`已立项 ${project.code}，任务与目录已生成`)
+    tplDialogVisible.value = false
+    await reload()
+    router.push(`/project/${project.id}/tasks`)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '从模板立项失败')
+  } finally {
+    tplSaving.value = false
+  }
+}
+
+function today(): string {
+  const now = new Date()
+  const month = `${now.getMonth() + 1}`.padStart(2, '0')
+  const day = `${now.getDate()}`.padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
 
 const dialogVisible = ref(false)
 const dialogTitle = computed(() => (form.id ? '编辑项目' : '立项'))

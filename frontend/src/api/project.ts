@@ -549,6 +549,116 @@ export const timesheetApi = {
   }
 }
 
+// ---------------------------------------------------------------- 项目模板（P7-6）
+
+export interface ProjectTemplateRow {
+  id: string
+  code: string
+  name: string
+  type: string
+  enabled: boolean
+  remark?: string | null
+  taskCount: number
+  folderCount: number
+  updatedAt?: string | null
+}
+
+/** 模板任务：编码由服务端按数组顺序生成，offset 是「相对项目开工日第几天」。 */
+export interface TemplateTask {
+  id: string
+  parentId?: string | null
+  wbsCode: string
+  name: string
+  type: string
+  startOffset: number
+  durationDays: number
+  sortNo: number
+  remark?: string | null
+}
+
+export interface TemplateFolder {
+  id: string
+  parentPath: string
+  name: string
+  sortNo: number
+}
+
+export interface TemplateDetail {
+  id: string
+  code: string
+  name: string
+  type: string
+  enabled: boolean
+  remark?: string | null
+  tasks: TemplateTask[]
+  folders: TemplateFolder[]
+}
+
+export interface TemplateSaveReq {
+  name: string
+  type?: string
+  enabled?: boolean
+  remark?: string | null
+}
+
+export interface TemplateTaskSaveReq {
+  parentWbsCode?: string | null
+  name: string
+  type?: string
+  startOffset?: number
+  durationDays?: number
+  remark?: string | null
+}
+
+export interface TemplateFolderSaveReq {
+  parentPath?: string
+  name: string
+  sortNo?: number
+}
+
+export interface FromTemplateReq {
+  templateId: string
+  name: string
+  epsId?: string | null
+  managerId?: string | null
+  planStart: string
+  priority?: number
+  remark?: string | null
+}
+
+export const templateApi = {
+  list(params: { keyword?: string; enabled?: boolean; page?: number; size?: number }) {
+    return http.get<{ items: ProjectTemplateRow[]; total: number; page: number; size: number }>(
+      '/prj/templates',
+      params
+    )
+  },
+  detail(id: string): Promise<TemplateDetail> {
+    return http.get<TemplateDetail>(`/prj/templates/${id}`)
+  },
+  create(req: TemplateSaveReq): Promise<TemplateDetail> {
+    return http.post<TemplateDetail>('/prj/templates', req)
+  },
+  update(id: string, req: TemplateSaveReq): Promise<TemplateDetail> {
+    return http.put<TemplateDetail>(`/prj/templates/${id}`, req)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/prj/templates/${id}`)
+  },
+  /** 任务骨架整表替换（编码按数组顺序生成）。 */
+  replaceTasks(id: string, tasks: TemplateTaskSaveReq[]): Promise<TemplateDetail> {
+    return http.put<TemplateDetail>(`/prj/templates/${id}/tasks`, { tasks })
+  },
+  /** 目录骨架整表替换（父路径必须先声明）。 */
+  replaceFolders(id: string, folders: TemplateFolderSaveReq[]): Promise<TemplateDetail> {
+    return http.put<TemplateDetail>(`/prj/templates/${id}/folders`, { folders })
+  },
+  /** 从模板立项：生成项目 + WBS 任务 + 文档目录。 */
+  fromTemplate(req: FromTemplateReq): Promise<ProjectDetail> {
+    return http.post<ProjectDetail>('/prj/projects/from-template', req)
+  }
+}
+
 export const projectApi = {
   list(params: {
     page?: number
