@@ -3,7 +3,13 @@ package com.nexplm.app;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -13,13 +19,17 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -237,7 +247,491 @@ class ItemSmokeTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void bomSummaryAndRollupWithLossRateAndItemMasterUnit() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long rootId = createItem(admin, "汇总总成", "PRODUCT", "MAKE");
+        long subId = createItem(admin, "汇总部件", "ASSEMBLY", "MAKE");
+        long leafId = createItem(admin, "汇总零件", "PART", "MAKE");
+
+        // 根 → 部件 2 件；部件 → 零件 3 件（损耗 10%）；根 → 零件 1 件（同一子件两处出现）
+        call(post("/api/v1/items/{id}/bom?viewType=DESIGN", rootId), admin,
+                json(Map.of("childId", subId, "qty", 2)));
+        JsonNode subToLeaf = call(post("/api/v1/items/{id}/bom?viewType=DESIGN", subId), admin,
+                json(Map.of("childId", leafId, "qty", 3, "lossRate", 10)));
+        call(post("/api/v1/items/{id}/bom?viewType=DESIGN", rootId), admin,
+                json(Map.of("childId", leafId, "qty", 1)));
+        // 行单位改成 KG 并设置有效期：单位按子件主数据（EA）合并，有效期用于 effectAt 过滤
+        long leafLineId = subToLeaf.path("lineId").asLong();
+        call(put("/api/v1/items/{id}/bom/lines/{lineId}", subId, leafLineId), admin,
+                json(Map.of("qty", 3, "unit", "KG", "lossRate", 10,
+                        "effectFrom", "2026-01-01", "effectTo", "2026-12-31")));
+
+        // 1. 展开：用量逐层累乘，有效用量再叠加本层损耗率
+        JsonNode summary = call(get("/api/v1/items/{id}/bom/summary?viewType=DESIGN", rootId), admin, null);
+        assertThat(summary.size()).isEqualTo(3);
+        double rootToLeafQty = 0;
+        for (JsonNode row : summary) {
+            if (row.path("level").asInt() == 1 && row.path("childId").asLong() == leafId) {
+                rootToLeafQty = row.path("qty").asDouble();
+            }
+            if (row.path("level").asInt() == 2) {
+                assertThat(row.path("childId").asLong()).isEqualTo(leafId);
+                assertThat(row.path("qty").asDouble()).isEqualTo(6.0);
+                assertThat(row.path("lossRate").asDouble()).isEqualTo(10.0);
+                assertThat(row.path("effectiveQty").asDouble()).isEqualTo(6.6);
+                // 行级单位是快照值，展开按下标行的实际单位展示
+                assertThat(row.path("unit").asText()).isEqualTo("KG");
+                // 层级路径：根行位置 10 → 下级位置 10
+                assertThat(row.path("path").asText()).isEqualTo("10.10");
+                assertThat(row.path("effectFrom").asText()).isEqualTo("2026-01-01");
+                assertThat(row.path("effectTo").asText()).isEqualTo("2026-12-31");
+            }
+        }
+        assertThat(rootToLeafQty).isEqualTo(1.0);
+
+        // 2. 汇总：同一子件多处出现合并累计，单位取子件主数据（EA）
+        JsonNode rollup = call(get("/api/v1/items/{id}/bom/rollup?viewType=DESIGN", rootId), admin, null);
+        assertThat(rollup.size()).isEqualTo(2);
+        boolean leafFound = false;
+        for (JsonNode row : rollup) {
+            if (row.path("childId").asLong() == leafId) {
+                leafFound = true;
+                assertThat(row.path("occurrences").asInt()).isEqualTo(2);
+                assertThat(row.path("totalQty").asDouble()).isEqualTo(7.0);
+                assertThat(row.path("totalEffectiveQty").asDouble()).isEqualTo(7.6);
+                assertThat(row.path("unit").asText()).isEqualTo("EA");
+            }
+        }
+        assertThat(leafFound).isTrue();
+
+        // 3. 有效性过滤：行有效期 2026-01-01~2026-12-31，区间内可见、区间外不可见
+        JsonNode inRange = call(get("/api/v1/items/{id}/bom/summary?viewType=DESIGN&effectAt=2026-06-01", rootId),
+                admin, null);
+        assertThat(inRange.size()).isEqualTo(3);
+        JsonNode outRange = call(get("/api/v1/items/{id}/bom/summary?viewType=DESIGN&effectAt=2027-01-01", rootId),
+                admin, null);
+        assertThat(outRange.size()).isEqualTo(2);
+        assertThat(outRange.findValuesAsText("level")).containsOnly("1");
+        JsonNode treeOut = call(get("/api/v1/items/{id}/bom?viewType=DESIGN&effectAt=2027-01-01", rootId),
+                admin, null);
+        assertThat(treeOut.size()).isEqualTo(2);
+
+        // 4. 汇总只统计叶子件（对应旧系统元件汇总口径）
+        JsonNode leafRollup = call(get("/api/v1/items/{id}/bom/rollup?viewType=DESIGN&leafOnly=true", rootId),
+                admin, null);
+        assertThat(leafRollup.size()).isEqualTo(1);
+        assertThat(leafRollup.get(0).path("childId").asLong()).isEqualTo(leafId);
+
+        // 5. 层数上限：depth=1 只展开一层
+        JsonNode shallow = call(get("/api/v1/items/{id}/bom/summary?viewType=DESIGN&depth=1", rootId),
+                admin, null);
+        assertThat(shallow.size()).isEqualTo(2);
+        assertThat(shallow.findValuesAsText("level")).containsOnly("1");
+
+        // 6. 有效期起止倒置 → 400
+        mockMvc.perform(put("/api/v1/items/{id}/bom/lines/{lineId}", subId, leafLineId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("qty", 3, "effectFrom", "2027-01-01", "effectTo", "2026-01-01"))))
+                .andExpect(status().isBadRequest());
+
+        // 7. 非法视图 400
+        mockMvc.perform(get("/api/v1/items/{id}/bom/rollup?viewType=NOT_EXIST", rootId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void bomAlternatesCrudWithGuards() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long rootId = createItem(admin, "替代总成", "PRODUCT", "MAKE");
+        long partA = createItem(admin, "替代零件A", "PART", "MAKE");
+        long partB = createItem(admin, "替代零件B", "PART", "MAKE");
+        long partC = createItem(admin, "替代零件C", "PART", "MAKE");
+        long loneId = createItem(admin, "未入BOM零件", "PART", "MAKE");
+
+        call(post("/api/v1/items/{id}/bom?viewType=DESIGN", rootId), admin,
+                json(Map.of("childId", partA, "qty", 1)));
+
+        // 1. 未出现在任何 BOM 中的零部件不能维护替代件
+        mockMvc.perform(post("/api/v1/items/{id}/alternates", loneId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("alternateId", partB))))
+                .andExpect(status().isBadRequest());
+
+        // 2. 不能把自身作为备选件
+        mockMvc.perform(post("/api/v1/items/{id}/alternates", partA)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("alternateId", partA))))
+                .andExpect(status().isBadRequest());
+
+        // 3. 新增全局双向替代
+        JsonNode globalAlt = call(post("/api/v1/items/{id}/alternates", partA), admin,
+                json(Map.of("alternateId", partB, "isGlobal", true, "isTwoWay", true, "priorityLevel", "1")));
+        assertThat(globalAlt.path("alternateId").asLong()).isEqualTo(partB);
+        assertThat(globalAlt.path("code").asText()).isNotBlank();
+        assertThat(globalAlt.path("isGlobal").asBoolean()).isTrue();
+        assertThat(globalAlt.path("isTwoWay").asBoolean()).isTrue();
+        long globalRowId = globalAlt.path("id").asLong();
+
+        // 4. 同一备选件重复添加 → 409
+        mockMvc.perform(post("/api/v1/items/{id}/alternates", partA)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("alternateId", partB))))
+                .andExpect(status().isConflict());
+
+        // 5. 全局替代在所有视图都可见
+        assertThat(call(get("/api/v1/items/{id}/alternates?viewType=PROCESS", partA), admin, null).size())
+                .isEqualTo(1);
+
+        // 6. 修改优先级/排序/双向
+        JsonNode updatedAlt = call(put("/api/v1/items/{id}/alternates/{alternateRowId}", partA, globalRowId),
+                admin, json(Map.of("priorityLevel", "2", "lineNo", 30, "isTwoWay", false)));
+        assertThat(updatedAlt.path("priorityLevel").asText()).isEqualTo("2");
+        assertThat(updatedAlt.path("lineNo").asInt()).isEqualTo(30);
+        assertThat(updatedAlt.path("isTwoWay").asBoolean()).isFalse();
+
+        // 7. 局部替代只在指定视图可见
+        JsonNode localAlt = call(post("/api/v1/items/{id}/alternates", partA), admin,
+                json(Map.of("alternateId", partC, "viewType", "PROCESS", "isGlobal", false)));
+        assertThat(localAlt.path("viewType").asText()).isEqualTo("PROCESS");
+        assertThat(call(get("/api/v1/items/{id}/alternates?viewType=DESIGN", partA), admin, null).size())
+                .isEqualTo(1);
+        assertThat(call(get("/api/v1/items/{id}/alternates?viewType=PROCESS", partA), admin, null).size())
+                .isEqualTo(2);
+        assertThat(call(get("/api/v1/items/{id}/alternates", partA), admin, null).size())
+                .isEqualTo(2);
+
+        // 8. 替代行归属校验：换一个零部件访问该行 → 404
+        mockMvc.perform(delete("/api/v1/items/{id}/alternates/{alternateRowId}", rootId,
+                        localAlt.path("id").asLong())
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isNotFound());
+
+        // 9. 删除后列表减少；且替代关系不影响 BOM 展开
+        mockMvc.perform(delete("/api/v1/items/{id}/alternates/{alternateRowId}", partA, globalRowId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk());
+        assertThat(call(get("/api/v1/items/{id}/alternates", partA), admin, null).size()).isEqualTo(1);
+        assertThat(call(get("/api/v1/items/{id}/bom/summary?viewType=DESIGN", rootId), admin, null).size())
+                .isEqualTo(1);
+    }
+
+    @Test
+    void bomBaselineFreezeAndDiff() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long rootId = createItem(admin, "基线总成", "PRODUCT", "MAKE");
+        long subId = createItem(admin, "基线部件", "ASSEMBLY", "MAKE");
+        long leafId = createItem(admin, "基线零件", "PART", "MAKE");
+        long boltId = createItem(admin, "基线螺栓", "STANDARD", "BUY");
+        long emptyId = createItem(admin, "无结构件", "PART", "MAKE");
+
+        call(post("/api/v1/items/{id}/bom?viewType=DESIGN", rootId), admin,
+                json(Map.of("childId", subId, "qty", 1)));
+        JsonNode leafLine = call(post("/api/v1/items/{id}/bom?viewType=DESIGN", subId), admin,
+                json(Map.of("childId", leafId, "qty", 2)));
+        long leafLineId = leafLine.path("lineId").asLong();
+
+        // 1. 冻结基线：总成 → 部件 → 零件 共 2 行
+        JsonNode baseline = call(post("/api/v1/items/{id}/baselines", rootId), admin,
+                json(Map.of("code", "BL-001", "name", "初始结构", "viewType", "DESIGN")));
+        assertThat(baseline.path("code").asText()).isEqualTo("BL-001");
+        assertThat(baseline.path("lineCount").asInt()).isEqualTo(2);
+        assertThat(baseline.path("frozenAt").asText()).isNotBlank();
+        long baselineId = baseline.path("id").asLong();
+
+        JsonNode lines = call(get("/api/v1/items/{id}/baselines/{baselineId}/lines", rootId, baselineId),
+                admin, null);
+        assertThat(lines.size()).isEqualTo(2);
+        assertThat(lines.findValuesAsText("path")).containsExactly("10", "10.10");
+
+        // 2. 未改动时差异为空
+        JsonNode noDiff = call(get("/api/v1/items/{id}/baselines/{baselineId}/diff", rootId, baselineId),
+                admin, null);
+        assertThat(noDiff.path("added").asInt()).isZero();
+        assertThat(noDiff.path("removed").asInt()).isZero();
+        assertThat(noDiff.path("changed").asInt()).isZero();
+        assertThat(noDiff.path("rows").size()).isZero();
+
+        // 3. 用量变更 → QTY_CHANGED
+        call(put("/api/v1/items/{id}/bom/lines/{lineId}", subId, leafLineId), admin,
+                json(Map.of("qty", 3)));
+        JsonNode qtyDiff = call(get("/api/v1/items/{id}/baselines/{baselineId}/diff", rootId, baselineId),
+                admin, null);
+        assertThat(qtyDiff.path("changed").asInt()).isEqualTo(1);
+        JsonNode qtyRow = qtyDiff.path("rows").get(0);
+        assertThat(qtyRow.path("changeType").asText()).isEqualTo("QTY_CHANGED");
+        assertThat(qtyRow.path("path").asText()).isEqualTo("10.10");
+        assertThat(qtyRow.path("baselineQty").asDouble()).isEqualTo(2.0);
+        assertThat(qtyRow.path("currentQty").asDouble()).isEqualTo(3.0);
+
+        // 4. 新增子件 → ADDED；删除子件 → REMOVED
+        call(post("/api/v1/items/{id}/bom?viewType=DESIGN", subId), admin,
+                json(Map.of("childId", boltId, "qty", 8)));
+        mockMvc.perform(delete("/api/v1/items/{id}/bom/lines/{lineId}", subId, leafLineId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk());
+        JsonNode mixedDiff = call(get("/api/v1/items/{id}/baselines/{baselineId}/diff", rootId, baselineId),
+                admin, null);
+        assertThat(mixedDiff.path("added").asInt()).isEqualTo(1);
+        assertThat(mixedDiff.path("removed").asInt()).isEqualTo(1);
+        assertThat(mixedDiff.path("rows").findValuesAsText("changeType"))
+                .containsExactlyInAnyOrder("ADDED", "REMOVED");
+
+        // 5. 基线编码重复 → 409；无结构不能创建基线 → 400
+        mockMvc.perform(post("/api/v1/items/{id}/baselines", rootId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("code", "BL-001"))))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/v1/items/{id}/baselines", emptyId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("code", "BL-EMPTY"))))
+                .andExpect(status().isBadRequest());
+
+        // 6. 列表与跨件归属
+        assertThat(call(get("/api/v1/items/{id}/baselines?viewType=DESIGN", rootId), admin, null).size())
+                .isEqualTo(1);
+        mockMvc.perform(delete("/api/v1/items/{id}/baselines/{baselineId}", emptyId, baselineId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isNotFound());
+
+        // 7. 删除基线后列表为空
+        mockMvc.perform(delete("/api/v1/items/{id}/baselines/{baselineId}", rootId, baselineId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk());
+        assertThat(call(get("/api/v1/items/{id}/baselines", rootId), admin, null).size()).isZero();
+    }
+
+    @Test
+    void bomExcelExportAndImport() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long rootId = createItem(admin, "Excel 总成", "PRODUCT", "MAKE");
+        long subId = createItem(admin, "Excel 部件", "ASSEMBLY", "MAKE");
+        long leafId = createItem(admin, "Excel 零件", "PART", "MAKE");
+        String subCode = call(get("/api/v1/items/{id}", subId), admin, null).path("code").asText();
+        String leafCode = call(get("/api/v1/items/{id}", leafId), admin, null).path("code").asText();
+
+        call(post("/api/v1/items/{id}/bom?viewType=DESIGN", rootId), admin,
+                json(Map.of("childId", subId, "qty", 1)));
+
+        // 1. 导出：表头 + 1 行，层级号从 1 开始
+        MvcResult exportResult = mockMvc.perform(
+                        get("/api/v1/items/{id}/bom/export?viewType=DESIGN", rootId)
+                                .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk())
+                .andReturn();
+        byte[] exported = exportResult.getResponse().getContentAsByteArray();
+        assertThat(exported).isNotEmpty();
+        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(exported))) {
+            Sheet sheet = workbook.getSheetAt(0);
+            assertThat(sheet.getLastRowNum()).isEqualTo(1);
+            assertThat(sheet.getRow(1).getCell(0).getStringCellValue()).isEqualTo("1");
+            assertThat(sheet.getRow(1).getCell(1).getStringCellValue()).isEqualTo(subCode);
+        }
+
+        // 2. 预演：1 行更新 + 1 行新增 + 1 行编码不存在
+        byte[] dirtyFile = buildBomWorkbook(new Object[][]{
+                {"1", subCode, 2},
+                {"2", leafCode, 3},
+                {"3", "NOT-EXIST-CODE", 1}
+        });
+        JsonNode dirtyPreview = multipartCall("/api/v1/items/{id}/bom/import/preview", rootId, admin,
+                "bom.xlsx", dirtyFile, "DESIGN");
+        assertThat(dirtyPreview.path("total").asInt()).isEqualTo(3);
+        assertThat(dirtyPreview.path("invalid").asInt()).as(dirtyPreview.toString()).isEqualTo(1);
+        assertThat(dirtyPreview.path("updateCount").asInt()).isEqualTo(1);
+        assertThat(dirtyPreview.path("createCount").asInt()).isEqualTo(1);
+        assertThat(dirtyPreview.path("errors").size()).isEqualTo(1);
+        assertThat(dirtyPreview.path("errors").get(0).asText()).contains("不存在");
+
+        // 3. 有错误的文件执行导入 → 400
+        mockMvc.perform(multipart("/api/v1/items/{id}/bom/import", rootId)
+                        .file(new MockMultipartFile("file", "bom.xlsx",
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", dirtyFile))
+                        .param("viewType", "DESIGN")
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isBadRequest());
+
+        // 4. 修正后执行导入：新增 1 行、更新 1 行
+        byte[] goodFile = buildBomWorkbook(new Object[][]{
+                {"1", subCode, 2},
+                {"2", leafCode, 3}
+        });
+        JsonNode imported = multipartCall("/api/v1/items/{id}/bom/import", rootId, admin,
+                "bom.xlsx", goodFile, "DESIGN");
+        assertThat(imported.path("created").asInt()).isEqualTo(1);
+        assertThat(imported.path("updated").asInt()).isEqualTo(1);
+        assertThat(imported.path("skipped").asInt()).isZero();
+
+        // 5. 结构生效：根下 2 个子件，数量分别为 2 / 3
+        JsonNode tree = call(get("/api/v1/items/{id}/bom?viewType=DESIGN&depth=2", rootId), admin, null);
+        assertThat(tree.size()).isEqualTo(2);
+        assertThat(tree.get(0).path("childId").asLong()).isEqualTo(subId);
+        assertThat(tree.get(0).path("qty").asDouble()).isEqualTo(2.0);
+        assertThat(tree.get(1).path("childId").asLong()).isEqualTo(leafId);
+        assertThat(tree.get(1).path("qty").asDouble()).isEqualTo(3.0);
+
+        // 6. 重复导入同样的文件 → 全部不变
+        JsonNode again = multipartCall("/api/v1/items/{id}/bom/import/preview", rootId, admin,
+                "bom.xlsx", goodFile, "DESIGN");
+        assertThat(again.path("unchangedCount").asInt()).isEqualTo(2);
+        assertThat(again.path("createCount").asInt()).isZero();
+        assertThat(again.path("updateCount").asInt()).isZero();
+    }
+
+    @Test
+    void bomBatchUpdateQtyAndReplace() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long rootId = createItem(admin, "批量总成", "PRODUCT", "MAKE");
+        long subId = createItem(admin, "批量部件", "ASSEMBLY", "MAKE");
+        long leafA = createItem(admin, "批量零件A", "PART", "MAKE");
+        long leafB = createItem(admin, "批量零件B", "PART", "MAKE");
+        long leafC = createItem(admin, "批量零件C", "PART", "MAKE");
+        long otherRoot = createItem(admin, "无关总成", "PRODUCT", "MAKE");
+
+        call(post("/api/v1/items/{id}/bom?viewType=DESIGN", rootId), admin,
+                json(Map.of("childId", subId, "qty", 1)));
+        JsonNode lineA = call(post("/api/v1/items/{id}/bom?viewType=DESIGN", subId), admin,
+                json(Map.of("childId", leafA, "qty", 2)));
+        JsonNode lineB = call(post("/api/v1/items/{id}/bom?viewType=DESIGN", subId), admin,
+                json(Map.of("childId", leafB, "qty", 3)));
+        long lineAId = lineA.path("lineId").asLong();
+        long lineBId = lineB.path("lineId").asLong();
+
+        // 1. 批量改用量：两行同时改成 5 件 / 损耗 4%
+        Map<String, Object> qtyReq = new HashMap<>();
+        qtyReq.put("lineIds", List.of(lineAId, lineBId));
+        qtyReq.put("qty", 5);
+        qtyReq.put("lossRate", 4);
+        JsonNode qtyResult = call(post("/api/v1/items/{id}/bom/batch/update-qty", rootId), admin, json(qtyReq));
+        assertThat(qtyResult.path("updated").asInt()).isEqualTo(2);
+        assertThat(qtyResult.path("skipped").asInt()).isZero();
+        JsonNode subTree = call(get("/api/v1/items/{id}/bom?viewType=DESIGN&depth=2", subId), admin, null);
+        assertThat(subTree.get(0).path("qty").asDouble()).isEqualTo(5.0);
+        assertThat(subTree.get(0).path("lossRate").asDouble()).isEqualTo(4.0);
+
+        // 2. 越权：用另一棵树修改这些行 → 全部跳过
+        JsonNode denied = call(post("/api/v1/items/{id}/bom/batch/update-qty", otherRoot), admin, json(qtyReq));
+        assertThat(denied.path("updated").asInt()).isZero();
+        assertThat(denied.path("skipped").asInt()).isEqualTo(2);
+
+        // 3. 批量替换：把 A 全部换成 C
+        JsonNode replaced = call(post("/api/v1/items/{id}/bom/batch/replace", rootId), admin,
+                json(Map.of("fromChildId", leafA, "toChildId", leafC, "viewType", "DESIGN")));
+        assertThat(replaced.path("updated").asInt()).isEqualTo(1);
+        JsonNode afterReplace = call(get("/api/v1/items/{id}/bom?viewType=DESIGN&depth=2", subId), admin, null);
+        assertThat(afterReplace.findValuesAsText("code")).doesNotContain(
+                call(get("/api/v1/items/{id}", leafA), admin, null).path("code").asText());
+        assertThat(afterReplace.get(0).path("childId").asLong()).isEqualTo(leafC);
+
+        // 4. 替换成已存在的兄弟子件 → 跳过并给出原因
+        JsonNode conflict = call(post("/api/v1/items/{id}/bom/batch/replace", rootId), admin,
+                json(Map.of("fromChildId", leafC, "toChildId", leafB, "viewType", "DESIGN")));
+        assertThat(conflict.path("updated").asInt()).isZero();
+        assertThat(conflict.path("skipped").asInt()).isEqualTo(1);
+        assertThat(conflict.path("messages").get(0).asText()).contains("已存在");
+
+        // 5. 替换目标与被替换件相同 → 400
+        mockMvc.perform(post("/api/v1/items/{id}/bom/batch/replace", rootId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("fromChildId", leafB, "toChildId", leafB))))
+                .andExpect(status().isBadRequest());
+
+        // 6. 批量改用量不给任何字段 → 400
+        Map<String, Object> emptyReq = new HashMap<>();
+        emptyReq.put("lineIds", List.of(lineAId));
+        mockMvc.perform(post("/api/v1/items/{id}/bom/batch/update-qty", rootId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(emptyReq)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void bomMoveReorderAndDuplicateGuard() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long rootId = createItem(admin, "排序总成", "PRODUCT", "MAKE");
+        long subId = createItem(admin, "排序部件", "ASSEMBLY", "MAKE");
+        long leafA = createItem(admin, "排序零件A", "PART", "MAKE");
+        long leafB = createItem(admin, "排序零件B", "PART", "MAKE");
+
+        JsonNode lineA = call(post("/api/v1/items/{id}/bom?viewType=DESIGN", rootId), admin,
+                json(Map.of("childId", leafA, "qty", 1)));
+        JsonNode lineB = call(post("/api/v1/items/{id}/bom?viewType=DESIGN", rootId), admin,
+                json(Map.of("childId", leafB, "qty", 1)));
+
+        // 1. 新增时序号递增，A 在前
+        JsonNode tree = call(get("/api/v1/items/{id}/bom?viewType=DESIGN&depth=1", rootId), admin, null);
+        assertThat(tree.get(0).path("childId").asLong()).isEqualTo(leafA);
+        assertThat(tree.get(1).path("childId").asLong()).isEqualTo(leafB);
+
+        // 2. 交换序号（与前端「上移/下移」实现一致：两次 move 互换 lineNo）
+        int lineNoA = lineA.path("lineNo").asInt();
+        int lineNoB = lineB.path("lineNo").asInt();
+        assertThat(lineNoA).isLessThan(lineNoB);
+        call(post("/api/v1/items/{id}/bom/lines/{lineId}/move", rootId, lineA.path("lineId").asLong()), admin,
+                json(Map.of("newLineNo", lineNoB, "viewType", "DESIGN")));
+        call(post("/api/v1/items/{id}/bom/lines/{lineId}/move", rootId, lineB.path("lineId").asLong()), admin,
+                json(Map.of("newLineNo", lineNoA, "viewType", "DESIGN")));
+
+        tree = call(get("/api/v1/items/{id}/bom?viewType=DESIGN&depth=1", rootId), admin, null);
+        assertThat(tree.get(0).path("childId").asLong()).isEqualTo(leafB);
+        assertThat(tree.get(1).path("childId").asLong()).isEqualTo(leafA);
+
+        // 3. 换父件时目标父件下已有同一子件 → 409 并给出提示
+        long lineAInSub = call(post("/api/v1/items/{id}/bom?viewType=DESIGN", subId), admin,
+                json(Map.of("childId", leafA, "qty", 2))).path("lineId").asLong();
+        MvcResult conflict = mockMvc.perform(post("/api/v1/items/{id}/bom/lines/{lineId}/move", subId, lineAInSub)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("newParentId", rootId, "viewType", "DESIGN"))))
+                .andExpect(status().isConflict())
+                .andReturn();
+        assertThat(conflict.getResponse().getContentAsString()).contains("已存在");
+    }
+
     // ------------------------------------------------------------ 工具
+
+    private JsonNode multipartCall(String path, long itemId, String token, String fileName,
+                                   byte[] content, String viewType) throws Exception {
+        MvcResult result = mockMvc.perform(multipart(path, itemId)
+                        .file(new MockMultipartFile("file", fileName,
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content))
+                        .param("viewType", viewType)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        return body(result).path("data");
+    }
+
+    private byte[] buildBomWorkbook(Object[][] dataRows) throws IOException {
+        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("BOM");
+            String[] headers = {"层级号", "编码", "名称", "规格型号", "单位", "数量", "损耗率(%)", "有效用量",
+                    "生效日期", "失效日期"};
+            Row header = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) {
+                header.createCell(i).setCellValue(headers[i]);
+            }
+            for (int r = 0; r < dataRows.length; r++) {
+                Row row = sheet.createRow(r + 1);
+                Object[] values = dataRows[r];
+                // 每行为 {层级号, 编码, 数量}，按表头列位写入（数量在第 6 列）
+                row.createCell(0).setCellValue(values[0] == null ? "" : values[0].toString());
+                row.createCell(1).setCellValue(values[1] == null ? "" : values[1].toString());
+                row.createCell(5).setCellValue(values[2] instanceof Number number ? number.doubleValue() : 0);
+            }
+            workbook.write(out);
+            return out.toByteArray();
+        }
+    }
 
     private long createItem(String token, String name, String itemType, String sourceType) throws Exception {
         JsonNode created = call(post("/api/v1/items"), token, json(Map.of(
