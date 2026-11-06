@@ -504,12 +504,18 @@
         <span class="hint">按层级路径匹配，展示基线冻结后发生的结构变化</span>
       </div>
 
-      <el-table v-loading="diffLoading" :data="diffResult?.rows ?? []" border>
+      <el-table
+        v-loading="diffLoading"
+        :data="diffResult?.rows ?? []"
+        border
+        :row-class-name="diffRowClass"
+      >
         <el-table-column label="变化" width="110">
           <template #default="{ row }">
-            <el-tag :type="changeTag(row.changeType)" size="small">
-              {{ BASELINE_CHANGE_LABEL[row.changeType] ?? row.changeType }}
-            </el-tag>
+            <StatusDot
+              :tone="changeTone(row.changeType)"
+              :label="BASELINE_CHANGE_LABEL[row.changeType] ?? row.changeType"
+            />
           </template>
         </el-table-column>
         <el-table-column prop="path" label="路径" width="110" />
@@ -1047,17 +1053,31 @@ async function onDeleteBaseline(row: BomBaselineRow): Promise<void> {
   }
 }
 
-function changeTag(type: string): 'success' | 'danger' | 'warning' | 'info' {
+function changeTone(type: string): 'ok' | 'danger' | 'warn' | 'muted' {
   if (type === 'ADDED') {
-    return 'success'
+    return 'ok'
   }
   if (type === 'REMOVED') {
     return 'danger'
   }
   if (type === 'QTY_CHANGED') {
-    return 'warning'
+    return 'warn'
   }
-  return 'info'
+  return 'muted'
+}
+
+/** 差异行底色（SIPM p35：新增浅绿 / 删除浅红 / 变更浅黄）。 */
+function diffRowClass({ row }: { row: { changeType?: string } }): string {
+  if (row.changeType === 'ADDED') {
+    return 'diff-row-added'
+  }
+  if (row.changeType === 'REMOVED') {
+    return 'diff-row-removed'
+  }
+  if (row.changeType === 'QTY_CHANGED') {
+    return 'diff-row-changed'
+  }
+  return ''
 }
 
 async function loadWhereUsed(): Promise<void> {
@@ -1467,5 +1487,18 @@ onMounted(async () => {
 .batch-input {
   width: 180px;
   margin-left: 8px;
+}
+
+/* 基线对比差异行：新增浅绿 / 删除浅红 / 变更浅黄（SIPM p35 的目视化差异） */
+:deep(.diff-row-added) td.el-table__cell {
+  background: #f1faf4;
+}
+
+:deep(.diff-row-removed) td.el-table__cell {
+  background: #fdf2f1;
+}
+
+:deep(.diff-row-changed) td.el-table__cell {
+  background: var(--plm-highlight, #fff8d6);
 }
 </style>
