@@ -3,6 +3,7 @@ package com.nexplm.platform.workflow.api;
 import com.nexplm.common.api.Result;
 import com.nexplm.common.audit.Audit;
 import com.nexplm.platform.security.CurrentUser;
+import com.nexplm.platform.workflow.service.WorkflowDefinitionService;
 import com.nexplm.platform.workflow.service.WorkflowService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -28,9 +29,12 @@ import java.util.List;
 public class WorkflowController {
 
     private final WorkflowService workflowService;
+    private final WorkflowDefinitionService definitionService;
 
-    public WorkflowController(WorkflowService workflowService) {
+    public WorkflowController(WorkflowService workflowService,
+                              WorkflowDefinitionService definitionService) {
         this.workflowService = workflowService;
+        this.definitionService = definitionService;
     }
 
     @Operation(summary = "发起流程（初审 + 会签人）")
@@ -130,6 +134,28 @@ public class WorkflowController {
     @PreAuthorize("hasAuthority('wf.process.manage')")
     public Result<List<WfDtos.BindingRow>> bindings(@RequestParam(required = false) String objectType) {
         return Result.ok(workflowService.bindings(objectType));
+    }
+
+    @Operation(summary = "流程定义列表（每个 processKey 取最新版本）")
+    @GetMapping("/definitions")
+    @PreAuthorize("hasAuthority('wf.process.manage')")
+    public Result<List<WfDtos.DefinitionRow>> definitions() {
+        return Result.ok(definitionService.list());
+    }
+
+    @Operation(summary = "流程定义 XML（bpmn-js 编辑器加载）")
+    @GetMapping("/definitions/{id}/xml")
+    @PreAuthorize("hasAuthority('wf.process.manage')")
+    public Result<WfDtos.DefinitionXml> definitionXml(@PathVariable String id) {
+        return Result.ok(definitionService.xml(id));
+    }
+
+    @Operation(summary = "部署流程定义（设计器保存，同 key 自动升版本）")
+    @PostMapping("/definitions")
+    @PreAuthorize("hasAuthority('wf.process.manage')")
+    @Audit(module = "WF", action = "PROCESS_DEPLOY", objectType = "WfDefinition")
+    public Result<WfDtos.DefinitionRow> deploy(@Valid @RequestBody WfDtos.DeployReq req) {
+        return Result.ok(definitionService.deploy(req));
     }
 
     @Operation(summary = "流程与生命周期一致性巡检（fix=true 时自动修正可判定的漂移）")

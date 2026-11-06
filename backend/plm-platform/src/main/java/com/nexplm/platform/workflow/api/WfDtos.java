@@ -157,6 +157,24 @@ public final class WfDtos {
     public record ActivityRow(String key, String name, OffsetDateTime firstEnteredAt) {
     }
 
+    /** 流程定义（按 processKey 取最新版本）。 */
+    public record DefinitionRow(String id, String key, String name, int version, String deploymentId,
+                                OffsetDateTime deploymentTime, String resourceName) {
+    }
+
+    /** 流程定义 XML（供 bpmn-js 编辑器加载）。 */
+    public record DefinitionXml(String id, String key, String name, int version, String xml) {
+    }
+
+    /**
+     * 部署流程定义（设计器保存）。
+     * <p>流程 key 由 BPMN 内的 {@code <process id="...">} 决定；同名 key 重复部署即生成新版本，
+     * 已在跑的实例仍走旧版本，新发起的实例走最新版本（Flowable 版本语义）。</p>
+     */
+    public record DeployReq(@NotBlank(message = "流程名称不能为空") @Size(max = 200) String name,
+                            @NotBlank(message = "流程 XML 不能为空") String bpmnXml) {
+    }
+
     public record PageResult<T>(long total, List<T> items) {
     }
 

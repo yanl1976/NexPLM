@@ -115,6 +115,40 @@ class WorkflowSmokeTest {
         assertThat(instances.get(0).path("currentActivities").size()).isGreaterThan(0);
     }
 
+    /** 流程定义管理：列表 / 读 XML / 部署新版本 / 非法 XML 返回 400。 */
+    @Test
+    void definitionsListXmlAndDeployNewVersion() throws Exception {
+        String admin = login("admin", "Admin@12345");
+
+        JsonNode list = call(get("/api/v1/workflow/definitions"), admin, null);
+        JsonNode target = null;
+        for (JsonNode row : list) {
+            if ("nexplmApproval".equals(row.path("key").asText())) {
+                target = row;
+            }
+        }
+        assertThat(target).isNotNull();
+        int version = target.path("version").asInt();
+        assertThat(version).isGreaterThanOrEqualTo(1);
+
+        JsonNode xml = call(get("/api/v1/workflow/definitions/{id}/xml", target.path("id").asText()), admin, null);
+        String bpmn = xml.path("xml").asText();
+        assertThat(bpmn).contains("nexplmApproval");
+
+        // 同 key 重新部署 → 版本 +1
+        JsonNode deployed = call(post("/api/v1/workflow/definitions"), admin,
+                json(Map.of("name", "冒烟-流程定义", "bpmnXml", bpmn)));
+        assertThat(deployed.path("key").asText()).isEqualTo("nexplmApproval");
+        assertThat(deployed.path("version").asInt()).isEqualTo(version + 1);
+
+        // 非法 XML → 400（由引擎解析失败转换而来，不是 500）
+        mockMvc.perform(post("/api/v1/workflow/definitions")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("name", "坏流程", "bpmnXml", "<not-bpmn/>"))))
+                .andExpect(status().isBadRequest());
+    }
+
     @Test
     void countersignPassesOnlyWhenAllApprove() throws Exception {
         String admin = login("admin", "Admin@12345");

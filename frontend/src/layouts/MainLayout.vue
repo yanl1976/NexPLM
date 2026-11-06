@@ -42,6 +42,7 @@
           </template>
           <el-menu-item index="/workflow">流程中心</el-menu-item>
           <el-menu-item index="/workflow/delegate">委托设置</el-menu-item>
+          <el-menu-item v-if="canManageWorkflow" index="/workflow/definitions">流程定义</el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/change" disabled>
           <el-icon><Refresh /></el-icon>
@@ -93,6 +94,8 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
+const canManageWorkflow = computed(() => userStore.can('wf.process.manage'))
+
 const activeMenu = computed(() => {
   if (route.path === '/doc/class') {
     return '/doc/class'
@@ -105,6 +108,9 @@ const activeMenu = computed(() => {
   }
   if (route.path === '/workflow/delegate') {
     return '/workflow/delegate'
+  }
+  if (route.path === '/workflow/definitions') {
+    return '/workflow/definitions'
   }
   if (route.path.startsWith('/workflow')) {
     return '/workflow'

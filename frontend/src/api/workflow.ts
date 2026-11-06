@@ -123,6 +123,26 @@ export interface ActivityRow {
   firstEnteredAt: string | null
 }
 
+/** 流程定义（每个 processKey 取最新版本）。 */
+export interface DefinitionRow {
+  id: string
+  key: string
+  name?: string | null
+  version: number
+  deploymentId: string
+  deploymentTime: string | null
+  resourceName: string
+}
+
+/** 流程定义 XML（bpmn-js 编辑器加载）。 */
+export interface DefinitionXml {
+  id: string
+  key: string
+  name?: string | null
+  version: number
+  xml: string
+}
+
 /** 电子签名：verifyResult = VALID / CHANGED / UNKNOWN。 */
 export interface SignatureRow {
   id: string
@@ -265,6 +285,16 @@ export const workflowApi = {
   },
   bindings(objectType?: string) {
     return http.get<BindingRow[]>('/workflow/bindings', { objectType })
+  },
+  definitions() {
+    return http.get<DefinitionRow[]>('/workflow/definitions')
+  },
+  definitionXml(id: string) {
+    return http.get<DefinitionXml>(`/workflow/definitions/${id}/xml`)
+  },
+  /** 部署设计器保存的 XML；同 processKey 重复部署自动升版本。 */
+  deployDefinition(body: { name: string; bpmnXml: string }) {
+    return http.post<DefinitionRow>('/workflow/definitions', body)
   },
   /** 一致性巡检（POST + query，fix=true 时自动修正可判定漂移）。 */
   checkConsistency(fix = false) {

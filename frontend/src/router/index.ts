@@ -74,6 +74,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '委托设置' }
       },
       {
+        path: 'workflow/definitions',
+        name: 'workflow-definitions',
+        component: () => import('@/views/workflow/DefinitionView.vue'),
+        meta: { title: '流程定义' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),
