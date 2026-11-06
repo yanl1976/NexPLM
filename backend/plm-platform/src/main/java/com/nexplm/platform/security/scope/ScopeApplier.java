@@ -52,4 +52,28 @@ public class ScopeApplier {
         }
         return wrapper;
     }
+
+    /**
+     * 单对象可见性校验（P10-5 安全加固）。
+     *
+     * <p>只做列表过滤是不够的：{@code GET /docs/{id}} 这类按主键直取的接口不经过 wrapper，
+     * 列表里看不到的数据照样能被拼 id 拿到。这里提供与 {@link #apply} <b>完全同一套语义</b>的
+     * 判定，供各域的 {@code requireObject} 在返回详情前调用；不通过时调用方统一按"不存在"处理，
+     * 避免泄露"存在但无权看"。</p>
+     */
+    public boolean isVisible(Long companyId, Long orgId, Long ownerId) {
+        DataScopeContext.Scope scope = DataScopeContext.get();
+        if (scope == null || scope.type() == DataScopeType.ALL) {
+            return true;
+        }
+        if (scope.companyId() != null && !scope.companyId().equals(companyId)) {
+            return false;
+        }
+        return switch (scope.type()) {
+            case COMPANY -> true;
+            case ORG -> orgId != null && scope.orgIds().contains(orgId);
+            case SELF -> ownerId != null && ownerId.equals(scope.userId());
+            default -> false;
+        };
+    }
 }

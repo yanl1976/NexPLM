@@ -236,6 +236,10 @@ public class ItemService {
         if (object == null || !OBJECT_TYPE.equals(object.getObjectType())) {
             throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "零部件不存在：" + id);
         }
+        // 按 id 直取也要过数据作用域：列表过滤不到的对象不能靠拼 id 拿到，越权按"不存在"处理
+        if (!scopeApplier.isVisible(object.getCompanyId(), object.getOrgId(), object.getOwnerId())) {
+            throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "零部件不存在：" + id);
+        }
         return object;
     }
 

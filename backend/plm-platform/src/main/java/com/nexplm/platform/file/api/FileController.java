@@ -55,6 +55,9 @@ import java.util.List;
 @RequestMapping("/api/v1/files")
 public class FileController {
 
+    /** 下载文件名上限：够放中文长名，又不至于把响应头撑爆。 */
+    private static final int MAX_DOWNLOAD_NAME = 200;
+
     private final FileService fileService;
     private final MultipartUploadService multipartUploadService;
 
@@ -153,9 +156,11 @@ public class FileController {
             throw BizException.of(ErrorCode.FILE_STORAGE_ERROR, "读取文件内容失败：" + ex.getMessage());
         }
 
-        String downloadName = (name == null || name.isBlank())
-                ? "file-" + file.getSha256().substring(0, 12) + (file.getExt() == null ? "" : "." + file.getExt())
-                : name;
+        String downloadName = safeFileName(name);
+        if (downloadName == null) {
+            downloadName = "file-" + file.getSha256().substring(0, 12)
+                    + (file.getExt() == null ? "" : "." + file.getExt());
+        }
         ResponseEntity.BodyBuilder builder = ResponseEntity.status(partial ? HttpStatus.PARTIAL_CONTENT : HttpStatus.OK)
                 .header(HttpHeaders.CONTENT_TYPE, file.getMime() == null
                         ? MediaType.APPLICATION_OCTET_STREAM_VALUE : file.getMime())
@@ -339,6 +344,34 @@ public class FileController {
             }
             return skipped;
         }
+    }
+
+    /**
+     * 下载文件名净化（P10-5 安全加固）。
+     *
+     * <p>{@code name} 来自查询参数，是用户可控输入，直接放进 Content-Disposition 有三个问题：
+     * 客户端按 {@code ../../x} 落盘会穿越目录、超长文件名会撑大响应头、控制字符会污染头部。
+     * 这里只取最后一段、去控制字符并限长；净化后为空则回退到按 sha256 生成的名字。</p>
+     */
+    private String safeFileName(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String name = raw.trim().replace('\\', '/');
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) {
+            name = name.substring(slash + 1);
+        }
+        name = name.replaceAll("\\p{Cntrl}", "").trim();
+        if (name.isEmpty() || ".".equals(name) || "..".equals(name)) {
+            return null;
+        }
+        if (name.length() > MAX_DOWNLOAD_NAME) {
+            int dot = name.lastIndexOf('.');
+            String ext = (dot > 0 && name.length() - dot <= 16) ? name.substring(dot) : "";
+            name = name.substring(0, Math.max(1, MAX_DOWNLOAD_NAME - ext.length())) + ext;
+        }
+        return name;
     }
 
     /** 下载文件名统一按 RFC 5987 编码，避免中文乱码。 */

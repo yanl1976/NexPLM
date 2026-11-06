@@ -460,6 +460,11 @@ public class DocService {
         if (object == null || !OBJECT_TYPE.equals(object.getObjectType())) {
             throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "文档不存在：" + id);
         }
+        // 按 id 直取同样要过数据作用域，否则列表里看不到的文档能被拼 id 拿到；
+        // 越权时也按"不存在"返回，不暴露对象是否存在。
+        if (!scopeApplier.isVisible(object.getCompanyId(), object.getOrgId(), object.getOwnerId())) {
+            throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "文档不存在：" + id);
+        }
         return object;
     }
 
