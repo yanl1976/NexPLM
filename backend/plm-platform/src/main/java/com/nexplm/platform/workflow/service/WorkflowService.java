@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
+import com.nexplm.platform.object.service.ObjectAccessGuard;
+import com.nexplm.platform.security.scope.DataScopeContext;
+import com.nexplm.platform.security.scope.DataScopeType;
 import com.nexplm.platform.workflow.api.WfDtos;
 import com.nexplm.platform.workflow.service.assignee.AssigneeContext;
 import com.nexplm.platform.workflow.service.assignee.AssigneeResolverRegistry;
@@ -82,11 +85,13 @@ public class WorkflowService {
     private final AssigneeResolverRegistry assigneeResolvers;
     private final WfPluginRegistry pluginRegistry;
     private final ObjectMapper objectMapper;
+    private final ObjectAccessGuard objectAccessGuard;
 
     public WorkflowService(RuntimeService runtimeService, TaskService taskService,
                            RepositoryService repositoryService, HistoryService historyService,
                            JdbcTemplate jdbcTemplate, AssigneeResolverRegistry assigneeResolvers,
-                           WfPluginRegistry pluginRegistry, ObjectMapper objectMapper) {
+                           WfPluginRegistry pluginRegistry, ObjectMapper objectMapper,
+                           ObjectAccessGuard objectAccessGuard) {
         this.runtimeService = runtimeService;
         this.taskService = taskService;
         this.repositoryService = repositoryService;
@@ -95,6 +100,7 @@ public class WorkflowService {
         this.assigneeResolvers = assigneeResolvers;
         this.pluginRegistry = pluginRegistry;
         this.objectMapper = objectMapper;
+        this.objectAccessGuard = objectAccessGuard;
     }
 
     /** 业务对象与流程实例的关联信息（用于把任务行补全为可展示的业务上下文）。 */
@@ -1037,17 +1043,31 @@ public class WorkflowService {
         Long count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM plm_object WHERE id = ? AND deleted = false", Long.class, objectId);
         if (count != null && count > 0) {
+            // 发起流程是写操作：对看不见的对象也不能发起，否则等于凭 id 越权改别人的业务状态
+            objectAccessGuard.require(objectId);
             return;
         }
         // 非 plm_object 业务对象（如变更申请）在各自业务表里判定存在性
-        if ("ChgEcr".equals(objectType)) {
-            Long ecr = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(1) FROM chg_ecr WHERE id = ? AND deleted = false", Long.class, objectId);
-            if (ecr != null && ecr > 0) {
-                return;
-            }
+        if ("ChgEcr".equals(objectType) && chgEcrVisible(objectId)) {
+            return;
         }
         throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "业务对象不存在：" + objectId);
+    }
+
+    /** 变更申请不在 {@code plm_object}，按数据范围做公司隔离（ALL 范围不限公司）。 */
+    private boolean chgEcrVisible(Long objectId) {
+        DataScopeContext.Scope scope = DataScopeContext.get();
+        Long companyId = scope == null ? null : scope.companyId();
+        if (scope == null || scope.type() == DataScopeType.ALL || companyId == null) {
+            Long count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(1) FROM chg_ecr WHERE id = ? AND deleted = false",
+                    Long.class, objectId);
+            return count != null && count > 0;
+        }
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM chg_ecr WHERE id = ? AND company_id = ? AND deleted = false",
+                Long.class, objectId, companyId);
+        return count != null && count > 0;
     }
 
     /**

@@ -5,8 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
-import com.nexplm.platform.object.domain.PlmObject;
-import com.nexplm.platform.object.mapper.PlmObjectMapper;
+import com.nexplm.platform.object.service.ObjectAccessGuard;
 import com.nexplm.platform.ws.api.WsDtos;
 import com.nexplm.platform.ws.domain.WsFolder;
 import com.nexplm.platform.ws.domain.WsFolderContent;
@@ -40,14 +39,14 @@ public class WorkspaceService {
 
     private final WsFolderMapper folderMapper;
     private final WsFolderContentMapper contentMapper;
-    private final PlmObjectMapper objectMapper;
+    private final ObjectAccessGuard objectAccessGuard;
     private final JdbcTemplate jdbcTemplate;
 
     public WorkspaceService(WsFolderMapper folderMapper, WsFolderContentMapper contentMapper,
-                            PlmObjectMapper objectMapper, JdbcTemplate jdbcTemplate) {
+                            ObjectAccessGuard objectAccessGuard, JdbcTemplate jdbcTemplate) {
         this.folderMapper = folderMapper;
         this.contentMapper = contentMapper;
-        this.objectMapper = objectMapper;
+        this.objectAccessGuard = objectAccessGuard;
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -329,11 +328,12 @@ public class WorkspaceService {
         return folder;
     }
 
+    /**
+     * 文件夹内容/收藏/最近访问都按对象 id 引用外部对象，
+     * 必须与列表同一套数据范围，否则可以把别家公司的对象塞进自己的空间再读取出来。
+     */
     private void requireObject(Long objectId) {
-        PlmObject object = objectMapper.selectById(objectId);
-        if (object == null) {
-            throw BizException.of(ErrorCode.OBJ_NOT_FOUND);
-        }
+        objectAccessGuard.require(objectId);
     }
 
     private void assertVisible(WsFolder folder, Long userId, Long companyId) {

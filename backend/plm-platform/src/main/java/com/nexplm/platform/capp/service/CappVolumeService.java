@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.capp.api.CappVolumeDtos;
+import com.nexplm.platform.object.service.ObjectAccessGuard;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,9 +42,11 @@ public class CappVolumeService {
     private static final String FAIL = "FAIL";
 
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectAccessGuard objectAccessGuard;
 
-    public CappVolumeService(JdbcTemplate jdbcTemplate) {
+    public CappVolumeService(JdbcTemplate jdbcTemplate, ObjectAccessGuard objectAccessGuard) {
         this.jdbcTemplate = jdbcTemplate;
+        this.objectAccessGuard = objectAccessGuard;
     }
 
     // ------------------------------------------------------------------ 成册
@@ -183,6 +186,7 @@ public class CappVolumeService {
     // ------------------------------------------------------------------ 齐套检查
 
     public CappVolumeDtos.CompletenessResult completeness(Long objectId, Long companyId) {
+        requireObject(objectId);
         Map<String, Object> object = objectInfo(objectId);
         Map<String, Object> counts = jdbcTemplate.queryForMap("""
                         SELECT
@@ -298,8 +302,9 @@ public class CappVolumeService {
         return normalized;
     }
 
+    /** 成册按零件 id 直取，需与列表同一套数据范围，避免跨公司指定对象。 */
     private void requireObject(Long objectId) {
-        objectInfo(objectId);
+        objectAccessGuard.require(objectId);
     }
 
     private Map<String, Object> objectInfo(Long objectId) {

@@ -10,7 +10,7 @@ import com.nexplm.platform.file.mapper.FileLinkMapper;
 import com.nexplm.platform.file.mapper.FileObjectMapper;
 import com.nexplm.platform.file.scan.FileScanHook;
 import com.nexplm.platform.file.storage.FileStorage;
-import com.nexplm.platform.object.mapper.PlmObjectMapper;
+import com.nexplm.platform.object.service.ObjectAccessGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
@@ -105,15 +105,15 @@ public class FileService {
 
     private final FileObjectMapper fileObjectMapper;
     private final FileLinkMapper fileLinkMapper;
-    private final PlmObjectMapper objectMapper;
+    private final ObjectAccessGuard objectAccessGuard;
     private final FileStorage storage;
     private final FileScanHook scanHook;
 
     public FileService(FileObjectMapper fileObjectMapper, FileLinkMapper fileLinkMapper,
-                       PlmObjectMapper objectMapper, FileStorage storage, FileScanHook scanHook) {
+                       ObjectAccessGuard objectAccessGuard, FileStorage storage, FileScanHook scanHook) {
         this.fileObjectMapper = fileObjectMapper;
         this.fileLinkMapper = fileLinkMapper;
-        this.objectMapper = objectMapper;
+        this.objectAccessGuard = objectAccessGuard;
         this.storage = storage;
         this.scanHook = scanHook;
     }
@@ -415,9 +415,9 @@ public class FileService {
         if (objectId == null) {
             throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "归属对象不能为空");
         }
-        if (objectMapper.selectById(objectId) == null) {
-            throw BizException.of(ErrorCode.OBJ_NOT_FOUND);
-        }
+        // 服务间直接调用（不经过 FileController）同样要过数据范围，
+        // 否则任意入口都能给看不见的对象挂文件
+        objectAccessGuard.require(objectId);
     }
 
     /** 角色归一化：空值回落为附件，非法值直接拒绝。分片上传会话也复用该规则。 */
