@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.annotation.Version;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
 /**
@@ -26,6 +27,9 @@ public class BomLine {
     private BigDecimal qty;
     private String unit;
     private BigDecimal lossRate;
+    /** 有效性区间（含边界）；为空表示该侧不限，即无区间 = 始终有效。 */
+    private LocalDate effectFrom;
+    private LocalDate effectTo;
     private String refDesignator;
     private String remark;
     @Version
