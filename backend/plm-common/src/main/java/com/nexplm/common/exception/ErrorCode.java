@@ -99,7 +99,10 @@ public enum ErrorCode {
     SYSDOC_FOLDER_IN_USE("SYSDOC.FOLDER.IN_USE", "文件夹下还有子文件夹或文件，不能删除", 409),
     AUDIT_NOT_FOUND("AUDIT.NOT_FOUND", "审核对象不存在", 404),
     AUDIT_INVALID("AUDIT.INVALID", "审核数据不合法", 400),
-    AUDIT_STATE_INVALID("AUDIT.STATE.INVALID", "当前审核状态不允许该操作", 409);
+    AUDIT_STATE_INVALID("AUDIT.STATE.INVALID", "当前审核状态不允许该操作", 409),
+    SUP_NOT_FOUND("SUP.NOT_FOUND", "供应商对象不存在", 404),
+    SUP_INVALID("SUP.INVALID", "供应商数据不合法", 400),
+    SUP_IN_USE("SUP.IN_USE", "供应商还有在用的零件关系，不能删除", 409);
 
     private final String code;
     private final String message;
