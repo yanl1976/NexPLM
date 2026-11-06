@@ -55,7 +55,7 @@ public class LifecycleAdvancePlugin implements WfBusinessPlugin {
         if (action == null) {
             return;
         }
-        String state = currentState(context.objectId());
+        String state = currentState(context);
         if (state == null) {
             return;
         }
@@ -71,11 +71,16 @@ public class LifecycleAdvancePlugin implements WfBusinessPlugin {
         }
     }
 
-    private String currentState(Long objectId) {
+    /**
+     * 取对象当前生命周期状态。
+     * <p>带 {@code object_type} 限定：变更申请（ChgEcr）等独立业务对象不在 {@code plm_object}，
+     * 若只按 id 查，极端情况下会命中别的对象，把状态改错人。</p>
+     */
+    private String currentState(WfPluginContext context) {
         try {
             List<String> states = jdbcTemplate.queryForList(
-                    "SELECT lifecycle_state FROM plm_object WHERE id = ? AND deleted = false",
-                    String.class, objectId);
+                    "SELECT lifecycle_state FROM plm_object WHERE id = ? AND object_type = ? AND deleted = false",
+                    String.class, context.objectId(), context.objectType());
             return states.isEmpty() ? null : states.get(0);
         } catch (RuntimeException ex) {
             return null;

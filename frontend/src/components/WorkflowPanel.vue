@@ -1,6 +1,6 @@
 <template>
   <div class="wf-panel">
-    <div class="toolbar">
+    <div v-if="!hideStart" class="toolbar">
       <el-button type="primary" :disabled="!canStart" @click="openStart">发起审批</el-button>
       <span class="hint">
         提交后对象状态自动流转：发起 → 审批中；会签全票通过 → 已发布；撤回 → 回到草稿
@@ -105,7 +105,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { workflowApi, type ActorUserRow, type InstanceRow } from '@/api/workflow'
 import { useUserStore } from '@/stores/user'
 
-const props = defineProps<{ objectType: string; objectId: string }>()
+/**
+ * hideStart：只展示既有流程实例、不提供「发起审批」。
+ * 用于「提交业务单据即自动发起流程」的页面（如变更申请 ECR），避免手工再发一遍造成双流程。
+ */
+const props = defineProps<{ objectType: string; objectId: string; hideStart?: boolean }>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
 
 const router = useRouter()

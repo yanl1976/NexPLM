@@ -105,6 +105,17 @@
         </el-descriptions>
 
         <div class="section">
+          <div class="section-title">审批流程</div>
+          <WorkflowPanel
+            v-if="detail.id"
+            object-type="ChgEcr"
+            :object-id="detail.id"
+            hide-start
+            @changed="onWorkflowChanged"
+          />
+        </div>
+
+        <div class="section">
           <div class="section-title">关联对象</div>
           <el-table :data="detail.objects" border size="small">
             <el-table-column label="关系" width="100">
@@ -338,6 +349,26 @@
             <el-option label="低" value="LOW" />
           </el-select>
         </el-form-item>
+        <el-form-item label="接收人">
+          <el-select
+            v-model="form.receiverId"
+            filterable
+            remote
+            reserve-keyword
+            clearable
+            placeholder="变更专员，提交后由其审批"
+            :remote-method="searchUsers"
+            :loading="userLoading"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="user in users"
+              :key="user.id"
+              :label="`${user.displayName}（${user.username}）`"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="项目号">
           <el-input v-model="form.projectNo" placeholder="可选，如 S2026005" />
         </el-form-item>
@@ -372,6 +403,8 @@ import {
   type ImpactRow,
   type ProblemRow
 } from '@/api/change'
+import { workflowApi, type ActorUserRow } from '@/api/workflow'
+import WorkflowPanel from '@/components/WorkflowPanel.vue'
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: '草稿',
@@ -414,11 +447,15 @@ const form = reactive<EcrSaveReq>({
   title: '',
   changeType: 'DESIGN',
   priority: 'NORMAL',
+  receiverId: null,
   projectNo: '',
   targetDate: null,
   reason: '',
   feasibility: ''
 })
+/** 接收人（审批人）选人列表。 */
+const users = ref<ActorUserRow[]>([])
+const userLoading = ref(false)
 const objForm = reactive<{ objectType: string; objectId: string; relation: string; action: string }>({
   objectType: 'PdmItem',
   objectId: '',
@@ -505,18 +542,31 @@ async function openDetail(id: string): Promise<void> {
   }
 }
 
+async function searchUsers(keyword: string): Promise<void> {
+  userLoading.value = true
+  try {
+    users.value = await workflowApi.actorUsers(keyword)
+  } catch {
+    users.value = []
+  } finally {
+    userLoading.value = false
+  }
+}
+
 function openCreate(): void {
   editing.value = false
   Object.assign(form, {
     title: '',
     changeType: 'DESIGN',
     priority: 'NORMAL',
+    receiverId: null,
     projectNo: '',
     targetDate: null,
     reason: '',
     feasibility: ''
   })
   formVisible.value = true
+  searchUsers('')
 }
 
 function openEdit(): void {
@@ -528,12 +578,14 @@ function openEdit(): void {
     title: detail.value.title,
     changeType: detail.value.changeType,
     priority: detail.value.priority,
+    receiverId: detail.value.receiverId ?? null,
     projectNo: detail.value.projectNo ?? '',
     targetDate: detail.value.targetDate ?? null,
     reason: detail.value.reason ?? '',
     feasibility: detail.value.feasibility ?? ''
   })
   formVisible.value = true
+  searchUsers('')
 }
 
 async function onSave(): Promise<void> {
@@ -565,21 +617,36 @@ async function onSubmit(): Promise<void> {
   if (!detail.value) {
     return
   }
-  try {
-    await ElMessageBox.confirm('提交后主档不可再修改，确认提交评审？', '提交变更申请', {
-      confirmButtonText: '提交',
-      cancelButtonText: '取消'
-    })
-  } catch {
+  if (!detail.value.receiverId) {
+    ElMessage.warning('请先在「编辑」中指定接收人（变更专员），提交后由其审批')
     return
   }
   try {
-    detail.value = await changeApi.submit(detail.value.id)
-    ElMessage.success('已提交')
+    await ElMessageBox.confirm(
+      '提交后主档不可再修改，并立即发起审批流程（接收人初审+会签），确认提交？',
+      '提交变更申请',
+      { confirmButtonText: '提交', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  const ecrId = detail.value.id
+  try {
+    await changeApi.submit(ecrId)
+    ElMessage.success('已提交并发起审批')
+    await openDetail(ecrId)
     await load()
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '提交失败')
   }
+}
+
+/** 流程办理/撤回后刷新详情（ECR 状态由流程插件回写，需重新拉取）。 */
+async function onWorkflowChanged(): Promise<void> {
+  if (detail.value) {
+    await openDetail(detail.value.id)
+  }
+  await load()
 }
 
 async function onClose(): Promise<void> {

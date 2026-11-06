@@ -61,6 +61,19 @@ public class WorkflowService {
 
     private static final int MAX_PAGE_SIZE = 200;
 
+    /**
+     * 业务对象编码/名称的来源。
+     *
+     * <p>绝大多数对象落在 {@code plm_object}；变更申请（{@code ChgEcr}）是 P5 的独立业务表，
+     * 不在 {@code plm_object} 中登记，不做兜底的话待办/已办/流程实例列表里的对象列会全是空。</p>
+     */
+    private static final String OBJECT_META_JOIN = """
+            LEFT JOIN plm_object o ON o.id = l.object_id AND l.object_type <> 'ChgEcr'
+            LEFT JOIN chg_ecr ce ON ce.id = l.object_id AND l.object_type = 'ChgEcr'
+            """;
+    private static final String OBJECT_CODE_EXPR = "COALESCE(o.code, ce.code)";
+    private static final String OBJECT_NAME_EXPR = "COALESCE(o.name, ce.title)";
+
     private final RuntimeService runtimeService;
     private final TaskService taskService;
     private final RepositoryService repositoryService;
@@ -92,7 +105,7 @@ public class WorkflowService {
 
     @Transactional
     public WfDtos.StartResp start(WfDtos.StartReq req, Long userId) {
-        requireObject(req.objectId());
+        requireObject(req.objectType(), req.objectId());
         String processKey = resolveProcessKey(req.objectType(), req.objectId(), req.processKey(), req.variables());
         ProcessDefinition definition = repositoryService.createProcessDefinitionQuery()
                 .processDefinitionKey(processKey).latestVersion().singleResult();
@@ -359,12 +372,12 @@ public class WorkflowService {
         List<WfDtos.InstanceDetail> rows = jdbcTemplate.query("""
                         SELECT l.process_instance_id, l.process_key, l.business_key, l.object_type, l.object_id,
                                l.status, l.started_by, su.display_name AS started_by_name,
-                               l.started_at, l.ended_at, o.code, o.name
+                               l.started_at, l.ended_at, %s AS code, %s AS name
                           FROM wf_instance_link l
-                          LEFT JOIN plm_object o ON o.id = l.object_id
+                          %s
                           LEFT JOIN sys_user su ON su.id = l.started_by
                          WHERE l.process_instance_id = ?
-                        """,
+                        """.formatted(OBJECT_CODE_EXPR, OBJECT_NAME_EXPR, OBJECT_META_JOIN),
                 (rs, rowNum) -> new WfDtos.InstanceDetail(
                         rs.getString("process_instance_id"), rs.getString("process_key"),
                         rs.getString("business_key"), rs.getString("object_type"), rs.getLong("object_id"),
@@ -439,13 +452,13 @@ public class WorkflowService {
                 "SELECT COUNT(1) FROM wf_instance_link WHERE started_by = ?", Long.class, userId);
         List<WfDtos.InstanceRow> rows = jdbcTemplate.query("""
                         SELECT l.process_instance_id, l.process_key, l.object_type, l.object_id, l.status,
-                               l.started_by, l.started_at, l.ended_at, o.code, o.name
+                               l.started_by, l.started_at, l.ended_at, %s AS code, %s AS name
                           FROM wf_instance_link l
-                          LEFT JOIN plm_object o ON o.id = l.object_id
+                          %s
                          WHERE l.started_by = ?
                          ORDER BY l.started_at DESC
                          LIMIT ? OFFSET ?
-                        """,
+                        """.formatted(OBJECT_CODE_EXPR, OBJECT_NAME_EXPR, OBJECT_META_JOIN),
                 (rs, rowNum) -> new WfDtos.InstanceRow(rs.getString("process_instance_id"),
                         rs.getString("process_key"), rs.getString("object_type"), rs.getLong("object_id"),
                         rs.getString("code"), rs.getString("name"), rs.getString("status"),
@@ -474,12 +487,12 @@ public class WorkflowService {
     public List<WfDtos.InstanceRow> objectInstances(String objectType, Long objectId) {
         List<WfDtos.InstanceRow> rows = jdbcTemplate.query("""
                         SELECT l.process_instance_id, l.process_key, l.object_type, l.object_id, l.status,
-                               l.started_by, l.started_at, l.ended_at, o.code, o.name
+                               l.started_by, l.started_at, l.ended_at, %s AS code, %s AS name
                           FROM wf_instance_link l
-                          LEFT JOIN plm_object o ON o.id = l.object_id
+                          %s
                          WHERE l.object_type = ? AND l.object_id = ?
                          ORDER BY l.started_at DESC
-                        """,
+                        """.formatted(OBJECT_CODE_EXPR, OBJECT_NAME_EXPR, OBJECT_META_JOIN),
                 (rs, rowNum) -> new WfDtos.InstanceRow(rs.getString("process_instance_id"),
                         rs.getString("process_key"), rs.getString("object_type"), rs.getLong("object_id"),
                         rs.getString("code"), rs.getString("name"), rs.getString("status"),
@@ -747,11 +760,12 @@ public class WorkflowService {
         }
         String placeholders = String.join(",", Collections.nCopies(processInstanceIds.size(), "?"));
         String sql = """
-                SELECT l.process_instance_id, l.object_type, l.object_id, l.process_key, o.code, o.name
+                SELECT l.process_instance_id, l.object_type, l.object_id, l.process_key,
+                       %s AS code, %s AS name
                   FROM wf_instance_link l
-                  LEFT JOIN plm_object o ON o.id = l.object_id
+                  %s
                  WHERE l.process_instance_id IN (%s)
-                """.formatted(placeholders);
+                """.formatted(OBJECT_CODE_EXPR, OBJECT_NAME_EXPR, OBJECT_META_JOIN, placeholders);
         Map<String, LinkInfo> result = new HashMap<>();
         jdbcTemplate.query(sql, rs -> {
             result.put(rs.getString("process_instance_id"),
@@ -788,7 +802,9 @@ public class WorkflowService {
         Long fileId = null;
         String fileSha = null;
         try {
-            List<Map<String, Object>> files = jdbcTemplate.queryForList("""
+            // 变更申请等非 plm_object 业务对象没有主文件，不参与文件摘要绑定
+            List<Map<String, Object>> files = "ChgEcr".equals(info.objectType()) ? List.of()
+                    : jdbcTemplate.queryForList("""
                     SELECT d.main_file_id AS file_id, f.sha256 AS sha256
                       FROM doc_master d
                       LEFT JOIN file_object f ON f.id = d.main_file_id
@@ -1017,12 +1033,21 @@ public class WorkflowService {
         }
     }
 
-    private void requireObject(Long objectId) {
+    private void requireObject(String objectType, Long objectId) {
         Long count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM plm_object WHERE id = ? AND deleted = false", Long.class, objectId);
-        if (count == null || count == 0) {
-            throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "业务对象不存在：" + objectId);
+        if (count != null && count > 0) {
+            return;
         }
+        // 非 plm_object 业务对象（如变更申请）在各自业务表里判定存在性
+        if ("ChgEcr".equals(objectType)) {
+            Long ecr = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(1) FROM chg_ecr WHERE id = ? AND deleted = false", Long.class, objectId);
+            if (ecr != null && ecr > 0) {
+                return;
+            }
+        }
+        throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "业务对象不存在：" + objectId);
     }
 
     /**
@@ -1056,7 +1081,7 @@ public class WorkflowService {
         if (bindings.isEmpty()) {
             throw BizException.of(ErrorCode.WF_BINDING_NOT_FOUND, "对象类型未配置流程：" + objectType);
         }
-        Map<String, Object> context = bindingContext(objectId, variables);
+        Map<String, Object> context = bindingContext(objectType, objectId, variables);
         for (String[] binding : bindings) {
             if (matchesCondition(binding[1], context)) {
                 return binding[0];
@@ -1067,7 +1092,7 @@ public class WorkflowService {
     }
 
     /** 条件判定上下文：对象快照 + ext_json 展平 + 流程变量（变量优先级最高）。 */
-    private Map<String, Object> bindingContext(Long objectId, Map<String, Object> variables) {
+    private Map<String, Object> bindingContext(String objectType, Long objectId, Map<String, Object> variables) {
         Map<String, Object> context = new HashMap<>();
         jdbcTemplate.query("""
                 SELECT object_type, code, name, lifecycle_state, phase_state, workflow_state,
@@ -1091,11 +1116,36 @@ public class WorkflowService {
                 }
             }
         }, objectId);
+        if (context.isEmpty()) {
+        externalBindingContext(objectType, objectId, context);
+        }
         if (variables != null) {
-            variables.forEach((key, value) -> context.put(key, value == null ? null : String.valueOf(value)));
+        variables.forEach((key, value) -> context.put(key, value == null ? null : String.valueOf(value)));
         }
         return context;
-    }
+        }
+
+        /**
+        * 非 {@code plm_object} 业务对象的判定上下文字段（目前只有变更申请）。
+        * <p>字段名与业务表列名解耦：{@code code/name} 对齐 plm_object 口径，
+        * 另外暴露 {@code status/changeType/priority}，便于按 ECR 状态或类型分流不同流程。</p>
+        */
+        private void externalBindingContext(String objectType, Long objectId, Map<String, Object> context) {
+        if (!"ChgEcr".equals(objectType)) {
+        return;
+        }
+        jdbcTemplate.query("""
+        SELECT code, title, change_type, priority, status
+          FROM chg_ecr WHERE id = ?
+        """, rs -> {
+        context.put("objectType", objectType);
+        context.put("code", rs.getString("code"));
+        context.put("name", rs.getString("title"));
+        context.put("changeType", rs.getString("change_type"));
+        context.put("priority", rs.getString("priority"));
+        context.put("status", rs.getString("status"));
+        }, objectId);
+        }
 
     /** 扁平等值判定：对象条件下每个字段都必须命中（AND），字段值为数组时为「任一命中」。 */
     private boolean matchesCondition(String conditionJson, Map<String, Object> context) {

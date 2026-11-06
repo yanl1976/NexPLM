@@ -5,6 +5,8 @@ import com.nexplm.common.api.PageResult;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.change.api.ChgDtos;
+import com.nexplm.platform.workflow.api.WfDtos;
+import com.nexplm.platform.workflow.service.WorkflowService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -40,9 +42,11 @@ public class ChgService {
     private static final Set<String> CLOSABLE = Set.of("APPROVED", "NOTICED", "EXECUTING");
 
     private final JdbcTemplate jdbcTemplate;
+    private final WorkflowService workflowService;
 
-    public ChgService(JdbcTemplate jdbcTemplate) {
+    public ChgService(JdbcTemplate jdbcTemplate, WorkflowService workflowService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.workflowService = workflowService;
     }
 
     // ------------------------------------------------------------------ 查询
@@ -197,7 +201,13 @@ public class ChgService {
         return detail(id, companyId);
     }
 
-    /** 提交评审：必须至少有一个「受影响」对象，否则变更没有执行内容。 */
+    /**
+     * 提交评审：必须至少有一个「受影响」对象（否则变更没有执行内容），且必须指定接收人。
+     *
+     * <p>提交同时发起 {@code nexplmApproval}（流程由 {@code wf_binding} 按 object_type=ChgEcr 选路）：
+     * 初审人与会签人都取接收人——单人审批，会签一人即全票通过。流程归档/撤回由
+     * {@link ChgWorkflowPlugin} 回写 {@code APPROVED} / {@code DRAFT}。</p>
+     */
     @Transactional
     public ChgDtos.EcrDetail submit(Long id, Long companyId, Long userId) {
         ChgDtos.EcrDetail current = detail(id, companyId);
@@ -206,10 +216,16 @@ public class ChgService {
         if (affected == 0) {
             throw BizException.of(ErrorCode.CHG_OBJECT_INVALID, "请先添加至少一个「受影响」对象再提交");
         }
+        Long approverId = current.receiverId();
+        if (approverId == null) {
+            throw BizException.of(ErrorCode.CHG_STATE_INVALID, "请先指定接收人（变更专员）作为审批人再提交");
+        }
         jdbcTemplate.update("""
                         UPDATE chg_ecr SET status = 'SUBMITTED', updated_by = ?, updated_at = now()
                          WHERE id = ? AND company_id = ?
                         """, userId, id, companyId);
+        workflowService.start(new WfDtos.StartReq("ChgEcr", id, null, approverId, List.of(approverId),
+                null, null, null, "提交变更申请：" + current.code()), userId);
         return detail(id, companyId);
     }
 

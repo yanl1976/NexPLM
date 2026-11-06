@@ -66,12 +66,14 @@ class ChangeSmokeTest {
     @Test
     void ecrLifecycleWithAffectedObjects() throws Exception {
         String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
 
         JsonNode created = call(post("/api/v1/chg/ecrs"), admin, json(Map.of(
                 "title", "验证变更申请",
                 "changeType", "DESIGN",
                 "priority", "HIGH",
                 "reason", "装配干涉",
+                "receiverId", adminId,
                 "projectNo", "S2026005")));
         long ecrId = created.path("id").asLong();
         assertThat(created.path("code").asText()).startsWith("ECR-");
@@ -110,7 +112,11 @@ class ChangeSmokeTest {
                 .andExpect(status().isBadRequest());
 
         JsonNode submitted = call(post("/api/v1/chg/ecrs/{id}/submit", ecrId), admin, null);
-        assertThat(submitted.path("status").asText()).isEqualTo("SUBMITTED");
+        assertThat(submitted.path("status").asText()).isIn("SUBMITTED", "REVIEWING");
+
+        // 提交即发起审批流程：流程发起事件（事务提交后）把状态推进为「评审中」
+        assertThat(call(get("/api/v1/chg/ecrs/{id}", ecrId), admin, null).path("status").asText())
+                .isEqualTo("REVIEWING");
 
         // 提交后主档不可改
         mockMvc.perform(put("/api/v1/chg/ecrs/{id}", ecrId)
@@ -130,31 +136,77 @@ class ChangeSmokeTest {
         assertThat(detail.path("objects").size()).isEqualTo(2);
         assertThat(detail.path("requesterName").asText()).isNotBlank();
 
-        JsonNode list = call(get("/api/v1/chg/ecrs?status=SUBMITTED"), admin, null);
+        JsonNode list = call(get("/api/v1/chg/ecrs?status=REVIEWING"), admin, null);
         assertThat(list.path("total").asLong()).isGreaterThanOrEqualTo(1);
         assertThat(list.path("items").get(0).path("affectedCount").asInt()).isEqualTo(1);
+    }
+
+    /** 提交 → 发起 nexplmApproval → 初审与会签（接收人单人）通过 → ECR 回写 APPROVED。 */
+    @Test
+    void submitStartsApprovalAndArchiveWritesBackApproved() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long itemId = createItem(admin, "审批零件");
+        long ecrId = createSubmittedEcr(admin, "审批流程验证", itemId, adminId);
+
+        JsonNode detail = call(get("/api/v1/chg/ecrs/{id}", ecrId), admin, null);
+        assertThat(detail.path("status").asText()).isEqualTo("REVIEWING");
+
+        // 流程实例挂在 ChgEcr 上：ECR 不在 plm_object，编码/名称需从 chg_ecr 回填
+        JsonNode instances = call(get("/api/v1/workflow/instances?objectType=ChgEcr&objectId=" + ecrId),
+                admin, null);
+        assertThat(instances.size()).isEqualTo(1);
+        JsonNode instance = instances.get(0);
+        assertThat(instance.path("status").asText()).isEqualTo("RUNNING");
+        assertThat(instance.path("processKey").asText()).isEqualTo("nexplmApproval");
+        assertThat(instance.path("objectCode").asText()).isEqualTo(detail.path("code").asText());
+        String pid = instance.path("processInstanceId").asText();
+
+        completeTask(admin, pid);
+        completeTask(admin, pid);
+
+        assertThat(call(get("/api/v1/workflow/instances/{id}", pid), admin, null).path("status").asText())
+                .isEqualTo("COMPLETED");
+        JsonNode approved = call(get("/api/v1/chg/ecrs/{id}", ecrId), admin, null);
+        assertThat(approved.path("status").asText()).isEqualTo("APPROVED");
+        assertThat(approved.path("approvedAt").isNull()).isFalse();
+    }
+
+    /** 提交 → 发起人撤回 → ECR 回草稿，可再改再提交。 */
+    @Test
+    void withdrawPutsEcrBackToDraft() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long itemId = createItem(admin, "撤回零件");
+        long ecrId = createSubmittedEcr(admin, "撤回验证", itemId, adminId);
+
+        JsonNode instances = call(get("/api/v1/workflow/instances?objectType=ChgEcr&objectId=" + ecrId),
+                admin, null);
+        String pid = instances.get(0).path("processInstanceId").asText();
+        call(post("/api/v1/workflow/instances/{id}/withdraw", pid), admin, json(Map.of("reason", "信息不全")));
+
+        JsonNode detail = call(get("/api/v1/chg/ecrs/{id}", ecrId), admin, null);
+        assertThat(detail.path("status").asText()).isEqualTo("DRAFT");
+        // 全局 non_null 序列化会省略空字段，这里直接查库断言批准时间被清空
+        Integer approved = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM chg_ecr WHERE id = ? AND approved_at IS NOT NULL", Integer.class, ecrId);
+        assertThat(approved).isZero();
+        // 回草稿后主档可再次修改
+        call(put("/api/v1/chg/ecrs/{id}", ecrId), admin,
+                json(Map.of("title", "撤回后改标题", "changeType", "DESIGN")));
     }
 
     /** ECN/Problem 闭环 + 受影响对象升版执行（P5 DoD：执行后版本正确递增）。 */
     @Test
     void ecnProblemAndExecutionFlow() throws Exception {
         String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
         long itemId = createItem(admin, "执行零件");
         Integer revision = jdbcTemplate.queryForObject(
                 "SELECT revision FROM plm_object WHERE id = ?", Integer.class, itemId);
         assertThat(revision).isEqualTo(1);
 
-        JsonNode ecr = call(post("/api/v1/chg/ecrs"), admin, json(Map.of(
-                "title", "执行验证", "changeType", "DESIGN")));
-        long ecrId = ecr.path("id").asLong();
-
-        Map<String, Object> affected = new HashMap<>();
-        affected.put("objectType", "PdmItem");
-        affected.put("objectId", itemId);
-        affected.put("relation", "AFFECTED");
-        affected.put("action", "REVISE");
-        call(post("/api/v1/chg/ecrs/{id}/objects", ecrId), admin, json(affected));
-        call(post("/api/v1/chg/ecrs/{id}/submit", ecrId), admin, null);
+        long ecrId = createSubmittedEcr(admin, "执行验证", itemId, adminId);
 
         // 未批准不允许执行 / 下发通知
         mockMvc.perform(post("/api/v1/chg/ecrs/{id}/execute", ecrId)
@@ -166,8 +218,14 @@ class ChangeSmokeTest {
                         .content(json(Map.of("title", "越权通知"))))
                 .andExpect(status().isConflict());
 
-        // 审批流尚未与变更打通，直接置为已批准
-        jdbcTemplate.update("UPDATE chg_ecr SET status = 'APPROVED', approved_at = now() WHERE id = ?", ecrId);
+        // 走审批流程：初审 + 会签（均为接收人）通过后才批准
+        JsonNode instances = call(get("/api/v1/workflow/instances?objectType=ChgEcr&objectId=" + ecrId),
+                admin, null);
+        String pid = instances.get(0).path("processInstanceId").asText();
+        completeTask(admin, pid);
+        completeTask(admin, pid);
+        assertThat(call(get("/api/v1/chg/ecrs/{id}", ecrId), admin, null).path("status").asText())
+                .isEqualTo("APPROVED");
 
         JsonNode ecn = call(post("/api/v1/chg/ecrs/{id}/ecns", ecrId), admin,
                 json(Map.of("title", "执行通知")));
@@ -265,6 +323,33 @@ class ChangeSmokeTest {
         affected.put("action", "REVISE");
         call(post("/api/v1/chg/ecrs/{id}/objects", ecrId), admin, json(affected));
         return ecrId;
+    }
+
+    /** 建一张带受影响对象、带接收人的 ECR 并提交（提交即发起审批流程）。 */
+    private long createSubmittedEcr(String token, String title, long objectId, long receiverId) throws Exception {
+        long ecrId = call(post("/api/v1/chg/ecrs"), token, json(Map.of(
+                "title", title, "changeType", "DESIGN", "receiverId", receiverId))).path("id").asLong();
+        Map<String, Object> affected = new HashMap<>();
+        affected.put("objectType", "PdmItem");
+        affected.put("objectId", objectId);
+        affected.put("relation", "AFFECTED");
+        affected.put("action", "REVISE");
+        call(post("/api/v1/chg/ecrs/{id}/objects", ecrId), token, json(affected));
+        call(post("/api/v1/chg/ecrs/{id}/submit", ecrId), token, null);
+        return ecrId;
+    }
+
+    /** 办理实例当前的活动任务（本用例初审与会签都指派同一人，取首个任务即可）。 */
+    private void completeTask(String token, String processInstanceId) throws Exception {
+        JsonNode activeTasks = call(get("/api/v1/workflow/instances/{id}", processInstanceId), token, null)
+                .path("activeTasks");
+        assertThat(activeTasks.size()).as("实例 %s 应有活动任务", processInstanceId).isGreaterThan(0);
+        call(post("/api/v1/workflow/tasks/{taskId}/complete", activeTasks.get(0).path("taskId").asText()),
+                token, json(Map.of("comment", "同意")));
+    }
+
+    private long currentUserId(String token) throws Exception {
+        return call(get("/api/v1/auth/me"), token, null).path("id").asLong();
     }
 
     // ------------------------------------------------------------ 工具
