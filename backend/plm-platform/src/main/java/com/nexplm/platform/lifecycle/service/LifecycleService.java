@@ -11,7 +11,9 @@ import com.nexplm.platform.lifecycle.mapper.MetaLifecycleMapper;
 import com.nexplm.platform.metadata.domain.MetaEntity;
 import com.nexplm.platform.metadata.mapper.MetaEntityMapper;
 import com.nexplm.platform.object.domain.PlmObject;
+import com.nexplm.platform.object.event.ObjectStateChangedEvent;
 import com.nexplm.platform.object.mapper.PlmObjectMapper;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,15 +49,18 @@ public class LifecycleService {
     private final PlmObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper jsonMapper;
+    private final ApplicationEventPublisher eventPublisher;
     private final Map<String, Definition> cache = new ConcurrentHashMap<>();
 
     public LifecycleService(MetaLifecycleMapper lifecycleMapper, MetaEntityMapper entityMapper,
-                            PlmObjectMapper objectMapper, JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper) {
+                            PlmObjectMapper objectMapper, JdbcTemplate jdbcTemplate,
+                            ObjectMapper jsonMapper, ApplicationEventPublisher eventPublisher) {
         this.lifecycleMapper = lifecycleMapper;
         this.entityMapper = entityMapper;
         this.objectMapper = objectMapper;
         this.jdbcTemplate = jdbcTemplate;
         this.jsonMapper = jsonMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     public List<Definition> listDefinitions() {
@@ -229,6 +234,10 @@ public class LifecycleService {
                 IdWorker.getId(), object.getId(), currentState, transition.to(), action,
                 reason == null ? null : reason.substring(0, Math.min(reason.length(), 500)),
                 operatorId, OffsetDateTime.now());
+        // 状态已落库且日志已写，才对外发布事件（监听方用 AFTER_COMMIT 接收，回滚不会外发）
+        eventPublisher.publishEvent(new ObjectStateChangedEvent(object.getId(),
+                object.getObjectType(), currentState, transition.to(), action,
+                object.getCompanyId(), operatorId, OffsetDateTime.now()));
         object.setLifecycleState(transition.to());
         object.setVersion(object.getVersion() == null ? 0 : object.getVersion() + 1);
         return object;

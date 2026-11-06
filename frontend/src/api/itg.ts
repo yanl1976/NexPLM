@@ -342,3 +342,120 @@ export const clientApi = {
     return http.delete<void>(`/itg/clients/${id}`)
   }
 }
+
+/* ------------------------------------------------------------ P9-4 Webhook */
+
+/** 与后端 WebhookService.EVENT_LABELS 一致（另有 GET /itg/webhooks/events 可动态取）。 */
+export const WEBHOOK_EVENT_LABEL: Record<string, string> = {
+  'doc.released': '文档发布',
+  'change.effective': '变更生效',
+  'task.completed': '任务完成'
+}
+
+export const DELIVERY_STATUS_LABEL: Record<string, string> = {
+  PENDING: '待投递',
+  SENDING: '投递中',
+  SENT: '已送达',
+  FAILED: '失败待重试',
+  DEAD: '死信'
+}
+
+export interface WebhookRow {
+  id: string
+  code: string
+  name: string
+  url: string
+  events: string[]
+  enabled: boolean
+  maxAttempts: number
+  timeoutMs: number
+  remark?: string | null
+  updatedAt?: string | null
+}
+
+export interface WebhookDetail {
+  id: string
+  code: string
+  name: string
+  url: string
+  events: string[]
+  enabled: boolean
+  maxAttempts: number
+  timeoutMs: number
+  remark?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface WebhookSaveReq {
+  code: string
+  name: string
+  url: string
+  events: string[]
+  enabled?: boolean
+  maxAttempts?: number
+  timeoutMs?: number
+  remark?: string | null
+  /** 留空：新建时自动生成、修改时保持不变 */
+  secret?: string | null
+}
+
+export interface DeliveryRow {
+  id: string
+  webhookId: string
+  webhookCode?: string | null
+  eventType: string
+  eventKey: string
+  status: string
+  attempt: number
+  maxAttempts: number
+  httpStatus?: number | null
+  durationMs: number
+  errorMsg?: string | null
+  nextRetryAt?: string | null
+  createdAt?: string | null
+  finishedAt?: string | null
+}
+
+export const webhookApi = {
+  events(): Promise<Record<string, string>> {
+    return http.get('/itg/webhooks/events')
+  },
+  page(params: {
+    keyword?: string
+    enabled?: boolean
+    page?: number
+    size?: number
+  }): Promise<{ items: WebhookRow[]; total: number; page: number; size: number }> {
+    return http.get('/itg/webhooks', params)
+  },
+  detail(id: string): Promise<WebhookDetail> {
+    return http.get<WebhookDetail>(`/itg/webhooks/${id}`)
+  },
+  create(req: WebhookSaveReq): Promise<{ webhook: WebhookDetail; secret: string }> {
+    return http.post('/itg/webhooks', req)
+  },
+  update(id: string, req: WebhookSaveReq): Promise<WebhookDetail> {
+    return http.put<WebhookDetail>(`/itg/webhooks/${id}`, req)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/itg/webhooks/${id}`)
+  },
+  rotateSecret(id: string): Promise<{ webhook: WebhookDetail; secret: string }> {
+    return http.post(`/itg/webhooks/${id}/rotate-secret`)
+  },
+  test(id: string): Promise<DeliveryRow> {
+    return http.post<DeliveryRow>(`/itg/webhooks/${id}/test`)
+  },
+  deliveryPage(
+    id: string,
+    params: { status?: string; page?: number; size?: number }
+  ): Promise<{ items: DeliveryRow[]; total: number; page: number; size: number }> {
+    return http.get(`/itg/webhooks/${id}/deliveries`, params)
+  },
+  replay(deliveryId: string): Promise<DeliveryRow> {
+    return http.post<DeliveryRow>(`/itg/webhooks/deliveries/${deliveryId}/replay`)
+  }
+}
+
+

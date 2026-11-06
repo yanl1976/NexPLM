@@ -3,7 +3,9 @@ package com.nexplm.platform.project.service;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
+import com.nexplm.platform.object.event.TaskCompletedEvent;
 import com.nexplm.platform.project.api.ProjectTaskDtos;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,11 +45,14 @@ public class ProjectTaskService {
     private final JdbcTemplate jdbcTemplate;
     /** 提交审核前的交付物齐套守卫（P7-4，只查表不反向依赖 TaskService，无循环依赖）。 */
     private final ProjectDeliverableService deliverableService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ProjectTaskService(JdbcTemplate jdbcTemplate,
-                              ProjectDeliverableService deliverableService) {
+                              ProjectDeliverableService deliverableService,
+                              ApplicationEventPublisher eventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
         this.deliverableService = deliverableService;
+        this.eventPublisher = eventPublisher;
     }
 
     // ---------------------------------------------------------------- 查询
@@ -285,6 +290,8 @@ public class ProjectTaskService {
         Long projectId = longOf(task.get("project_id"));
         validateTask(req);
         int progress = req.progress() == null ? intOf(task.get("progress")) : req.progress();
+        String oldStatus = str(task.get("status"));
+        String newStatus = normalizeStatus(req.status(), progress);
         jdbcTemplate.update("""
                         UPDATE prj_task
                            SET name = ?, type = ?, status = ?, sort_no = ?,
@@ -293,13 +300,17 @@ public class ProjectTaskService {
                                updated_by = ?, updated_at = now()
                          WHERE id = ? AND company_id = ?
                         """,
-                req.name().trim(), normalizeType(req.type()),
-                normalizeStatus(req.status(), progress),
+                req.name().trim(), normalizeType(req.type()), newStatus,
                 req.sortNo() == null ? intOf(task.get("sort_no")) : req.sortNo(),
                 req.planStart(), req.planEnd(), req.actualStart(), req.actualEnd(),
                 durationOf(req), progress,
                 req.ownerId() == null ? longOf(task.get("owner_id")) : req.ownerId(),
                 blankToNull(req.remark()), userId, taskId, companyId);
+        // 直接改状态到 DONE 也要发"任务完成"事件（与审核通过同一口径）
+        if ("DONE".equals(newStatus) && !"DONE".equals(oldStatus)) {
+            eventPublisher.publishEvent(new TaskCompletedEvent(taskId, companyId, userId,
+                    OffsetDateTime.now()));
+        }
         recalcProgress(projectId);
         return board(projectId, companyId);
     }
@@ -603,6 +614,8 @@ public class ProjectTaskService {
                                updated_by = ?, updated_at = now()
                          WHERE id = ? AND company_id = ?
                         """, userId, taskId, companyId);
+        eventPublisher.publishEvent(new TaskCompletedEvent(taskId, companyId, userId,
+                OffsetDateTime.now()));
         recalcProgress(longOf(task.get("project_id")));
         return board(longOf(task.get("project_id")), companyId);
     }

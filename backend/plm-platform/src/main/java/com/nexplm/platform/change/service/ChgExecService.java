@@ -5,6 +5,8 @@ import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.change.api.ChgDtos;
 import com.nexplm.platform.lifecycle.service.LifecycleService;
+import com.nexplm.platform.object.event.ChangeExecutedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,12 +39,15 @@ public class ChgExecService {
     private final JdbcTemplate jdbcTemplate;
     private final ChgStateMachine stateMachine;
     private final LifecycleService lifecycleService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ChgExecService(JdbcTemplate jdbcTemplate, ChgStateMachine stateMachine,
-                          LifecycleService lifecycleService) {
+                          LifecycleService lifecycleService,
+                          ApplicationEventPublisher eventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
         this.stateMachine = stateMachine;
         this.lifecycleService = lifecycleService;
+        this.eventPublisher = eventPublisher;
     }
 
     // ------------------------------------------------------------------ ECN
@@ -235,6 +240,11 @@ public class ChgExecService {
                     UPDATE chg_ecr SET status = ?, updated_by = ?, updated_at = now()
                      WHERE id = ? AND company_id = ? AND status = ?
                     """, target, userId, ecrId, companyId, ecrStatus);
+        }
+        if (succeeded > 0) {
+            // 全部跳过时没有"变更生效"的事实可通知，故只在有成功对象时发事件
+            eventPublisher.publishEvent(new ChangeExecutedEvent(ecrId, companyId, userId,
+                    succeeded, skipped, OffsetDateTime.now()));
         }
         return new ChgDtos.ExecuteResult(pending.size(), succeeded, skipped, messages);
     }

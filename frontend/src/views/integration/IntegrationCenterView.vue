@@ -230,6 +230,52 @@
         </el-table>
         <el-empty v-if="!clientLoading && !clients.length" description="还没有 API 客户端" :image-size="60" />
       </el-tab-pane>
+
+      <el-tab-pane label="Webhook" name="webhook">
+        <div class="toolbar">
+          <el-input
+            v-model="webhookKeyword"
+            placeholder="编码/名称/回调地址"
+            clearable
+            style="width: 220px"
+            @keyup.enter="loadWebhooks"
+          />
+          <el-button type="primary" @click="loadWebhooks">查询</el-button>
+          <el-button v-if="canWebhook" type="primary" plain @click="openWebhookCreate">新建订阅</el-button>
+          <span class="hint">订阅文档发布 / 变更生效 / 任务完成；报文用 HMAC-SHA256 签名，失败自动退避重试</span>
+        </div>
+        <el-table v-loading="webhookLoading" :data="webhooks" border stripe>
+          <el-table-column prop="code" label="编码" width="150" />
+          <el-table-column prop="name" label="名称" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="url" label="回调地址" min-width="240" show-overflow-tooltip />
+          <el-table-column label="事件" min-width="200">
+            <template #default="{ row }">
+              <el-tag v-for="event in row.events" :key="event" size="small" class="tag-gap">
+                {{ WEBHOOK_EVENT_LABEL[event] ?? event }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="启用" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
+                {{ row.enabled ? '启用' : '停用' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="重试" width="90" align="center">
+            <template #default="{ row }">{{ row.maxAttempts }} 次</template>
+          </el-table-column>
+          <el-table-column v-if="canWebhook" label="操作" width="280" align="center" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openWebhookEdit(row)">编辑</el-button>
+              <el-button link type="success" @click="testWebhook(row)">测试</el-button>
+              <el-button link type="warning" @click="openDeliveries(row)">投递</el-button>
+              <el-button link type="danger" @click="removeWebhook(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!webhookLoading && !webhooks.length" description="还没有 Webhook 订阅" :image-size="60" />
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 端点编辑 -->
@@ -461,6 +507,121 @@
       <el-button size="small" @click="copyKey">复制 Key</el-button>
     </el-dialog>
 
+    <!-- Webhook 订阅编辑 -->
+    <el-dialog v-model="webhookDialogVisible" :title="webhookForm.id ? '编辑 Webhook 订阅' : '新建 Webhook 订阅'" width="680px" destroy-on-close>
+      <el-form label-width="110px">
+        <el-form-item label="编码" required>
+          <el-input v-model="webhookForm.code" :disabled="!!webhookForm.id" maxlength="64" style="width: 240px" />
+        </el-form-item>
+        <el-form-item label="名称" required>
+          <el-input v-model="webhookForm.name" maxlength="200" style="width: 340px" />
+        </el-form-item>
+        <el-form-item label="回调地址" required>
+          <el-input v-model="webhookForm.url" maxlength="500" placeholder="https://example.com/hooks/plm" />
+        </el-form-item>
+        <el-form-item label="订阅事件" required>
+          <el-checkbox-group v-model="webhookForm.events">
+            <el-checkbox v-for="(label, value) in WEBHOOK_EVENT_LABEL" :key="value" :value="value">
+              {{ label }}
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="重试次数">
+          <el-input-number v-model="webhookForm.maxAttempts" :min="1" :max="10" controls-position="right" style="width: 140px" />
+          <span class="label-gap">超时(ms)</span>
+          <el-input-number v-model="webhookForm.timeoutMs" :min="1000" :max="30000" :step="500" controls-position="right" style="width: 160px" />
+        </el-form-item>
+        <el-form-item label="签名密钥">
+          <el-input
+            v-model="webhookForm.secret"
+            maxlength="200"
+            show-password
+            style="width: 340px"
+            :placeholder="webhookForm.id ? '留空则保持原密钥不变' : '留空自动生成'"
+          />
+          <div class="hint">对端用该密钥对原始报文做 HMAC-SHA256，与请求头 X-NexPLM-Signature 比对</div>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="webhookForm.enabled" />
+          <span class="label-gap">备注</span>
+          <el-input v-model="webhookForm.remark" maxlength="1000" style="width: 300px" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="webhookDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="webhookSaving" @click="saveWebhook">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Webhook 密钥展示（仅一次） -->
+    <el-dialog v-model="webhookSecretVisible" title="Webhook 签名密钥" width="560px" destroy-on-close>
+      <el-alert
+        type="warning"
+        :closable="false"
+        title="请立即复制交给对端：服务端不回传密钥，关闭后只能轮换"
+        show-icon
+      />
+      <div class="api-key">{{ newWebhookSecret }}</div>
+      <el-button size="small" @click="copyWebhookSecret">复制密钥</el-button>
+    </el-dialog>
+
+    <!-- Webhook 投递记录 -->
+    <el-drawer v-model="deliveryDrawerVisible" :title="`投递记录 · ${currentWebhookCode}`" size="780px" destroy-on-close>
+      <div class="toolbar">
+        <el-select v-model="deliveryStatus" clearable placeholder="全部状态" style="width: 160px" @change="loadDeliveries">
+          <el-option v-for="(label, value) in DELIVERY_STATUS_LABEL" :key="value" :label="label" :value="value" />
+        </el-select>
+        <el-button @click="loadDeliveries">刷新</el-button>
+        <span class="hint">失败按退避自动重试，次数用尽进死信；死信可用原报文快照重放</span>
+      </div>
+      <el-table v-loading="deliveryLoading" :data="deliveries" border size="small">
+        <el-table-column type="expand">
+          <template #default="{ row }">
+            <div class="expand-box">
+              <div>事件键：{{ row.eventKey }}</div>
+              <div>下次重试：{{ formatTime(row.nextRetryAt) }}</div>
+              <div>错误：{{ row.errorMsg || '-' }}</div>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="事件" width="120">
+          <template #default="{ row }">{{ WEBHOOK_EVENT_LABEL[row.eventType] ?? row.eventType }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="deliveryStatusType(row.status)" size="small">
+              {{ DELIVERY_STATUS_LABEL[row.status] ?? row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="尝试" width="80" align="center">
+          <template #default="{ row }">{{ row.attempt }}/{{ row.maxAttempts }}</template>
+        </el-table-column>
+        <el-table-column label="HTTP" width="70" align="center">
+          <template #default="{ row }">{{ row.httpStatus ?? '-' }}</template>
+        </el-table-column>
+        <el-table-column label="耗时" width="90" align="center">
+          <template #default="{ row }">{{ row.durationMs }} ms</template>
+        </el-table-column>
+        <el-table-column label="时间" width="150" align="center">
+          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="90" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="canWebhook && (row.status === 'FAILED' || row.status === 'DEAD')"
+              link
+              type="warning"
+              @click="replayDelivery(row)"
+            >
+              重放
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!deliveryLoading && !deliveries.length" description="还没有投递记录" :image-size="60" />
+    </el-drawer>
+
     <!-- 任务详情 -->
     <el-drawer v-model="jobDetailVisible" title="集成任务详情" size="640px" destroy-on-close>
       <template v-if="jobDetail">
@@ -524,19 +685,24 @@ import { useUserStore } from '../../stores/user'
 import {
   AUTH_TYPE_LABEL,
   clientApi,
+  DELIVERY_STATUS_LABEL,
   itgApi,
   JOB_STATUS_LABEL,
   KINGDEE_BIZ_LABEL,
   SCOPE_LABEL,
   SYSTEM_CODE_LABEL,
   TRANSFORM_LABEL,
+  WEBHOOK_EVENT_LABEL,
+  webhookApi,
   type ApiClientRow,
+  type DeliveryRow,
   type EndpointDetail,
   type EndpointRow,
   type JobDetail,
   type JobRow,
   type MappingRule,
-  type MappingRow
+  type MappingRow,
+  type WebhookRow
 } from '../../api/itg'
 
 const userStore = useUserStore()
@@ -1200,6 +1366,224 @@ async function pushKingdee(): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------ Webhook */
+
+const canWebhook = computed(() => userStore.can('itg.webhook.write'))
+const webhooks = ref<WebhookRow[]>([])
+const webhookLoading = ref(false)
+const webhookKeyword = ref('')
+const webhookDialogVisible = ref(false)
+const webhookSaving = ref(false)
+const webhookSecretVisible = ref(false)
+const newWebhookSecret = ref('')
+const webhookForm = reactive({
+  id: '',
+  code: '',
+  name: '',
+  url: '',
+  events: ['doc.released'] as string[],
+  enabled: true,
+  maxAttempts: 5,
+  timeoutMs: 5000,
+  remark: '',
+  secret: ''
+})
+
+const deliveryDrawerVisible = ref(false)
+const deliveryLoading = ref(false)
+const deliveries = ref<DeliveryRow[]>([])
+const deliveryStatus = ref('')
+const currentWebhookId = ref('')
+const currentWebhookCode = ref('')
+
+async function loadWebhooks(): Promise<void> {
+  webhookLoading.value = true
+  try {
+    const result = await webhookApi.page({
+      keyword: webhookKeyword.value || undefined,
+      page: 1,
+      size: 50
+    })
+    webhooks.value = result.items
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载 Webhook 失败')
+  } finally {
+    webhookLoading.value = false
+  }
+}
+
+function openWebhookCreate(): void {
+  Object.assign(webhookForm, {
+    id: '',
+    code: '',
+    name: '',
+    url: '',
+    events: ['doc.released'],
+    enabled: true,
+    maxAttempts: 5,
+    timeoutMs: 5000,
+    remark: '',
+    secret: ''
+  })
+  webhookDialogVisible.value = true
+}
+
+async function openWebhookEdit(row: WebhookRow): Promise<void> {
+  try {
+    const detail = await webhookApi.detail(row.id)
+    Object.assign(webhookForm, {
+      id: detail.id,
+      code: detail.code,
+      name: detail.name,
+      url: detail.url,
+      events: [...detail.events],
+      enabled: detail.enabled,
+      maxAttempts: detail.maxAttempts,
+      timeoutMs: detail.timeoutMs,
+      remark: detail.remark ?? '',
+      secret: ''
+    })
+    webhookDialogVisible.value = true
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载订阅失败')
+  }
+}
+
+async function saveWebhook(): Promise<void> {
+  if (!webhookForm.code.trim() || !webhookForm.name.trim() || !webhookForm.url.trim()) {
+    ElMessage.warning('编码、名称与回调地址为必填')
+    return
+  }
+  if (!webhookForm.events.length) {
+    ElMessage.warning('至少订阅一个事件')
+    return
+  }
+  webhookSaving.value = true
+  try {
+    const payload = {
+      code: webhookForm.code.trim(),
+      name: webhookForm.name.trim(),
+      url: webhookForm.url.trim(),
+      events: webhookForm.events,
+      enabled: webhookForm.enabled,
+      maxAttempts: webhookForm.maxAttempts,
+      timeoutMs: webhookForm.timeoutMs,
+      remark: webhookForm.remark.trim() || null,
+      secret: webhookForm.secret.trim() || null
+    }
+    if (webhookForm.id) {
+      await webhookApi.update(webhookForm.id, payload)
+      ElMessage.success('已保存')
+    } else {
+      const created = await webhookApi.create(payload)
+      newWebhookSecret.value = created.secret
+      webhookSecretVisible.value = true
+    }
+    webhookDialogVisible.value = false
+    await loadWebhooks()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存订阅失败')
+  } finally {
+    webhookSaving.value = false
+  }
+}
+
+async function removeWebhook(row: WebhookRow): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`删除订阅 ${row.code}？历史投递记录保留，但不再接收事件。`, '删除订阅', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    await webhookApi.remove(row.id)
+    ElMessage.success('已删除')
+    await loadWebhooks()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除失败')
+  }
+}
+
+async function testWebhook(row: WebhookRow): Promise<void> {
+  try {
+    const delivery = await webhookApi.test(row.id)
+    if (delivery.status === 'SENT') {
+      ElMessage.success(`测试投递已送达（HTTP ${delivery.httpStatus ?? 200}）`)
+    } else {
+      ElMessage.warning(`测试投递失败：${delivery.errorMsg ?? delivery.status}`)
+    }
+    await openDeliveries(row)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '测试投递失败')
+  }
+}
+
+async function openDeliveries(row: WebhookRow): Promise<void> {
+  currentWebhookId.value = row.id
+  currentWebhookCode.value = row.code
+  deliveryStatus.value = ''
+  deliveryDrawerVisible.value = true
+  await loadDeliveries()
+}
+
+async function loadDeliveries(): Promise<void> {
+  if (!currentWebhookId.value) {
+    return
+  }
+  deliveryLoading.value = true
+  try {
+    const result = await webhookApi.deliveryPage(currentWebhookId.value, {
+      status: deliveryStatus.value || undefined,
+      page: 1,
+      size: 100
+    })
+    deliveries.value = result.items
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载投递记录失败')
+  } finally {
+    deliveryLoading.value = false
+  }
+}
+
+async function replayDelivery(row: DeliveryRow): Promise<void> {
+  try {
+    const replayed = await webhookApi.replay(row.id)
+    if (replayed.status === 'SENT') {
+      ElMessage.success('重放成功')
+    } else {
+      ElMessage.warning(`重放失败：${replayed.errorMsg ?? replayed.status}`)
+    }
+    await loadDeliveries()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '重放失败')
+  }
+}
+
+async function copyWebhookSecret(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(newWebhookSecret.value)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.warning('复制失败，请手动选中复制')
+  }
+}
+
+function deliveryStatusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
+  if (value === 'SENT') {
+    return 'success'
+  }
+  if (value === 'DEAD') {
+    return 'danger'
+  }
+  if (value === 'FAILED') {
+    return 'warning'
+  }
+  return 'info'
+}
+
 /* ------------------------------------------------------------ 展示辅助 */
 
 function jobStatusType(value: string): 'success' | 'info' | 'warning' | 'danger' {
@@ -1235,6 +1619,7 @@ onMounted(async () => {
   await loadMappings()
   await loadJobs()
   await loadClients()
+  await loadWebhooks()
 })
 </script>
 
@@ -1317,5 +1702,13 @@ onMounted(async () => {
   font-size: 13px;
   word-break: break-all;
   user-select: all;
+}
+
+.expand-box {
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.9;
+  color: #5c6b7a;
+  word-break: break-all;
 }
 </style>
