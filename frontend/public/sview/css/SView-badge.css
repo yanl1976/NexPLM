@@ -1,0 +1,53 @@
+.SView-badge-dot {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background-color: #e64a19;
+}
+
+.SView-badge-number {
+    position: absolute;
+    box-sizing: border-box;
+    padding: 0 5.5px;
+    height: 18px;
+    border-radius: 9px;
+    background-color: #e64a19;
+    text-align: center;
+}
+
+    .SView-badge-number p {
+        margin: 0;
+        color: #fff;
+        font-size: 10px;
+    }
+
+.SView-badge-topLeft {
+    left: 0px;
+    top: 0px;
+    transform: translateX(-50%) translateY(-50%);
+}
+
+.SView-badge-topRight {
+    right: 0px;
+    top: 0px;
+    transform: translateX(50%) translateY(-50%);
+}
+
+.SView-section-badge-topRight {
+    right: 0px;
+    top: -10px;
+    transform: translateX(50%) translateY(-50%);
+}
+
+.SView-badge-bottomLeft {
+    left: 0px;
+    bottom: 0px;
+    transform: translateX(-50%) translateY(50%);
+}
+
+.SView-badge-bottomRight {
+    right: 0px;
+    bottom: 0px;
+    transform: translateX(50%) translateY(50%);
+}

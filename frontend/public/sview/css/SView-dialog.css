@@ -1,0 +1,460 @@
+.SView-dialog-background {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 2000;
+    height: 100%;
+    background-color: #00000080;
+    overflow: auto;
+}
+
+
+
+.SView-dialog {
+    z-index: 20;
+    position: absolute;
+    width: 480px;
+    top: 200px;
+    left: calc(50% - 240px);
+    /*transform: translateX(-50%) translateY(-50%);*/
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    background-color: #fff;
+    box-sizing: border-box;
+}
+
+    /*#settingMenuDialog .SView-dialog {
+    top: calc(50% - 294px);
+    left: calc(50% - 240px);
+    transform: none !important;
+}*/
+    .SView-dialog .SView-input {
+        width: 300px;
+    }
+
+.SView-dialog-title {
+    min-height: 50px;
+    box-sizing: border-box;
+    padding: 10px 10px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.SView-dialog-title-name {
+    font-size: 16px;
+    color: #212121;
+    line-height: 25px;
+    width: calc(100% - 25px);
+    display: inline-block;
+    padding-left: 6px;
+}
+
+.SView-dialog-title-closeBtn {
+    width: 28px;
+    height: 28px;
+    position: absolute;
+    right: 13px;
+    margin: 0;
+    top: 10px;
+}
+
+    .SView-dialog-title-closeBtn:hover {
+        background-color: #fff;
+        opacity: .7;
+    }
+
+.SView-dialog-content {
+    border-bottom: 1px solid #e0e0e0;
+    min-height: 50px;
+    max-height: 500px;
+    overflow: auto;
+}
+
+    .SView-dialog-content > img {
+        width: 99%;
+        height: 99%;
+        margin: 1%;
+    }
+
+    .SView-dialog-content h4 {
+        padding: 10px 15px;
+        line-height: 24px;
+        font-size: 14px;
+        color: #000000;
+        font-weight: normal;
+    }
+
+.SView-dialog-button {
+    float: right;
+    padding: 5px 12px;
+}
+
+@media screen and (min-width: 550px) and (max-width: 650px) {
+    #settingMenuDialog .SView-dialog {
+        width: 500px !important;
+        top: calc(50% - 294px);
+        left: calc(50% - 250px) !important;
+        transform: none !important;
+    }
+}
+
+@media screen and (min-width: 450px) and (max-width: 550px) {
+    #settingMenuDialog .SView-dialog {
+        width: 400px !important;
+        top: calc(50% - 294px);
+        left: calc(50% - 200px) !important;
+        transform: none !important;
+    }
+}
+
+@media screen and (max-width: 450px) {
+    #settingMenuDialog .SView-dialog {
+        width: 300px !important;
+        height: 500px !important;
+        top: calc(50% - 250px) !important;
+        left: calc(50% - 150px) !important;
+        transform: none !important;
+    }
+
+    #settingMenuDialog .SView-vertical-tabs {
+        padding: 15px 0px !important;
+    }
+
+    #settingMenuDialog .SView-vertical-tab {
+        width: 101px !important;
+        font-size: 12px !important;
+    }
+
+        #settingMenuDialog .SView-vertical-tab .SView-vertical-tab > img {
+            width: 15px !important;
+            height: 15px !important;
+            margin-right: 3px !important;
+        }
+
+    .SView-setting-List li .SView-labelItem > label {
+        font-size: 12px !important;
+    }
+
+    .SView-setting-List li > h2 {
+        font-size: 14px !important;
+    }
+
+    .SView-setting-List li label {
+        font-size: 12px !important;
+    }
+
+    .SView-setting-List li {
+        padding: 8px 5px 5px 5px !important;
+    }
+
+        .SView-setting-List li > div {
+            padding-left: 5px !important;
+        }
+
+    .restoreItem2 {
+        width: 90px !important;
+        left: 5px !important;
+    }
+
+    .restoreItem3 {
+        width: 90px !important;
+        left: 5px !important;
+    }
+
+    #settingMenuDialog .SView-vertical-contents {
+        width: calc(100% - 102px) !important;
+    }
+}
+
+@media screen and (min-width: 651px) and (max-width: 1000px) {
+    #settingMenuDialog .SView-dialog {
+        top: calc(50% - 294px);
+        left: calc(50% - 300px) !important;
+        transform: none !important;
+        width: 600px !important;
+    }
+}
+
+@media screen and (min-width: 305px) and (max-width: 900px) {
+
+    .SView-dialog .SView-input {
+        width: 150px;
+    }
+
+    .SView-dialog-title {
+        height: 40px;
+    }
+
+    .SView-dialog-title-name {
+        line-height: 35px;
+    }
+
+    .SView-dialog-title-closeBtn {
+        width: 25px;
+        height: 25px;
+        margin: 5px 0;
+    }
+
+    .SView-dialog-button .SView-button {
+        padding: 6px 10px;
+    }
+}
+
+.SView-setting-List .SView-labelItem > span {
+    width: calc(100% - 10px) !important;
+}
+
+@media screen and (max-width: 500px) {
+    .SView-dialog {
+        width: 300px !important;
+        left: calc(50% - 150px);
+    }
+
+    .SView-dialog-confirm {
+        left: calc(50% - 150px) !important;
+    }
+
+    #setting_color_select_dialog .SView-dialog {
+        width: 226px !important;
+        left: calc(50% - 113px);
+        transform: none !important;
+    }
+
+    .color-palette {
+        display: none !important;
+    }
+}
+
+@media screen and (max-width: 305px) {
+    .SView-dialog-title {
+        height: 40px;
+    }
+
+    .SView-dialog {
+        width: 95% !important;
+    }
+
+    .SView-dialog-title-name {
+        line-height: 35px;
+        font-size: 14px;
+    }
+
+    .SView-dialog-title-closeBtn {
+        width: 25px;
+        height: 25px;
+        margin: 5px 0;
+    }
+
+    .SView-dialog-button {
+        width: 100%;
+        box-sizing: border-box;
+        text-align: center;
+    }
+
+        .SView-dialog-button .SView-button {
+            padding: 2px 6px;
+            font-size: 12px;
+            float: none;
+        }
+}
+
+/* 属性菜单 */
+.SView-attributeInfo-dialog .SView-dialog {
+    position: relative;
+    float: left;
+    left: 10px;
+    top: 10px;
+    transform: none;
+    width: 320px;
+    /* max-height: 480px;
+overflow: auto; */
+}
+
+.SView-attributeInfo-dialog .SView-dialog-content {
+    max-height: 450px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* 加入会议菜单 */
+.SView-joinMeeting-dialog {
+    /* height: 142px; */
+    max-height: 200px;
+    overflow: auto;
+}
+
+/* 设置菜单 */
+.SView-settingMenu-dialog {
+    width: 400px;
+}
+
+.SView-settingMenu-dialog-content {
+    height: 480px;
+    overflow: hidden;
+}
+
+
+
+#color-picker {
+    position: relative;
+    height: 240px;
+    margin: 0px auto;
+}
+/*动画弹窗*/
+.animation-dialog .SView-dialog {
+    z-index: 20;
+    position: absolute;
+    width: 280px;
+    top: 30px;
+    right: 30px;
+    left: auto;
+    transform: none;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    background-color: #fff;
+    box-sizing: border-box;
+}
+/*热点弹窗*/
+.hotspot-dialog .SView-dialog {
+    z-index: 20;
+    position: absolute;
+    width: 280px;
+    top: 30px;
+    left: 30px;
+    transform: none;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    background-color: #fff;
+    box-sizing: border-box;
+}
+/*设置弹窗*/
+#settingMenuDialog {
+    background-color: rgba(0,0,0,0) !important;
+}
+
+    /*#settingMenuDialog .SView-checkbox {
+        width: 140px;
+        float: left;
+    }*/
+
+    #settingMenuDialog .SView-dialog {
+        width: 930px;
+        height: 652px;
+        border-radius: 12px;
+        left: calc(50% - 465px);
+        top: calc(50% - 326px);
+    }
+
+    #settingMenuDialog .SView-dialog-content {
+        height: calc(100% - 54px);
+        max-height: none;
+        overflow: hidden;
+    }
+
+#settingSystemtMenuTabs {
+    position: relative;
+}
+
+.restoreItem1 {
+    width: 99px;
+    text-align: center;
+    position: absolute;
+    left: 24px;
+    bottom: 120px;
+}
+
+.restoreItem2 {
+    width: 99px;
+    text-align: center;
+    position: absolute;
+    left: 24px;
+    bottom: 85px;
+}
+
+.restoreItem3 {
+    width: 99px;
+    text-align: center;
+    position: absolute;
+    left: 24px;
+    bottom: 50px;
+}
+/*选择集弹出框*/
+#shapeset-dialog .SView-dialog-content {
+    height: 300px;
+    overflow: auto;
+}
+
+#shapeset-dialog .SView-dialog {
+    left: 0px;
+}
+/*剖切弹出框*/
+#section-shapeset-dialog .SView-dialog {
+    left: auto;
+    right: 0px;
+}
+
+#section-shapeset-dialog .SView-dialog-content {
+    height: 300px;
+    overflow: auto;
+}
+
+#shapeSetSelectItem > label {
+    /*width: 80px;
+    text-align: right;*/
+}
+/*确认框*/
+
+.SView-dialog-confirm {
+    width: 380px;
+    left: calc(50% - 190px);
+}
+
+    .SView-dialog-confirm .SView-dialog-title {
+        min-height: 40px;
+        border: none;
+        padding: 5px;
+    }
+
+    .SView-dialog-confirm .SView-dialog-title-closeBtn {
+        top: 3px;
+    }
+
+    .SView-dialog-confirm .SView-dialog-content {
+        border: none;
+        display: flex;
+        padding: 5px 15px;
+    }
+
+        .SView-dialog-confirm .SView-dialog-content > img {
+            width: 20px;
+            height: 20px;
+            margin: 3px 5px !important;
+            vertical-align: middle;
+            margin-right: 5px;
+        }
+
+        .SView-dialog-confirm .SView-dialog-content > h4 {
+            padding: 0px;
+        }
+
+    .SView-dialog-confirm .SView-dialog-button {
+        float: none;
+        background: #DFDFDF;
+        padding: 5px 0px;
+        display: flex;
+        justify-content: flex-end;
+        border-radius: 0 0 10px 10px;
+    }
+
+    .SView-dialog-confirm .SView-button {
+        padding: 5px 15px;
+        margin-right: 15px;
+    }
+
+
+    .SView-dialog-confirm .SView-button-default {
+        border: 1px solid #fff;
+        background: #fff;
+        margin-right: 18px;
+    }

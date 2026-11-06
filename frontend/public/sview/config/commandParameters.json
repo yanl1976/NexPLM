@@ -1,0 +1,1314 @@
+{
+    "root": {
+        "version": "2.0",
+        "modules": [
+            {
+                "id": "1",
+                "name": "File",
+                "assembly": "",
+                "commands": [
+                    {
+                        "name": "OpenFile",
+                        "fullClassname": "SView.Commands.OpenCommand",
+                        "priority": "5",
+                        "interruptible": "False",
+                        "inputParameters": [
+                            {
+                                "name": "type",
+                                "type": 1
+                            },
+                            {
+                                "name": "FilePath",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": []
+                    },
+                    {
+                        "name": "OpenSampleFile",
+                        "fullClassname": "SView.Commands.OpenCommand",
+                        "priority": "5",
+                        "interruptible": "False",
+                        "whiteList": {
+                            "command": {
+                                "name": "CloseFile"
+                            }
+                        },
+                        "inputParameters": [
+                            {
+                                "name": "type",
+                                "type": 1,
+                                "value": 2
+                            },
+                            {
+                                "name": "path",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": []
+                    },
+                    {
+                        "name": "CloseFile",
+                        "fullClassname": "SView.Commands.CloseCommand",
+                        "priority": "1",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "AddToModelSet",
+                        "fullClassname": "SView.Commands.CreateModelSetCommand",
+                        "priority": "7",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "EditSelection",
+                        "fullClassname": "SView.Commands.EditModelSetCommand",
+                        "viewName": "SView.Designer.Commands.EditModelSetDialog",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "Temp",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "DeleteSelection",
+                        "fullClassname": "SView.Commands.DeleteModelSetCommand",
+                        "priority": "7",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "About",
+                        "fullClassname": "SView.Commands.AboutCommand",
+                        "priority": "1",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "NewFile",
+                        "fullClassname": "SView.Commands.NewFileCommand",
+                        "priority": "5",
+                        "inputParameters": [
+                            {
+                                "name": "type",
+                                "type": 1,
+                                "value": 1
+                            },
+                            {
+                                "name": "FilePath",
+                                "type": 11
+                            },
+                            {
+                                "name": "OpenType",
+                                "type": 1
+                            }
+                        ],
+                        "outputParameters": [
+                            {
+                                "name": "OpenState",
+                                "type": 1,
+                                "value": 1
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Options",
+                        "fullClassname": "SView.Commands.OptionCommand",
+                        "priority": "3",
+                        "viewName": "SView.Commands.OptionCommandView",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "DocumentOption",
+                        "fullClassname": "SView.Commands.DocumentOptionCommand",
+                        "priority": "3",
+                        "viewName": "SView.Commands.DocumentOptionCommandView",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "License",
+                        "fullClassname": "SView.Commands.LicenseCommand",
+                        "priority": "3",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "Quit",
+                        "fullClassname": "SView.Commands.ExitCommand",
+                        "priority": "1",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "Help",
+                        "fullClassname": "SView.Commands.HelpCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "Url",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+						"name": "LoadLod",
+						"fullClassname": "SView.Commands.LoadLodCommand",
+						"priority": "7",
+						"inputParameters": [
+							{
+								"name": "Models",
+								"type": 11,
+								"value": []
+							},
+							{
+								"name": "Loaded",
+								"type": 12,
+								"value": true
+							}
+						],
+						"outputParameters": ""
+					},
+                    {
+                        "name": "UnloadLod",
+                        "fullClassname": "SView.Commands.UnloadLodCommad",
+                        "priority": "7",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "Hide",
+                        "fullClassname": "SView.Commands.ModelHideCommand",
+                        "priority": "3",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "SingleShow",
+                        "fullClassname": "SView.Commands.ModelSingleShowCommand",
+                        "priority": "3",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+					{
+                        "name": "SetColor",
+                        "fullClassname": "SView.Commands.ModelSetColorCommand",
+                        "viewName": "SView.Commands.ModelSetColorCommandView",
+                        "priority": "3",
+                        "inputParameters": [{
+                            "name": "SelectedColor",
+                            "type": 7
+                        }]
+                    },
+                    {
+                        "name": "AdaptiveViewPerspective",
+                        "fullClassname": "SView.Commands.ModelCenterCommand",
+                        "priority": "3",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "Delete",
+                        "fullClassname": "SView.Commands.DeleteCommand",
+                        "priority": "7",
+						"viewName": "SView.Commands.DeleteCommandView",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "Clear",
+                        "fullClassname": "SView.Commands.ClearCommand",
+                        "priority": "7",
+						"viewName": "SView.Commands.ClearCommandView",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "PanelVisible",
+                        "fullClassname": "SView.Commands.PanelVisibleCommand",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "Visible",
+                                "type": 12
+                            },
+                            {
+                                "name": "Panelname",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "ShapeVisible",
+                        "fullClassname": "SView.Commands.ShapeVisibleCommand",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "Visible",
+                                "type": 12
+                            },
+                            {
+                                "name": "type",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "restore",
+                        "fullClassname": "SView.Commands.RestoreCommand",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "Visible",
+                                "type": 12
+                            }
+                        ],
+                        "outputParameters": ""
+                    }
+                ]
+            },
+            {
+                "id": "2",
+                "name": "AnimationCommand",
+                "assembly": "modules\\Animationcommand.dll",
+                "commands": [
+                    {
+
+                        "name": "PlayAnimationCommand",
+                        "fullClassname": "SView.Commands.PlayAnimationCommand",
+                        "viewName": "SView.Commands.PlayAnimationCommandView",
+                        "inputParameters": [
+                            {
+                                "name": "PlayMode",
+                                "type": 1,
+                                "value": 2
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "PlayPreviousAnimationCommand",
+                        "fullClassname": "SView.Commands.PlayPreviousAnimationCommand",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "PlayNextAnimationCommand",
+                        "fullClassname": "SView.Commands.PlayNextAnimationCommand",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "SetLoopPlayCommand",
+                        "fullClassname": "SView.Commands.SetLoopPlayCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "IfLoopPlay",
+                                "type": 12,
+                                "value": true
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "AutoRoamAnimationCommand",
+                        "fullClassname": "SView.Commands.AutoRoamAnimationCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "IfAutoRoam",
+                                "type": 12
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "SetSpeedCommand",
+                        "fullClassname": "SView.Commands.SetSpeedCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "PlaySpeed",
+                                "type": 4,
+                                "value": 1
+                            }
+                        ],
+                        "outputParameters": ""
+                    }
+                ]
+            },
+            {
+                "id": "3",
+                "name": "Assemble",
+                "assembly": "modules\\Assemblecommand.dll",
+                "commands": [
+                    {
+                        "name": "SetModelColor",
+                        "fullClassname": "SView.Commands.SetModelColorCommand",
+                        "viewName": "SView.Commands.SetModelColorCommandView",
+                        "inputParameters": [
+                            {
+                                "name": "Color",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "Objects",
+                                "type": 11,
+                                "value": [ 0 ]
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "FreeColor",
+                        "fullClassname": "SView.Commands.FreeModelColorCommand",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "Transparent",
+                        "fullClassname": "SView.Commands.SetTransparencyCommand",
+                        "viewName": "SView.Commands.SetTransparencyCommandView",
+                        "inputParameters": [
+                            {
+                                "name": "Alpha",
+                                "type": 3,
+                                "value": "0.0"
+                            },
+                            {
+                                "name": "Objects",
+                                "type": 11,
+                                "value": [ 0 ]
+                            }
+                        ],
+                        "outputParameters": ""
+                    }
+                ]
+            },
+            {
+                "id": "4",
+                "name": "ClipPlane",
+                "assembly": "modules\\ClipPlanecommand.dll",
+                "commands": [
+                    {
+                        "name": "ClipPlaneCommand",
+                        "fullClassname": "SView.Commands.CreateClipPlaneCommand",
+                        "priority": "7",
+                        "viewName": "SView.Commands.CreateClipPlaneCommandView",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    }
+                ]
+            },
+            {
+                "id": "5",
+                "name": "Explosion",
+                "assembly": "modules\\Explosioncommand.dll",
+                "commands": [
+                    {
+                        "name": "ExplosionCommand",
+                        "fullClassname": "SView.Commands.ExplosionCommand",
+                        "viewName": "SView.Commands.ExplosionCommandView",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "ExplosionType",
+                                "type": 1,
+                                "value": 0
+                            },
+                            {
+                                "name": "ExplosionLevel",
+                                "type": 1,
+                                "value": 1
+                            },
+                            {
+                                "name": "ExplosionModel",
+                                "type": "List"
+                            },
+                            {
+                                "name": "ExplosionValue",
+                                "type": 1,
+                                "value": 1
+                            }
+                        ],
+                        "outputParameters": "",
+                        "executedHandleMode": "1"
+                    },
+                    {
+                        "name": "ExplosionLevelCommand",
+                        "fullClassname": "SView.Commands.ExplosionLevelCommand",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "Level",
+                                "type": 1,
+                                "value": 1
+                            }
+                        ],
+                        "outputParameters": "",
+                        "executedHandleMode": "1"
+                    }
+                ]
+            },
+            {
+                "id": "6",
+                "name": "Sign",
+                "assembly": "modules\\Measurecommand.dll",
+                "commands": [
+                    {
+                        "name": "MeasureAngle",
+                        "fullClassname": "SView.Commands.MeasureAngleCommand",
+                        "viewName": "SView.Commands.MeasureAngleCommandView",
+                        "executedHandleMode": "1",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "FirstPosition",
+                                "type": 12
+                            },
+                            {
+                                "name": "SecondPosition",
+                                "type": 12
+                            },
+                            {
+                                "name": "TitleFormat",
+                                "type": 11,
+                                "value": "符号"
+                            },
+                            {
+                                "name": "IsEnvelope",
+                                "type": 12,
+                                "value": true
+                            },
+                            {
+                                "name": "TitleColor",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "TextColor",
+                                "type": 11,
+                                "value": [ 1.0, 1.0, 0, 1.0 ]
+                            },
+                            {
+                                "name": "BackGroundColor",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "FontName",
+                                "type": 11,
+                                "value": "宋体"
+                            },
+                            {
+                                "name": "FontSize",
+                                "type": 1,
+                                "value": 15
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "MeasureDiametre",
+                        "fullClassname": "SView.Commands.MeasureDiametreCommand",
+                        "viewName": "SView.Commands.MeasureDiametreCommandView",
+                        "executedHandleMode": "1",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "FirstPoint",
+                                "type": 12
+                            },
+                            {
+                                "name": "Text",
+                                "type": 11
+                            },
+                            {
+                                "name": "IsLeader",
+                                "type": 12,
+                                "value": true
+                            },
+                            {
+                                "name": "IsEnvelope",
+                                "type": 12,
+                                "value": true
+                            },
+                            {
+                                "name": "FrameColor",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "FillColor",
+                                "type": 11,
+                                "value": [ 1.0, 1.0, 0, 1.0 ]
+                            },
+                            {
+                                "name": "TextColor",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "FontName",
+                                "type": 11,
+                                "value": "宋体"
+                            },
+                            {
+                                "name": "FontSize",
+                                "type": 1,
+                                "value": 15
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "MeasureDistance",
+                        "fullClassname": "SView.Commands.MeasureDistanceCommand",
+                        "viewName": "SView.Commands.MeasureDistanceCommandView",
+                        "executedHandleMode": "1",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "FirstPoint",
+                                "type": 12
+                            },
+                            {
+                                "name": "Text",
+                                "type": 11
+                            },
+                            {
+                                "name": "IsLeader",
+                                "type": 12,
+                                "value": true
+                            },
+                            {
+                                "name": "IsEnvelope",
+                                "type": 12,
+                                "value": true
+                            },
+                            {
+                                "name": "FrameColor",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "FillColor",
+                                "type": 11,
+                                "value": [ 1.0, 1.0, 0, 1.0 ]
+                            },
+                            {
+                                "name": "TextColor",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "FontName",
+                                "type": 11,
+                                "value": "宋体"
+                            },
+                            {
+                                "name": "FontSize",
+                                "type": 1,
+                                "value": 15
+                            }
+                        ],
+                        "outputParameters": ""
+                    }
+                ]
+            },
+            {
+                "id": "6",
+                "name": "Sign",
+                "assembly": "modules\\Signcommand.dll",
+                "commands": [
+                    {
+                        "name": "Annotation",
+                        "fullClassname": "SView.Commands.AnnotationCommand",
+                        "viewName": "SView.Commands.AnnotationCommandView",
+                        "executedHandleMode": "1",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "FirstPoint",
+                                "type": 12
+                            },
+                            {
+                                "name": "Text",
+                                "type": 11
+                            },
+                            {
+                                "name": "IsLeader",
+                                "type": 12,
+                                "value": true
+                            },
+                            {
+                                "name": "IsEnvelope",
+                                "type": 12,
+                                "value": true
+                            },
+                            {
+                                "name": "FrameColor",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "FillColor",
+                                "type": 11,
+                                "value": [ 1.0, 1.0, 0, 1.0 ]
+                            },
+                            {
+                                "name": "TextColor",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "FontName",
+                                "type": 11,
+                                "value": "宋体"
+                            },
+                            {
+                                "name": "FontSize",
+                                "type": 3,
+                                "value": "15"
+                            },
+                            {
+                                "name": "IsFixed",
+                                "type": 12,
+                                "value": false
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "VoiceAnnotation",
+                        "fullClassname": "SView.Commands.VoiceAnnotationCommand",
+                        "viewName": "SView.Commands.VoiceAnnotationCommandView",
+                        "inputParameters": [
+                            {
+                                "name": "FirstPoint",
+                                "type": 12
+                            },
+                            {
+                                "name": "VoiceFliePath",
+                                "type": 11
+                            },
+                            {
+                                "name": "Base64String",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "AnnotationNumber",
+                        "fullClassname": "SView.Commands.AnnotationNumberCommand",
+                        "viewName": "SView.Commands.AnnotationNumberCommandView",
+                        "executedHandleMode": "1",
+                        "inputParameters": [
+                            {
+                                "name": "FirstPoint",
+                                "type": 12
+                            },
+                            {
+                                "name": "Text",
+                                "type": 11
+                            },
+                            {
+                                "name": "IsLeader",
+                                "type": 12,
+                                "value": true
+                            },
+                            {
+                                "name": "IsEnvelope",
+                                "type": 12,
+                                "value": true
+                            },
+                            {
+                                "name": "FrameColor",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "FillColor",
+                                "type": 11,
+                                "value": [ 1.0, 1.0, 0, 1.0 ]
+                            },
+                            {
+                                "name": "TextColor",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "FontName",
+                                "type": 11,
+                                "value": "宋体"
+                            },
+                            {
+                                "name": "FontSize",
+                                "type": 1,
+                                "value": 15
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "AnnotationComponent",
+                        "fullClassname": "SView.Commands.AnnotationComponentCommand",
+                        "viewName": "SView.Commands.AnnotationComponentCommandView",
+                        "executedHandleMode": "1",
+                        "inputParameters": [
+                            {
+                                "name": "FirstPoint",
+                                "type": 12
+                            },
+                            {
+                                "name": "Text",
+                                "type": 11
+                            },
+                            {
+                                "name": "IsLeader",
+                                "type": 12,
+                                "value": true
+                            },
+                            {
+                                "name": "IsEnvelope",
+                                "type": 12,
+                                "value": true
+                            },
+                            {
+                                "name": "FrameColor",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "FillColor",
+                                "type": 11,
+                                "value": [ 1.0, 1.0, 0, 1.0 ]
+                            },
+                            {
+                                "name": "TextColor",
+                                "type": 11,
+                                "value": [ 0.0, 0.0, 0.0, 1.0 ]
+                            },
+                            {
+                                "name": "FontName",
+                                "type": 11,
+                                "value": "宋体"
+                            },
+                            {
+                                "name": "FontSize",
+                                "type": 1,
+                                "value": 15
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+					{
+                        "name": "AnnotationEdit",
+                        "fullClassname": "SView.Commands.AnnotationEditCommand",
+                        "priority": "7",
+						"viewName": "SView.Commands.AnnotationEditCommandView",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "HandDrawn",
+                        "fullClassname": "SView.Commands.HandDrawnCommand",
+                        "viewName": "SView.Commands.HandDrawnCommandView",
+                        "priority": "7",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "PaintBrush",
+                        "fullClassname": "SView.Commands.PaintBrushCommand",
+                        "viewName": "SView.Commands.PaintBrushCommandView",
+                        "executedHandleMode": "1",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "PointArrList",
+                                "type": 11
+                            }, {
+                                "name": "ColorList",
+                                "type": 11
+                            }, {
+                                "name": "DrawTypeList",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": ""
+                    }
+                ]
+            },
+            {
+                "id": "7",
+                "name": "Transform",
+                "assembly": "modules\\Transformcommand.dll",
+                "commands": [
+                    {
+                        "name": "SelectMove",
+                        "fullClassname": "SView.Commands.MoveTypeCommand",
+                        "viewName": "SView.Commands.MoveTypeCommandView",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "Position",
+                                "type": 12
+                            },
+                            {
+                                "name": "Objects",
+                                "type": 11,
+                                "value": [ 0 ]
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "Reposition",
+                        "fullClassname": "SView.Commands.MoveRestoreCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "Objects",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": ""
+                    }
+                ]
+            },
+            {
+                "id": "8",
+                "name": "View",
+                "assembly": "modules\\Viewcommand.dll",
+                "commands": [
+                    {
+                        "name": "Search",
+                        "fullClassname": "SView.Commands.SearchCommand",
+                        "viewName": "SView.Commands.SearchCommandView",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "SearchFor",
+                                "type": 1,
+                                "value": 0
+                            },
+                            {
+                                "name": "SearchType",
+                                "type": 1,
+                                "value": 1
+                            },
+                            {
+                                "name": "SearchRole",
+                                "type": 1,
+                                "value": 1
+                            },
+                            {
+                                "name": "SearchCompare",
+                                "type": 1,
+                                "value": 1
+                            },
+                            {
+                                "name": "SearchValue",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "FastPicture",
+                        "fullClassname": "SView.Commands.SavePictureCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "FilePath",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "ReverseVisible",
+                        "fullClassname": "SView.Commands.ReverseVisibleCommand",
+                        "priority": "3",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "SetRoam",
+                        "fullClassname": "SView.Commands.SetRoamCommand",
+                        "viewName": "SView.Commands.RoamCommandView",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "WalkthroughIsOpen",
+                                "type": 12,
+                                "value": false
+                            },
+                            {
+                                "name": "WalkthroughSpeed",
+                                "type": 4,
+                                "value": "1"
+                            },
+                            {
+                                "name": "WalkthroughUpward",
+                                "type": 11
+                            },
+                            {
+                                "name": "WalkthroughAngle",
+                                "type": 1,
+                                "value": 40
+                            }
+                        ],
+                        "outputParameters": " "
+                    },
+                    {
+                        "name": "Roam",
+                        "fullClassname": "SView.Commands.RoamCommand",
+                        "priority": "3",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "WatchMode",
+                        "fullClassname": "SView.Commands.WatchModeCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "WatchType",
+                                "type": 1,
+                                "value": 0
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "ShowDefineView",
+                        "fullClassname": "SView.Commands.ShowDefineViewCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "id",
+                                "type": 2
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "ChangeView",
+                        "fullClassname": "SView.Commands.ChangeViewCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "Viewid",
+                                "type": 2
+                            }
+                        ],
+                        "outputParameters": " "
+                    },
+                    {
+                        "name": "WatchModel",
+                        "fullClassname": "SView.Commands.WatchModelCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "ObserveType",
+                                "type": 1
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "ChangeCameraToFace",
+                        "fullClassname": "SView.Commands.ChangeCameraToFaceCommand",
+                        "priority": "7",
+                        "viewName": "SView.Commands.ChangeCameraToFaceCommandView",
+                        "inputParameters": [
+                            {
+                                "name": "AnimationPlay",
+                                "type": 12,
+                                "value": true
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "CreateView",
+                        "fullClassname": "SView.Commands.CreateViewCommand",
+                        "priority": "7",
+						"viewName": "SView.Commands.CreateViewCommandView",
+                        "inputParameters": [
+                            {
+                                "name": "ViewType",
+                                "type": 1,
+                                "value": 0
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "DeleteView",
+                        "fullClassname": "SView.Commands.DeleteViewCommand",
+                        "priority": "7",
+						"viewName": "SView.Commands.DeleteViewCommandView",
+                        "inputParameters": [
+                            {
+                                "name": "ViewId",
+                                "type": 2
+                            },
+							{
+                                "name": "ViewServerId",
+                                "type": 2
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "RenameView",
+                        "fullClassname": "SView.Commands.RenameViewCommand",
+                        "priority": "7",
+						"viewName": "SView.Commands.RenameViewCommandView",
+                        "inputParameters": [
+                            {
+                                "name": "ViewId",
+                                "type": 2
+                            },
+                            {
+                                "name": "Viewname",
+                                "type": 11
+                            },
+							{
+                                "name": "ViewServerId",
+                                "type": 2
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "SetDefaultView",
+                        "fullClassname": "SView.Commands.SetDefaultViewCommand",
+                        "priority": "7",
+						"viewName": "SView.Commands.SetDefaultViewCommandView",
+                        "inputParameters": [
+                            {
+                                "name": "ViewId",
+                                "type": 2
+                            },
+							{
+                                "name": "ViewServerId",
+                                "type": 2
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "UpdateView",
+                        "fullClassname": "SView.Commands.UpdateViewCommand",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "Viewid",
+                                "type": 2
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "StopView",
+                        "fullClassname": "SView.Commands.StopViewCommand",
+                        "priority": "7",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "LightFromJson",
+                        "fullClassname": "SView.Commands.LightFromJsonCommand",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "LightJson",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": [
+                            {
+                                "name": "Lightid",
+                                "type": 11
+                            }
+                        ]
+                    },
+                    {
+                        "name": "ViewFromJson",
+                        "fullClassname": "SView.Commands.ViewFromJsonCommand",
+                        "priority": "7",
+                        "inputParameters": [
+                            {
+                                "name": "ViewJson",
+                                "type": 11
+                            }
+                        ],
+                        "outputParameters": [
+                            {
+                                "name": "Viewid",
+                                "type": 11
+                            }
+                        ]
+                    },
+                    {
+                        "name": "PlayView",
+                        "fullClassname": "SView.Commands.PlayViewCommand",
+                        "priority": "7",
+                        "inputParameters": "",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "DrawMode",
+                        "fullClassname": "SView.Commands.DrawModeCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "DrawModeType",
+                                "type": 1
+                            }
+                        ],
+                        "outputParameters": " "
+                    },
+                    {
+                        "name": "Projection",
+                        "fullClassname": "SView.Commands.ProjectionCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "type",
+                                "type": 12
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "BaseView",
+                        "fullClassname": "SView.Commands.BaseViewCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "BaseViewType",
+                                "type": 1
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "Undo",
+                        "fullClassname": "SView.Commands.UndoCommand",
+                        "priority": "7",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "Redo",
+                        "fullClassname": "SView.Commands.RedoCommand",
+                        "priority": "7",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "ShowProperty",
+                        "fullClassname": "SView.Commands.PropertyCommand",
+                        "viewName": "SView.Commands.PropertyCommandView",
+                        "priority": "3",
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "ModelIsolate",
+                        "fullClassname": "SView.Commands.IsolateModelCommand",
+                        "priority": "3"
+                    },
+                    {
+                        "name": "ShowAll",
+                        "fullClassname": "SView.Commands.ShowAllModelsCommand",
+                        "priority": "3"
+                    },
+                    {
+                        "name": "Restore",
+                        "fullClassname": "SView.Commands.RestoreCommand",
+                        "priority": "3"
+                    },
+                    {
+                        "name": "KeepSpin",
+                        "fullClassname": "SView.Commands.KeepSpinCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "IsKeepSpin",
+                                "type": 12,
+                                "value": "True"
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "Ground",
+                        "fullClassname": "SView.Commands.GroundCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "IsOpen",
+                                "type": 12,
+                                "value": "True"
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "GroundShadow",
+                        "fullClassname": "SView.Commands.GroundShadowCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "IsOpen",
+                                "type": 12,
+                                "value": "True"
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "GroundMirror",
+                        "fullClassname": "SView.Commands.GroundMirrorCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "IsOpen",
+                                "type": 12,
+                                "value": "True"
+                            }
+                        ],
+                        "outputParameters": ""
+                    },
+                    {
+                        "name": "GroundGrid",
+                        "fullClassname": "SView.Commands.GroundGridCommand",
+                        "priority": "3",
+                        "inputParameters": [
+                            {
+                                "name": "IsOpen",
+                                "type": 12,
+                                "value": "True"
+                            }
+                        ],
+                        "outputParameters": ""
+                    }
+                ]
+            }
+        ]
+    }
+}

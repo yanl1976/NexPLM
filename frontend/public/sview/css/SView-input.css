@@ -1,0 +1,256 @@
+input[disabled="true"] {
+    background-color: initial !important;
+    cursor: no-drop !important;
+}
+
+select[disabled="true"] {
+    background-color: initial !important;
+    cursor: no-drop;
+}
+
+.SView-form {
+    /* display: inline-block; */
+    width: auto;
+    /* text-align: right; */
+    text-align: center;
+    /* padding: 10px 40px 10px 0; */
+    margin: 20px;
+    box-sizing: border-box;
+}
+
+.SView-input-withBoth .SView-input {
+    margin-bottom: 0px !important;
+}
+
+.SView-input {
+    outline: none;
+    margin: 0 10px;
+    margin-bottom: 5px;
+    border: 1px solid #DFDFDF;
+    border-radius: 4px;
+    padding: 4px 8px;
+    height: 32px;
+    color: #424242;
+    box-sizing: border-box;
+}
+
+#sequenceAnnotationMaxCountInput {
+    margin: 10px 0px 0px 0px !important;
+    height: 36px !important;
+}
+
+#sequenceAnnotationMaxCountWarningInput {
+    max-width: 493px;
+    width: 100%;
+}
+
+#openingMaxFPSInput {
+    margin: 10px 0px 0px 0px !important;
+    height: 36px !important;
+}
+
+#openingMaxFPSWarningInput {
+    max-width: 493px;
+    width: 100%;
+}
+
+.SView-input:focus {
+    border-color: rgba(44, 135, 255, 0.7);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075), 0 0 8px rgba(44, 135, 255, 0.7);
+}
+
+.SView-input::placeholder {
+    color: #bdbdbd;
+}
+
+.SView-input-withTitle,
+.SView-input-warning {
+    width: max-content;
+}
+
+    .SView-input-withTitle span,
+    .SView-input-withBoth span {
+        color: #212121;
+        font-size: 16px;
+        text-align: right;
+        width: 80px;
+        display: inline-block;
+        overflow: hidden;
+        line-height: 32px;
+        white-space: nowrap;
+        vertical-align: top;
+        /* margin-top: 10px; */
+    }
+
+.SView-input-warning {
+    display: inline-block;
+    width: 100%;
+}
+
+    .SView-input-warning .SView-input {
+        width: 100%;
+    }
+
+    .SView-input-warning p,
+    .SView-input-withBoth p {
+        /* visibility: hidden; */
+        /* display: none; */
+        margin: 0;
+        padding: 0;
+        /* margin-left: 90px; */
+        font-size: 12px;
+        color: #e64a19;
+        text-align: right;
+    }
+
+.SView-input-withBoth {
+    width: max-content;
+    margin: 5px auto;
+}
+
+.SView-input-withBtn {
+    width: 100%;
+}
+
+.SView-input-withBoth p {
+    margin-right: 10px;
+}
+
+.SView-complexInput {
+    margin: 5px;
+    margin-right: 0;
+    height: 30px;
+    box-sizing: border-box;
+    outline: none;
+    border: 1px solid #aeb5c0;
+    border-right: 0;
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 4px;
+    padding: 4px 8px;
+    color: #424242;
+}
+
+    .SView-complexInput:focus {
+        border-color: rgba(44, 135, 255, 0.7);
+        box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075), 0 0 8px rgba(44, 135, 255, 0.7);
+    }
+
+    .SView-complexInput::placeholder {
+        color: #bdbdbd;
+    }
+
+.SView-submitBtn {
+    position: relative;
+    display: inline-block;
+    user-select: none;
+    width: fit-content;
+    height: 30px;
+    box-sizing: border-box;
+    /* margin: 5px; */
+    margin-left: -5px;
+    padding: 2px 10px;
+    background-color: #2C87FF;
+    color: #fff;
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    font-size: 14px;
+    line-height: 26px;
+    cursor: pointer;
+}
+
+    .SView-submitBtn:hover {
+        background-color: rgba(44, 135, 255, 0.8);
+    }
+
+    .SView-submitBtn:active {
+        background-color: rgba(44, 135, 255, 0.5);
+    }
+
+    .SView-submitBtn .SView-submitBtn-content {
+        margin: 0;
+        /* margin-bottom: 3px; */
+        height: 100%;
+        padding: 2px;
+        box-sizing: border-box;
+        vertical-align: middle;
+    }
+
+.SView-warningPopover {
+    /* display: none; */
+    position: absolute;
+    top: -30px;
+    right: 0;
+    /* min-width: 140px; */
+    width: max-content;
+    height: 26px;
+    box-sizing: border-box;
+    padding: 0 5px;
+    border: 1px solid #aeb5c0;
+    background-color: #fff;
+    font-size: 14px;
+    color: #e64a19;
+    border-radius: 4px;
+    z-index: 10;
+}
+
+    .SView-warningPopover .SView-triangle {
+        position: relative;
+        top: -5px;
+        left: 92px;
+        width: 4px;
+        height: 4px;
+        border: 1px solid #aeb5c0;
+        border-top: none;
+        border-left: none;
+        transform: rotateZ(45deg);
+        background-color: #fff;
+    }
+
+    .SView-warningPopover p {
+        margin: 0;
+    }
+
+@media screen and (min-width: 305px) and (max-width: 900px) {
+    .SView-input input[type=text] {
+        width: 140px;
+        height: 26px;
+        margin: 10px 5px;
+        margin-bottom: 0;
+        padding: 2px 4px;
+    }
+
+    .SView-input-withTitle span {
+        /* width: 50px; */
+        margin-top: 10px;
+        line-height: 26px;
+        font-size: 14px;
+    }
+
+    .SView-input-warning p {
+        font-size: 8px;
+        /* margin-left: 65px; */
+    }
+}
+
+@media screen and (max-width: 305px) {
+    .SView-input input[type=text] {
+        width: 100px;
+        height: 24px;
+        margin: 4px 3px;
+        margin-bottom: 0;
+        padding: 2px 4px;
+        font-size: 12px;
+    }
+
+    .SView-input-withTitle span {
+        /* width: 40px; */
+        margin-top: 4px;
+        line-height: 24px;
+        font-size: 12px;
+    }
+
+    .SView-input-warning p {
+        font-size: 8px;
+        /* margin-left: 14px; */
+    }
+}

@@ -202,7 +202,7 @@
         </el-tab-pane>
 
         <el-tab-pane label="可视化" name="visual">
-          <el-empty description="三维/二维轻量化预览尚未接入（旧系统按 PSE.setting 的查看器优先级调用本地查看器）" />
+          <visual-preview object-type="item" :object-id="itemId" />
         </el-tab-pane>
 
         <el-tab-pane label="BOM" name="bom">
@@ -1031,6 +1031,7 @@ import {
 } from '@/api/item'
 import { DOC_STATE_LABEL } from '@/api/doc'
 import WorkflowPanel from '@/components/WorkflowPanel.vue'
+import VisualPreview from '@/components/VisualPreview.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import { useUserStore } from '@/stores/user'
 

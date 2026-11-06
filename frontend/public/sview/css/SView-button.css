@@ -1,0 +1,246 @@
+/* 基础按钮 */
+.SView-button {
+    user-select: none;
+    display: inline-block;
+    position: relative;
+    cursor: pointer;
+    padding: 8px 20px;
+    text-align: center;
+    line-height: 20px;
+    font-size: 14px;
+    color: #fff;
+    margin: 4px;
+    border-radius: 6px;
+}
+
+    .SView-button p {
+        margin: 0;
+    }
+
+    .SView-button:hover {
+        opacity: .8;
+    }
+
+/*.SView-button:active {
+        opacity: .5;
+    }*/
+
+
+/* 默认按钮 */
+.SView-button-default {
+    border: 1px solid #e0e0e0;
+    color: #212121;
+}
+
+    .SView-button-default:hover {
+        background-color: #e0e0e0;
+    }
+
+/*.SView-button-default:active {
+        background-color: rgba(224, 224, 224, .7);
+    }*/
+/* 主要按钮 */
+.SView-button-primary-text {
+    color: #2c87ff !important;
+    padding: 0px !important;
+    text-align: center;
+}
+/* 主要按钮 */
+.SView-button-default-text {
+    color: #333333 !important;
+    padding: 0px !important;
+}
+/* 成功按钮 */
+.SView-button-success-text {
+    color: #00c853 !important;
+    padding: 0px !important;
+}
+/* 警告按钮 */
+.SView-button-warning-text {
+    color: #f9a825 !important;
+}
+/* 危险按钮 */
+.SView-button-danger-text {
+    color: #e64a19 !important;
+    padding: 0px !important;
+}
+/* 主要按钮 */
+.SView-button-primary {
+    background-color: #2c87ff;
+    color: #fff !important;
+}
+/* 成功按钮 */
+.SView-button-success {
+    background-color: #00c853;
+}
+/* 警告按钮 */
+.SView-button-warning {
+    background-color: #f9a825;
+}
+/* 危险按钮 */
+.SView-button-danger {
+    background-color: #e64a19;
+}
+
+/* 基础按钮尺寸 */
+.SView-button-mini {
+    font-size: 14px;
+    padding: 6px 10px;
+}
+
+.SView-button-samll {
+    font-size: 14px;
+    padding: 8px 16px;
+}
+
+.SView-button-middle {
+    font-size: 16px;
+    padding: 10px 20px;
+}
+
+.SView-button-large {
+    font-size: 16px;
+    padding: 12px 24px;
+}
+
+
+/* 图标按钮（无边框） */
+.SView-button-iconBtn {
+    user-select: none;
+    display: inline-block;
+    position: relative;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    box-sizing: border-box;
+    padding: 3px;
+    text-align: center;
+    margin: 5px;
+    border-radius: 4px;
+}
+
+    .SView-button-iconBtn img {
+        width: 100%;
+    }
+
+    .SView-button-iconBtn:hover {
+        background-color: #e0e0e0;
+        /* opacity: .8; */
+    }
+
+/*.SView-button-iconBtn:active {
+        opacity: .5;
+    }*/
+/* 图标按钮（带边框） */
+.SView-button-iconBtn-withBorder {
+    border: 1px solid #e0e0e0;
+}
+/* 图标按钮（带文字） */
+.SView-button-iconText {
+    display: inline-block;
+    cursor: pointer;
+    box-sizing: border-box;
+    padding: 5px 10px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    text-align: center;
+    margin: 5px;
+}
+
+.SView-button-iconLR {
+    /* width: 120px; */
+    height: 40px;
+    vertical-align: middle;
+    color: #212121;
+}
+
+    .SView-button-iconLR img {
+        width: 24px;
+        vertical-align: middle;
+    }
+
+    .SView-button-iconLR span {
+        line-height: 28px;
+        margin: 0 8px;
+    }
+
+    .SView-button-iconLR:hover {
+        background-color: #e0e0e0;
+    }
+
+/*.SView-button-iconLR:active {
+        opacity: .7;
+    }*/
+/* 图标按钮（上图标下文字） */
+.SView-button-iconTB {
+    width: 130px;
+    height: 90px;
+}
+
+    .SView-button-iconTB img {
+        width: 45px;
+    }
+
+    .SView-button-iconTB p {
+        margin: 5px;
+        color: #212121;
+    }
+
+    .SView-button-iconTB:hover {
+        background-color: #e0e0e0;
+    }
+
+/*.SView-button-iconTB:active {
+        opacity: .7;
+    }*/
+
+@media screen and (min-width: 305px) and (max-width: 900px) {
+    .SView-button-iconBtn {
+        width: 28px;
+        height: 28px;
+        margin: 2px;
+    }
+}
+
+@media screen and (max-width: 305px) {
+    .SView-button-iconBtn {
+        width: 24px;
+        height: 24px;
+        margin: 1px;
+    }
+}
+/*颜色按钮*/
+.SView-color-button {
+    width: 50px;
+    height: 50px;
+    background: #FFFFFF;
+    border: 1px solid #DFDFDF;
+    cursor: pointer;
+    position: relative;
+    display: inline-block;
+    margin: 10px 10px 0;
+}
+
+    .SView-color-button img {
+        position: absolute;
+        right: -8px;
+        top: -8px;
+        width: 16px;
+        height: 16px;
+        z-index: 101;
+        display: none;
+    }
+
+.SView-color-button-active {
+    border: 1px solid #1875C7;
+}
+
+    .SView-color-button-active img {
+        display: block !important;
+    }
+
+.SView-color-button > div {
+    width: 40px;
+    height: 40px;
+    margin: 5px;
+}

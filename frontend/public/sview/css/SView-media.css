@@ -1,0 +1,218 @@
+@media screen and (min-width: 305px) and (max-width: 900px) {
+    .SView-rightMenu {
+        margin-top: 5px;
+        margin-right: 5px;
+    }
+    /* .SView-rightMenu .SView-button-iconBtn-withBorder {
+        width: 30px;
+        height: 30px;
+        margin: 2px;
+    } */
+    .SView-bottomMenu {
+        bottom: 10px;
+    }
+
+        .SView-bottomMenu ul {
+            margin: 0;
+            padding: 0 4px;
+        }
+
+        .SView-bottomMenu .mainBottomMenu {
+            min-width: 305px;
+            height: 32px;
+            border-radius: 16px;
+        }
+
+        .SView-bottomMenu .SView-button-iconBtn-withBorder {
+            width: 28px;
+            height: 28px;
+            margin: 2px;
+        }
+
+        .SView-bottomMenu .translateMenu {
+            min-width: 230px;
+            height: 32px;
+            border-radius: 16px;
+        }
+
+        .SView-bottomMenu .annotateMenu {
+            min-width: 270px;
+            height: 32px;
+            border-radius: 16px;
+        }
+
+        .SView-bottomMenu .gestureMenu {
+            min-width: 230px;
+            height: 32px;
+            border-radius: 16px;
+        }
+
+        .SView-bottomMenu .animationMenu {
+            min-width: 270px;
+            height: 32px;
+            border-radius: 16px;
+        }
+
+            .SView-bottomMenu .animationMenu .SView-slider {
+                height: 32px;
+                line-height: 20px;
+            }
+
+                .SView-bottomMenu .animationMenu .SView-slider input[type=range] {
+                    width: 80px;
+                }
+
+        .SView-bottomMenu .distanceMeasure {
+            width: 270px;
+            height: 32px;
+            border-radius: 16px;
+        }
+
+    .SView-viewMenu {
+        margin-top: 40px;
+    }
+
+        .SView-viewMenu ul {
+            width: 128px;
+        }
+
+        .SView-viewMenu .notUseLi {
+            width: 28px;
+            height: 28px;
+            margin: 2px;
+        }
+
+        .SView-viewMenu .SView-button-iconBtn-withBorder {
+            width: 28px;
+            height: 28px;
+            margin: 2px;
+        }
+
+    .SView-popoverSelect-up {
+        left: -3px;
+        bottom: 32px;
+    }
+
+        .SView-popoverSelect-down ul,
+        .SView-popoverSelect-up ul {
+            width: 32px;
+            padding: 0;
+            margin: 0;
+        }
+
+        .SView-popoverSelect-up .tripleWidth {
+            width: 106px;
+            padding: 0;
+            margin: 0;
+        }
+}
+
+@media screen and (max-width: 305px) {
+    .SView-rightMenu {
+        margin-top: 5px;
+        margin-right: 5px;
+    }
+
+    .SView-bottomMenu {
+        bottom: 10px;
+    }
+
+        .SView-bottomMenu ul {
+            margin: 0;
+            padding: 0 4px;
+        }
+
+        .SView-bottomMenu .mainBottomMenu {
+            min-width: 270px;
+            height: 28px;
+            border-radius: 14px;
+        }
+        /* .SView-bottomMenu .SView-button-iconBtn-withBorder {
+        width: 26px;
+        height: 26px;
+        margin: 1px;
+    } */
+        .SView-bottomMenu .translateMenu {
+            min-width: 210px;
+            height: 28px;
+            border-radius: 14px;
+        }
+
+        .SView-bottomMenu .annotateMenu {
+            min-width: 240px;
+            height: 28px;
+            border-radius: 14px;
+        }
+
+        .SView-bottomMenu .gestureMenu {
+            min-width: 210px;
+            height: 28px;
+            border-radius: 14px;
+        }
+
+        .SView-bottomMenu .animationMenu {
+            min-width: 240px;
+            height: 28px;
+            border-radius: 14px;
+        }
+
+            .SView-bottomMenu .animationMenu .SView-slider {
+                height: 26px;
+                line-height: 18px;
+            }
+
+                .SView-bottomMenu .animationMenu .SView-slider input[type=range] {
+                    width: 60px;
+                }
+
+        .SView-bottomMenu .distanceMeasure {
+            min-width: 240px;
+            height: 28px;
+            border-radius: 14px;
+        }
+
+            .SView-bottomMenu .distanceMeasure .SView-button-iconBtn-withBorder {
+                width: 24px;
+                height: 24px;
+                margin: 2px 1px;
+            }
+
+    .SView-viewMenu {
+        margin-top: 38px;
+    }
+
+        .SView-viewMenu ul {
+            width: 120px;
+        }
+
+        .SView-viewMenu .notUseLi {
+            width: 28px;
+            height: 28px;
+            margin: 2px;
+        }
+
+        .SView-viewMenu .SView-button-iconBtn-withBorder {
+            width: 26px;
+            height: 26px;
+            margin: 1px;
+        }
+
+    .SView-popoverSelect-up {
+        left: -2px;
+        bottom: 28px;
+    }
+
+        .SView-popoverSelect-down ul,
+        .SView-popoverSelect-up ul {
+            min-width: 28px;
+            width: 28px;
+            padding: 0;
+            margin: 0;
+        }
+
+        .SView-popoverSelect-up .tripleWidth {
+            width: 94px;
+            padding: 0;
+            margin: 0;
+        }
+}

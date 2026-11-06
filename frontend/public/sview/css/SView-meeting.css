@@ -1,0 +1,376 @@
+/* 会议主菜单界面 */
+.SView-meeting {
+    /* visibility: hidden; */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-50%);
+    width: 420px;
+    height: 300px;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    background-color: #fff;
+}
+
+    .SView-meeting .meetingSet:hover,
+    .SView-meeting .meetingExist:hover {
+        background-color: #fff;
+        opacity: .7;
+    }
+
+.SView-meeting-title {
+    text-align: right;
+}
+
+.SView-meeting-content {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+    .SView-meeting-content img {
+        cursor: pointer;
+        width: 100%;
+        justify-content: space-around;
+    }
+
+        .SView-meeting-content img:hover {
+            opacity: .7;
+        }
+
+.SView-meeting-create {
+    width: 50%;
+    box-sizing: border-box;
+    padding: 15px 15px 30px 30px;
+}
+
+.SView-meeting-other {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 50%;
+    box-sizing: border-box;
+    padding: 15px 30px 30px 15px;
+}
+
+.SView-meeting-create .SView-dialog-content {
+    padding-left: 50px;
+    padding-bottom: 20px;
+    margin-top: 15px;
+}
+
+@media screen and (min-width: 305px) and (max-width: 900px) {
+    .SView-meeting {
+        width: 260px;
+        height: 200px;
+    }
+
+    .SView-meeting-create {
+        width: 50%;
+        padding: 5px 5px 15px 15px;
+    }
+
+    .SView-meeting-other {
+        width: 50%;
+        padding: 5px 15px 15px 5px;
+    }
+
+    .SView-meeting-create .SView-dialog-content {
+        padding-left: 20px;
+        padding-bottom: 20px;
+        margin-top: 10px;
+    }
+}
+
+@media screen and (max-width: 305px) {
+    .SView-meeting {
+        width: 180px;
+        height: 420px;
+    }
+
+    .SView-meeting-create {
+        width: 100%;
+        padding: 0 15px;
+    }
+
+    .SView-meeting-other {
+        width: 100%;
+        padding: 0 15px;
+    }
+
+    .SView-meeting-create .SView-dialog-content {
+        padding-left: 10px;
+        padding-bottom: 20px;
+        margin-top: 10px;
+    }
+}
+
+@media screen and (max-width: 500px) {
+    .SView-attendee-button {
+        height: 44px !important;
+    }
+
+        .SView-attendee-button .SView-button-attendee {
+            width: 60px !important;
+            height: 30px !important;
+            margin: 7px 0 !important;
+        }
+
+            .SView-attendee-button .SView-button-attendee p {
+                display: none;
+            }
+}
+/* 参会人 */
+.SView-attendee-button {
+    height: 70px;
+    background-color: #eee;
+    border-bottom: 1px solid #e5e5e5;
+    padding: 0 10px;
+    display: flex;
+    justify-content: space-around;
+}
+
+    .SView-attendee-button .SView-labelItem > span {
+        display: flex;
+    }
+
+    .SView-attendee-button .SView-button-attendee {
+        user-select: none;
+        display: inline-block;
+        position: relative;
+        cursor: pointer;
+        text-align: center;
+        line-height: 20px;
+        font-size: 12px;
+        color: #fff;
+        border-radius: 6px;
+        width: 90px;
+        height: 56px;
+        padding: 0px;
+        margin: 7px 10px;
+        background-color: #FFFFFF;
+    }
+
+        .SView-attendee-button .SView-button-attendee:hover {
+            background-color: #e0e0e0 !important;
+        }
+
+        .SView-attendee-button .SView-button-attendee img {
+            width: 20px;
+            height: 20px;
+            margin-top: 5px;
+        }
+
+        .SView-attendee-button .SView-button-attendee p {
+            color: #212121;
+        }
+
+.SView-attendee-content {
+    width: 100%;
+    height: auto;
+    background-color: #FFF;
+}
+
+    .SView-attendee-content li {
+        padding: 4px 14px;
+        box-sizing: border-box;
+        min-height: 40px;
+        border-bottom: 1px solid #e8e8e8;
+    }
+
+        .SView-attendee-content li .SView-labelItem > label {
+            /*width: 40%;*/
+            color: rgba(0,0,0,.85);
+            font-size: 14px;
+            line-height: 32px;
+            float: left;
+            width: 60%;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            -o-text-overflow: ellipsis;
+        }
+
+        .SView-attendee-content li .SView-labelItem > span {
+            /*width: 60%;*/
+            height: 32px;
+            display: inline-block;
+            line-height: 32px;
+            color: #000000;
+            font-size: 14px;
+            text-align: right;
+            float: right;
+            padding: 0 10px;
+            display: flex;
+            justify-content: space-around;
+        }
+
+            .SView-attendee-content li .SView-labelItem > span .SView-button-iconBtn {
+                user-select: none;
+                display: inline-block;
+                position: relative;
+                cursor: pointer;
+                width: 25px;
+                height: 25px;
+                box-sizing: border-box;
+                padding: 0px !important;
+                text-align: center;
+                margin: 0 10px !important;
+                border-radius: 4px;
+            }
+
+#in_meeting_tabs .SView-tabs-content {
+    max-height: 500px;
+    position: relative;
+}
+
+.SView-file-button {
+    position: absolute;
+    right: 10px;
+    bottom: 60px;
+    z-index: 100;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    cursor: pointer;
+    background: aquamarine url(../images/meeting/meeting_attachment.png) no-repeat;
+    background-size: 60% 60%;
+    background-position: center;
+    box-shadow: 2px 2px 2px #999;
+}
+
+    .SView-file-button img {
+        display: none;
+    }
+/*聊天窗口底部发送*/
+#chat_dialog .SView-dialog-button {
+    float: none;
+    padding: 0;
+    width: 100%;
+    text-align: center;
+}
+
+    #chat_dialog .SView-dialog-button input {
+        width: 75%;
+    }
+/*视频窗口*/
+.SView-meetingVideo {
+    width: 100%;
+    position: absolute;
+    width: calc(100% - 92px);
+    top: 10px;
+    left: 5px;
+    display: flex;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+}
+
+.SView-close-icon {
+    width: 20px;
+    height: 120px;
+    border-radius: 5px;
+    opacity: 0.65;
+    cursor: pointer;
+    z-index: 1;
+    background: #ccc url(../images/meeting/sview_ani_anilist_close.png) no-repeat;
+    background-size: 100% 20%;
+    background-position: center;
+    float:left;
+}
+
+.SView-open-icon {
+    width: 20px;
+    height: 120px;
+    border-radius: 5px;
+    opacity: 0.65;
+    cursor: pointer;
+    z-index: 1;
+    background: #ccc url(../images/meeting/sview_ani_anilist_open.png) no-repeat;
+    background-size: 100% 20%;
+    background-position: center;
+}
+
+.SView-video-list {
+    width: calc(100% - 30px);
+    height: 130px;
+    display: flex;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    z-index: 1;
+    margin-left: 10px;
+    float:left;
+}
+
+.SView-video-item {
+    width: 120px;
+    height: 120px;
+    margin-left: 5px;
+    position: relative;
+    flex-shrink: 0;
+    background-color: #9CCEF0;
+}
+
+    .SView-video-item:first-child {
+        margin-left: 0px;
+    }
+
+    .SView-video-item .SView-button-iconBtn {
+        padding: 0px !important;
+        margin: 0px !important;
+    }
+
+        .SView-video-item .SView-button-iconBtn:hover {
+            background: none !important;
+        }
+
+    .SView-video-item .SView-video-button-1 {
+        width: 35px;
+        height: 25px;
+        position: absolute;
+        left: 5px;
+        top: 5px;
+        cursor: pointer;
+        z-index: 2;
+    }
+
+    .SView-video-item .SView-video-button-2 {
+        width: 35px;
+        height: 25px;
+        position: absolute;
+        right: 5px;
+        top: 5px;
+        cursor: pointer;
+        z-index: 2;
+    }
+
+    .SView-video-item .SView-video-name {
+        position: absolute;
+        left: 0px;
+        padding: 0 5px;
+        bottom: 5px;
+        width: 120px;
+        height: 20px;
+        line-height: 20px;
+        font-size: xx-small;
+        color: black;
+        z-index: 2;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        word-break: keep-all;
+        white-space: nowrap;
+    }
+
+    .SView-video-item .SView-video-body {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        background: #9CCEF0 url(../images/meeting/sview_conference_photo1.png) no-repeat;
+        background-size: 100% 100%;
+        z-index: 1;
+    }
+/*附件*/
+#meeting_control_attachment_tab {
+    min-height: 150px;
+    max-height: 400px;
+}

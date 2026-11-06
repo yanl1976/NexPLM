@@ -1,0 +1,105 @@
+
+.SView-tabs {
+    width: 100%;
+    height: 100%;
+}
+
+.SView-transverse-tabs {
+    width: 100%;
+    height: 42px;
+    display: flex;
+    justify-content: space-around;
+    border-bottom: 1px solid #cfd8dc;
+}
+
+.SView-transverse-tab {
+    width: 150px;
+    height: 100%;
+    cursor: pointer;
+    color: rgba(0,0,0,.65);
+    line-height: 42px;
+    text-align: center;
+    font-size: 16px;
+    box-sizing: border-box;
+}
+
+.SView-transverse-tabs .SView-tab-active {
+    color: #2c87ff;
+    border-bottom: 2px solid #2c87ff;
+}
+
+#settingMenuTabs {
+    height: 100%;
+}
+
+.SView-transverse-tabs .SView-tabs-content {
+    height: calc(100% - 42px);
+    overflow: auto;
+}
+
+.SView-transverse-contents {
+    width: 100%;
+    height: 100%;
+}
+/*竖向tabs*/
+.SView-vertical-tabs {
+    width: max-content;
+    height: calc(100% - 30px);
+    border-right: 1px solid #DFDFDF;
+    padding: 15px 10px;
+    float: left;
+}
+
+.SView-vertical-tab {
+    width: 125px;
+    height: 36px;
+    border-radius: 4px;
+    line-height: 36px;
+    text-align: center;
+    cursor: pointer;
+    color: #333333;
+    font-size: 14px;
+    margin-top: 10px;
+    font-weight: 400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+    .SView-vertical-tab > img {
+        width: 19px;
+        height: 19px;
+        margin-right: 6px;
+        align-items: center;
+    }
+
+.SView-vertical-tabs .SView-tab-active {
+    color: #1875C7;
+    background: #E5EAF0;
+}
+
+.SView-vertical-contents {
+    width: 100%;
+    height: 100%;
+}
+
+.SView-tabs .SView-tabs-content {
+    overflow: auto;
+    height: 100%;
+}
+
+#settingMenuDialog .SView-vertical-tabs {
+    height: calc(100% - 73px) !important;
+}
+
+#settingMenuDialog .SView-vertical-contents {
+    width: calc(100% - 147px);
+    height: calc(100% - 43px) !important;
+    float: left;
+    overflow: auto;
+}
+
+    #settingMenuDialog .SView-vertical-contents .SView-tabs-content {
+        display: block !important;
+        height: max-content;
+    }

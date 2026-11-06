@@ -1,0 +1,88 @@
+.SView-popoverSelect {
+    position: absolute;
+    left: -3px;
+}
+
+    .SView-popoverSelect:active {
+        background-color: #fff;
+    }
+
+    .SView-popoverSelect ul {
+        width: 36px;
+        padding: 2px 0;
+        margin: 0;
+        display: block;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+    }
+
+.SView-popoverSelect-down {
+    top: 40px;
+}
+
+.SView-popoverSelect .SView-button-iconBtn-withBorder {
+    margin: 1px;
+}
+
+.SView-popoverSelect-up {
+    bottom: 40px;
+}
+
+.SView-popoverSelect-tripleWidth ul {
+    width: 112px;
+    padding: 5px 0 0 0;
+    margin: 0;
+}
+
+    .SView-popoverSelect-tripleWidth ul li {
+        display: inline-block;
+        padding: 0px !important;
+    }
+
+@media screen and (min-width: 305px) and (max-width: 900px) {
+    .SView-popoverSelect ul {
+        width: 32px;
+    }
+
+    .SView-popoverSelect-down {
+        top: 32px;
+    }
+
+    .SView-popoverSelect-up {
+        bottom: 32px;
+    }
+
+        .SView-popoverSelect-up .tripleWidth {
+            width: 100px;
+            padding: 0;
+            margin: 0;
+        }
+}
+
+@media screen and (max-width: 305px) {
+    .SView-popoverSelect ul {
+        width: 28px;
+    }
+
+    .SView-popoverSelect-down {
+        top: 26px;
+    }
+
+    .SView-popoverSelect-up {
+        bottom: 26px;
+    }
+
+        .SView-popoverSelect-up .tripleWidth {
+            width: 90px;
+            padding: 0;
+            margin: 0;
+        }
+}
+
+.SView-popoverSelect-background {
+    left: -85px;
+    top: 32px;
+    background-color: #fff;
+    border-radius: 6px;
+    z-index: 101;
+}

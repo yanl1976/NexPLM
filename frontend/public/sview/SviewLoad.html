@@ -1,0 +1,130 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>SView for HTML5</title>
+    <meta name="x5-fullscreen" content="true">
+    <meta name="full-screen" content="yes">
+    <meta content="width=device-width,maximum-scale=1, initial-scale=1,user-scalable=no" name="viewport">
+    <!--迁移说明：旧系统的协同会议 SDK（js/im/*，腾讯 TRTC）未随插件迁移，NexPLM 不提供多方会议标注功能-->>
+    <!--H5相关js控件-->
+    <!--<script src="js/Stats.js"></script>-->
+    <!-- <script src="js/sview/M3D.js"></script> -->
+    <!-- <script src="js/sview/M3D.Input.js"></script> -->
+    <!-- <script src="js/sview/M3D.Animation.js"></script> -->
+    <!-- <script src="js/sview/M3D.Reader.js"></script> -->
+    <!-- <script src="js/sview/M3D.Render.js"></script> -->
+    <!-- <script src="js/sview/M3D.Writer.js"></script> -->
+    <script src="js/sview/sview.base.min.js"></script>
+    <script src="js/sview/SView.Action.js"></script>
+    <!-- <script src="js/sview/S3DView.js"></script> -->
+    <script src="js/sview/SViewFrame.js"></script>
+    <script src="js/sview/SViewControls.js"></script>
+    <script src="js/sview/SViewCommand.js"></script>
+    <script src="js/sview/SView.Service.js"></script>
+    <script src="js/sview/SView.Synergy.js"></script>
+
+    <script src="js/sview.html5.js"></script>
+    <script src="js/Components/rightMenu.js"></script>
+    <script src="js/Components/normolDialog.js"></script>
+    <script src="js/Components/attributeDialog.js"></script>
+    <script src="js/Components/assemblyDialog.js"></script>
+    <script src="js/Components/messageDialog.js"></script>
+    <script src="js/Components/bottomMenu.js"></script>
+    <script src="js/Components/nationDialog.js"></script>
+    <script src="js/Components/viewMenu.js"></script>
+    <script src="js/Components/rightClickMenu.js"></script>
+    <script src="js/Components/meetingDialog.js"></script>
+    <script src="js/Components/settingDialog.js"></script>
+    <script src="js/Components/colorDialog.js"></script>
+    <script src="js/Components/resultDialog.js"></script>
+    <script src="js/colorpicker.js"></script>
+    <script src="js/SView-tree.js"></script>
+    <script src="js/jszip/jszip.min.js"></script>
+    <script src="js/jszip/jszip-utils.min.js"></script>
+    <script src="js/Crypto/CryptoJS.min.js"></script>
+    <!--<script src="js/jszip/jszip-utils-ie.min.js"></script>-->
+    <!--UI界面-->
+    <link rel="stylesheet" href="./css/SView-badge.css">
+    <link rel="stylesheet" href="./css/SView-bottomMenu.css">
+    <link rel="stylesheet" href="./css/SView-button.css">
+    <link rel="stylesheet" href="./css/SView-checkbox.css">
+    <link rel="stylesheet" href="./css/SView-collapse.css">
+    <link rel="stylesheet" href="./css/SView-common.css">
+    <link rel="stylesheet" href="./css/SView-dialog.css">
+    <link rel="stylesheet" href="./css/SView-info.css">
+    <link rel="stylesheet" href="./css/SView-input.css">
+    <link rel="stylesheet" href="./css/SView-meeting.css">
+    <link rel="stylesheet" href="./css/SView-message.css">
+    <link rel="stylesheet" href="./css/SView-popover.css">
+    <link rel="stylesheet" href="./css/SView-popoverSelect.css">
+    <link rel="stylesheet" href="./css/SView-rightClickMenu.css">
+    <link rel="stylesheet" href="./css/SView-rightMenu.css">
+    <link rel="stylesheet" href="./css/SView-scrollbar.css">
+    <link rel="stylesheet" href="./css/SView-select.css">
+    <link rel="stylesheet" href="./css/SView-slider.css">
+    <link rel="stylesheet" href="./css/SView-switch.css">
+    <link rel="stylesheet" href="./css/SView-list.css">
+    <link rel="stylesheet" href="./css/SView-table.css">
+    <link rel="stylesheet" href="./css/SView-tabs.css">
+    <link rel="stylesheet" href="./css/SView-tree.css">
+    <link rel="stylesheet" href="./css/SView-treeDialog.css">
+    <link rel="stylesheet" href="./css/SView-viewMenu.css">
+    <link rel="stylesheet" href="./css/SView-joystick.css">
+    <link rel="stylesheet" href="./css/zTreeStyle/zTreeStyle.css">
+    <script src="js/ClickFunction/clickFun.js"></script>
+    <script src="js/ClickFunction/assemblyClick.js"></script>
+    <script src="js/ClickFunction/RightMenu.js"></script>
+    <script src="js/ClickFunction/BottomMenu.js"></script>
+    <script src="js/ClickFunction/InitToorbarClick.js"></script>
+    <script src="js/pako/pako.min.js"></script>
+    <!--<script src="js/ClickFunction/ViewMenu.js"></script>-->
+    <!--<script src="js/ClickFunction/Dialog.js"></script>-->
+    <!--<script src="lang/lang_cn.js"></script>
+    <script src="lang/lang_en.js"></script>-->
+    <script src="js/jquery-3.1.0.min.js"></script>
+    <script src="js/zTree/jquery.ztree.core-3.5.js"></script>
+    <script src="js/zTree/jquery.ztree.excheck-3.5.js"></script>
+    <script src="js/zTree/jquery.ztree.exedit-3.5.js"></script>
+    <script>
+        HoteamUI = { Common: {} };
+    </script>
+    <!--迁移说明：/Base/Js/websocket.js、wsConnect.js 属旧系统批注上传通道，未迁移；
+         仅当传入 annotateUrl 调用 UPLOAD_COMMENT 时才会用到，NexPLM 不传该参数-->
+    <script src="js/main.js"></script>
+    <style>
+        .hidden {
+            display: none;
+        }
+
+        .annotate-tree-dialog {
+            z-index: 20;
+            position: absolute;
+            width: 480px;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            background-color: #fff;
+            box-sizing: border-box;
+            left: 10px;
+            top: 10px;
+            width: 300px;
+        }
+
+        .annotate-tree-dialog ::-webkit-scrollbar-corner {
+            background: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="sview_1"
+        style="width:100%;height:100%;position:absolute;background-color:aliceblue;z-index:0;user-select:none;overflow:hidden">
+        <canvas id="gesture_canvas" style="display:none;position:fixed;top:0;left: 0;z-index:-1;"
+            langid="warning.browserNotSupportCanvas">您的浏览器不支持 canvas 标签</canvas>
+    </div>
+
+</body>
+<!--<script src="js/ClickFunction/RightClickMenu.js"></script>-->
+
+</html>

@@ -180,6 +180,9 @@ class SecurityHardeningTest {
         mockMvc.perform(post("/api/v1/docs/{id}/preview", 94_000_000_001L)
                         .header("Authorization", "Bearer " + companyUser))
                 .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/visual/docs/{id}", 94_000_000_001L)
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
 
         // 批量打包下载：看不见的文档直接被跳过，不能把内容装进 zip
         MvcResult zip = mockMvc.perform(post("/api/v1/docs/batch/download")

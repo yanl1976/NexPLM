@@ -1,0 +1,64 @@
+.SView-show {
+    display: block !important;
+}
+
+.SView-hide {
+    display: none !important;
+}
+
+.SView-float-left {
+    float: left
+}
+
+.SView-float-right {
+    float: right
+}
+
+/**
+自左而右
+*/
+.SView-flex-row {
+    display: flex;
+    flex-direction: row;
+}
+/**
+自右而左
+*/
+.SView-flex-row-reverse {
+    display: flex;
+    flex-direction: row-reverse;
+}
+/**
+自上而下
+*/
+.SView-flex-column {
+    display: flex;
+    flex-direction: column;
+}
+/**
+自下而上
+*/
+.SView-flex-column-reverse {
+    display: flex;
+    flex-direction: column-reverse;
+}
+
+#testSview_0 {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    background-color: aliceblue;
+    z-index: 0;
+    user-select: none;
+    overflow: hidden;
+}
+/*禁用状态*/
+.SView-disabled {
+    pointer-events: none;
+    opacity: 0.6 !important;
+    background: #999999;
+}
+#gesture_canvas {
+    width: auto;
+    height: auto;
+}

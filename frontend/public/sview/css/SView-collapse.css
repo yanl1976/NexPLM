@@ -1,0 +1,131 @@
+* {
+    margin: 0;
+    padding: 0;
+}
+
+li {
+    list-style: none;
+}
+
+a {
+    text-decoration: none;
+}
+
+.SView-collapse {
+    width: 100%;
+    /*max-height: 435px;*/
+    /* overflow: auto; */
+    background-color: #EFF1F4;
+    /* background-color: #2c87ff; */
+}
+
+.SView-collapse-item {
+    user-select: none;
+    position: relative;
+    padding: 12px 16px 12px 12px;
+    color: rgba(0,0,0,.85);
+    /* color: #fff; */
+    line-height: 22px;
+    cursor: pointer;
+    transition: all .3s;
+    border-bottom: 1px solid #e8e8e8;
+}
+
+.SView-collapse-title {
+    font-size: 15px;
+    font-weight: bold;
+}
+
+.SView-collapse-detail {
+    width: 100%;
+    height: auto;
+    background-color: #FFF;
+}
+
+    .SView-collapse-detail li {
+        padding: 4px 14px;
+        box-sizing: border-box;
+        min-height: 40px;
+        border-bottom: 1px solid #e8e8e8;
+        clear: both;
+        height: max-content;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        padding-right: 5px;
+    }
+
+        .SView-collapse-detail li > label {
+            color: #999999;
+            font-size: 14px;
+            min-width: 70px;
+            word-wrap: break-word;
+            word-break: break-word;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            width: 50%;
+        }
+
+        .SView-collapse-detail li > span {
+            display: inline-block;
+            color: #000000;
+            font-size: 14px;
+            margin-left: 10px;
+            word-wrap: break-word;
+            word-break: break-word;
+            display: flex;
+            align-items: center;
+            width: 50%;
+        }
+
+@media screen and (min-width: 305px) and (max-width: 900px) {
+    .SView-collapse-detail li > label {
+        font-size: 12px;
+    }
+
+    .SView-collapse-detail li span {
+        font-size: 12px;
+    }
+}
+
+.SView-collapse-detail li span .SView-button-iconBtn:active {
+    opacity: 1;
+}
+
+.SView-collapse-detail li span .SView-button-iconBtn {
+    width: 30px;
+    height: 30px;
+    padding: 2px;
+    margin: 1px;
+}
+
+.SView-collapse-detail li:hover {
+    background-color: #e6f7ff;
+}
+
+.SView-icon-open {
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    background: url("../images/icon/icon-open.png") no-repeat;
+    background-size: 100% 100%;
+    line-height: 100%;
+    position: absolute;
+    top: 50%;
+    margin-top: -8px;
+    right: 12px;
+}
+
+.SView-icon-close {
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    background: url("../images/icon/icon-close.png") no-repeat;
+    background-size: 100% 100%;
+    line-height: 100%;
+    position: absolute;
+    top: 50%;
+    margin-top: -8px;
+    right: 12px;
+}

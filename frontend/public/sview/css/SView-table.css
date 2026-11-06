@@ -1,0 +1,74 @@
+.SView-table {
+    width: 100%;
+    border: 0;
+    border-spacing: 0;
+    border-collapse: collapse;
+    box-sizing: border-box;
+    table-layout: fixed;
+}
+
+    .SView-table .SView-table-title th {
+        font-weight: normal;
+        background-color: #fafafa;
+        color: #212121;
+        /* border-top: 1px solid #cfd8dc; */
+        border-bottom: 1px solid #cfd8dc;
+        padding: 5px;
+        font-weight: bold;
+        font-size: 14px;
+    }
+
+    .SView-table .SView-table-content td {
+        width: 25%;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        color: 212121;
+        font-size: 12px;
+        padding: 4px;
+        box-sizing: border-box;
+        color: #424242;
+        text-align: center;
+    }
+
+.SView-table-content-active {
+    background-color: #cfd8dc;
+}
+
+.SView-table .SView-table-content:hover {
+    background-color: #fafafa;
+    cursor: pointer;
+}
+
+.SView-table tr {
+    height: 32px;
+    border-bottom: 1px solid #cfd8dc;
+}
+
+@media screen and (min-width: 305px) and (max-width: 900px) {
+    .SView-table tr {
+        height: 36px;
+    }
+
+    .SView-table .SView-table-title th {
+        font-size: 14px;
+    }
+
+    .SView-table .SView-table-content td {
+        font-size: 12px;
+    }
+}
+
+@media screen and (max-width: 305px) {
+    .SView-table tr {
+        height: 30px;
+    }
+
+    .SView-table .SView-table-title th {
+        font-size: 14px;
+    }
+
+    .SView-table .SView-table-content td {
+        font-size: 10px;
+    }
+}

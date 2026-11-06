@@ -1,0 +1,67 @@
+.SView-viewMenu {
+    border: 1px solid #e0e0e0;
+    padding: 0 2px;
+    border-radius: 10px;
+    position: absolute;
+    top: 56px;
+    right: 55px;
+}
+
+    .SView-viewMenu ul {
+        width: 145px;
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: space-around;
+        margin: 0;
+        padding: 0;
+    }
+
+        .SView-viewMenu ul li {
+            margin: 5px 0;
+            list-style: none;
+        }
+
+            .SView-viewMenu ul li .SView-button-iconBtn {
+                margin: 0;
+            }
+
+    .SView-viewMenu .SView-renderMode {
+        height: 20%;
+        border-bottom: 1px dotted #000;
+        text-align: center;
+    }
+
+    .SView-viewMenu .SView-direction {
+        height: 60%;
+        border-bottom: 1px dotted #000;
+        text-align: center;
+    }
+
+    .SView-viewMenu .SView-notUseLi {
+        cursor: default;
+    }
+
+        .SView-viewMenu .SView-notUseLi:hover {
+            background-color: unset
+        }
+
+@media screen and (min-width: 305px) and (max-width: 900px) {
+    .SView-viewMenu {
+        top: 38px;
+    }
+
+        .SView-viewMenu ul {
+            width: 120px;
+        }
+}
+
+@media screen and (max-width: 305px) {
+    .SView-viewMenu {
+        margin-top: 31px;
+    }
+
+        .SView-viewMenu ul {
+            width: 110px;
+        }
+}

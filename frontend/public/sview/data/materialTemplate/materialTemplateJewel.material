@@ -1,0 +1,2772 @@
+{
+"materials": [{
+
+      "type": 103,
+      "name": "materialTemplate_baizuan",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/baizuanDiamond.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.8431, 0.8431, 0.8431, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_huangzuan",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 0.7843, 0.0, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_fenzuan",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 0.4902, 0.90106, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_heizuan",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.03137, 0.03137, 0.03137, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_lvbixi",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.34509, 0.8941, 0.34509, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_hongbixi",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.4235, 0.0431, 0.07059, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_zumulv",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.0549, 0.3451, 0.52156, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_tansangshi",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.1725, 0.22745, 0.8706, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_tuopashi",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.21568, 0.6078, 0.8823, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_lanbaoshi",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+          "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.098, 0.0784, 1.0, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_hongbaoshi",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 0.07059, 0.07059, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_zishuijing",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.1882, 0.1333, 0.6588, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_huangshuijing",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.5216, 0.41176, 0.08627, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, 
+    {
+
+      "type": 103,
+      "name": "materialTemplate_hongshuijing",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 0.0, 0.0078, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    },
+    {
+
+      "type": 103,
+      "name": "materialTemplate_furongshi",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.8039, 0.5843, 0.8862, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    },
+    {
+
+      "type": 103,
+      "name": "materialTemplate_fenshuijing",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.5372, 0.2353, 0.65098, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_shiliushi",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.52157, 0.098, 0.16078, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_ganlanshi",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.3490, 0.48235, 0.03529, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_jinqingshi",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.19216, 0.02745, 0.72549, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 103,
+      "name": "materialTemplate_maoyanshi",
+      "parameters": {
+        "frontCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/front_0.jpg,/data/materialTemplate/images/front_1.jpg,/data/materialTemplate/images/front_2.jpg,/data/materialTemplate/images/front_3.jpg,/data/materialTemplate/images/front_4.jpg,/data/materialTemplate/images/front_5.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "triangleTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/diamond_dispersion.png"
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": true
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.3451, 0.1908, 0.19608, 1.0]
+        },
+        "backCubeTexture": {
+          "type": "TextureCube",
+          "value": "/data/materialTemplate/images/back_0.jpg,/data/materialTemplate/images/back_1.jpg,/data/materialTemplate/images/back_2.jpg,/data/materialTemplate/images/back_3.jpg,/data/materialTemplate/images/back_4.jpg,/data/materialTemplate/images/back_5.jpg"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.800000011920929]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    },
+
+    {
+
+      "type": 102,
+      "name": "materialTemplate_heizhenzhu",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/heizhenzhu.bmp"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 102,
+      "name": "materialTemplate_jinzhenzhu",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/jinzhenzhu.bmp"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 102,
+      "name": "materialTemplate_baizhenzhu",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/baizhenzhu.bmp"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+                  "type": "Bool",
+                  "value": false
+                },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 102,
+      "name": "materialTemplate_huizhenzhu",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/huizhenzhu.bmp"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+                  "type": "Bool",
+                  "value": false
+                },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 102,
+      "name": "materialTemplate_fenzhenzhu",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/fenzhenzhu.bmp"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+                  "type": "Bool",
+                  "value": false
+                },
+        "refoutTexture": {
+        "type": "Texture2D",
+        "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    }, {
+
+      "type": 102,
+      "name": "materialTemplate_zizhenzhu",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/zhenzhu.jpeg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+                  "type": "Bool",
+                  "value": false
+                },
+        "refoutTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/refout.bmp"
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    },
+
+
+    {
+      "type": 104,
+      "name": "materialTemplate_bojin",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/mental.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+                  "type": "Bool",
+                  "value": false
+                },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "highlightTexture":{
+          "type": "Texture2D",
+          "value":"/data/materialTemplate/images/mentalHighlight.jpg"
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    },
+    {
+      "type": 104,
+      "name": "materialTemplate_gold",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/mentalgold.jpg"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+            "type": "Bool",
+             "value": false
+            },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [0.980400025844574, 0.8784000277519226, 0.5842999815940857, 1.0]
+        },
+        "highlightTexture":{
+          "type": "Texture2D",
+          "value":"/data/materialTemplate/images/mentalHighlight.jpg"
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+},{
+"type": 104,
+"name": "materialTemplate_huangjin",
+"parameters": {
+"frontTexture": {
+"type": "Texture2D",
+"value": "/data/materialTemplate/images/mentalgold.jpg"
+},
+"u_useFrontTexture": {
+"type": "Bool",
+"value": true
+},
+"u_useFrontCubeTexture": {
+"type": "Bool",
+"value": false
+},
+"u_useTriangleMap": {
+"type": "Bool",
+"value": false
+},
+"u_diffuse": {
+"type": "Vector4",
+"value": [0.980400025844574, 0.8784000277519226, 0.5842999815940857, 1.0]
+},
+"highlightTexture":{
+"type": "Texture2D",
+"value":"/data/materialTemplate/images/mentalHighlight.jpg"
+},
+"u_useHighlightTexture": {
+"type": "Bool",
+"value": true
+},
+"u_keepDirection": {
+"type": "Bool",
+"value": false
+}
+}
+},
+    {
+      "type": 104,
+      "name": "materialTemplate_meiguijin",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/rosegold.bmp"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+                  "type": "Bool",
+                  "value": false
+                },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "highlightTexture":{
+          "type": "Texture2D",
+          "value":"/data/materialTemplate/images/mentalHighlightGold.jpg"
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": false
+        }
+      }
+    },
+
+    {
+      "type": 101,
+      "name": "materialTemplate_baibeimu",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/baibeimu.bmp"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+                  "type": "Bool",
+                  "value": false
+                },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/gaoliang4.png"
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    },
+    {
+
+      "type": 101,
+      "name": "materialTemplate_baipo",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/baipo.bmp"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+                  "type": "Bool",
+                  "value": false
+                },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/gaoliang4.png"
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    },
+
+    {
+      "type": 101,
+      "name": "materialTemplate_bingcui",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/J_White.bmp"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+                  "type": "Bool",
+                  "value": false
+                },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "backTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/MARBLEd.bmp"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/gaoliang4.png"
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.35]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    },
+    {
+      "type": 101,
+      "name": "materialTemplate_diwanglv",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/emrsto.bmp"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "backTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/R_BLACK.bmp"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/J_Green.png"
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.18]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    }, {
+      "type": 101,
+      "name": "materialTemplate_feicui",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/feicui7.png"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "backTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/jady3.bmp"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/highlight3.png"
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.27]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    },
+    {
+      "type": 101,
+      "name": "materialTemplate_fenshanhu",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/fenshanhu.png"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/gaoliang4.png"
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    },
+    {
+      "type": 101,
+      "name": "materialTemplate_hetianyu",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/hetianyu.png"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/gaoliang4.png"
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    },
+    {
+      "type": 101,
+      "name": "materialTemplate_heimanao",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/M_BLACK.bmp"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/highlight4.png"
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    },
+    {
+      "type": 101,
+      "name": "materialTemplate_hongmanao",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/hmn.png"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/J_Red.bmp"
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    },
+        {
+          "type": 101,
+          "name": "materialTemplate_hongshanhu",
+          "parameters": {
+            "frontTexture": {
+              "type": "Texture2D",
+              "value": "/data/materialTemplate/images/hongshanhu.png"
+            },
+            "u_useFrontTexture": {
+              "type": "Bool",
+              "value": true
+            },
+            "u_useFrontCubeTexture": {
+              "type": "Bool",
+              "value": false
+            },
+             "u_useTriangleMap": {
+              "type": "Bool",
+              "value": false
+            },
+            "u_diffuse": {
+              "type": "Vector4",
+              "value": [1.0, 1.0, 1.0, 1.0]
+            },
+            "u_useHighlightTexture": {
+              "type": "Bool",
+              "value": true
+            },
+            "highlightTexture": {
+              "type": "Texture2D",
+              "value": "/data/materialTemplate/images/J_Red.bmp"
+            },
+            "u_keepDirection": {
+              "type": "Bool",
+              "value": true
+            }
+          }
+        },
+    {
+      "type": 101,
+      "name": "materialTemplate_hupo",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/hupo1.png"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "backTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/baipo.bmp"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/highlight3.png"
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.27]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    }, {
+      "type": 101,
+      "name": "materialTemplate_lanpo",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/lan.png"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/highlight4.png"
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    }, {
+      "type": 101,
+      "name": "materialTemplate_lvmanao",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/lv.png"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/highlight4.png"
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    }, {
+      "type": 101,
+      "name": "materialTemplate_lvsongshi",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/lss2.png"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/gaoliang4.png"
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    }, 
+     {
+       "type": 101,
+       "name": "materialTemplate_mila",
+       "parameters": {
+         "frontTexture": {
+           "type": "Texture2D",
+           "value": "/data/materialTemplate/images/J_Greenhh.png"
+         },
+         "u_useFrontTexture": {
+           "type": "Bool",
+           "value": true
+         },
+         "u_useFrontCubeTexture": {
+           "type": "Bool",
+           "value": false
+         },
+          "u_useTriangleMap": {
+           "type": "Bool",
+           "value": false
+         },
+         "u_diffuse": {
+           "type": "Vector4",
+           "value": [1.0, 1.0, 1.0, 1.0]
+         },
+         "u_useHighlightTexture": {
+           "type": "Bool",
+           "value": true
+         },
+         "highlightTexture": {
+           "type": "Texture2D",
+           "value": "/data/materialTemplate/images/highlight4.png"
+         },
+         "u_keepDirection": {
+           "type": "Bool",
+           "value": true
+         }
+       }
+     }, {
+      "type": 101,
+      "name": "materialTemplate_mocui",
+      "parameters": {
+        "frontTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/J_Green.png"
+        },
+        "u_useFrontTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useFrontCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+         "u_useTriangleMap": {
+          "type": "Bool",
+          "value": false
+        },
+        "u_diffuse": {
+          "type": "Vector4",
+          "value": [1.0, 1.0, 1.0, 1.0]
+        },
+        "backTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/M_BLACK.bmp"
+        },
+        "u_useBackTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_useBackCubeTexture": {
+          "type": "Bool",
+          "value": false
+        },
+        "highlightTexture": {
+          "type": "Texture2D",
+          "value": "/data/materialTemplate/images/highlight4.png"
+        },
+        "mixFactor": {
+          "type": "Float",
+          "value": [0.22]
+        },
+        "u_useHighlightTexture": {
+          "type": "Bool",
+          "value": true
+        },
+        "u_keepDirection": {
+          "type": "Bool",
+          "value": true
+        }
+      }
+    },
+     {
+       "type": 101,
+       "name": "materialTemplate_nanhong",
+       "parameters": {
+         "frontTexture": {
+           "type": "Texture2D",
+           "value": "/data/materialTemplate/images/nanhh.png"
+         },
+         "u_useFrontTexture": {
+           "type": "Bool",
+           "value": true
+         },
+         "u_useFrontCubeTexture": {
+           "type": "Bool",
+           "value": false
+         },
+          "u_useTriangleMap": {
+           "type": "Bool",
+           "value": false
+         },
+         "u_diffuse": {
+           "type": "Vector4",
+           "value": [1.0, 1.0, 1.0, 1.0]
+         },
+         "u_useHighlightTexture": {
+           "type": "Bool",
+           "value": true
+         },
+         "highlightTexture": {
+           "type": "Texture2D",
+           "value": "/data/materialTemplate/images/gaoliang4.png"
+         },
+         "u_keepDirection": {
+           "type": "Bool",
+           "value": true
+         }
+       }
+     },
+ {
+   "type": 101,
+   "name": "materialTemplate_oupo",
+   "parameters": {
+     "frontTexture": {
+       "type": "Texture2D",
+       "value": "/data/materialTemplate/images/opo.png"
+     },
+     "u_useFrontTexture": {
+       "type": "Bool",
+       "value": true
+     },
+     "u_useFrontCubeTexture": {
+       "type": "Bool",
+       "value": false
+     },
+      "u_useTriangleMap": {
+       "type": "Bool",
+       "value": false
+     },
+     "u_diffuse": {
+       "type": "Vector4",
+       "value": [1.0, 1.0, 1.0, 1.0]
+     },
+     "u_useHighlightTexture": {
+       "type": "Bool",
+       "value": true
+     },
+     "highlightTexture": {
+       "type": "Texture2D",
+       "value": "/data/materialTemplate/images/gaoliang4.png"
+     },
+     "u_keepDirection": {
+       "type": "Bool",
+       "value": true
+     }
+   }
+ }, {
+   "type": 101,
+   "name": "materialTemplate_qingjinshi",
+   "parameters": {
+     "frontTexture": {
+       "type": "Texture2D",
+       "value": "/data/materialTemplate/images/qjs.png"
+     },
+     "u_useFrontTexture": {
+       "type": "Bool",
+       "value": true
+     },
+     "u_useFrontCubeTexture": {
+       "type": "Bool",
+       "value": false
+     },
+      "u_useTriangleMap": {
+       "type": "Bool",
+       "value": false
+     },
+     "u_diffuse": {
+       "type": "Vector4",
+       "value": [1.0, 1.0, 1.0, 1.0]
+     },
+     "u_useHighlightTexture": {
+       "type": "Bool",
+       "value": true
+     },
+     "highlightTexture": {
+       "type": "Texture2D",
+       "value": "/data/materialTemplate/images/highlight4.png"
+     },
+     "u_keepDirection": {
+       "type": "Bool",
+       "value": true
+     }
+   }
+ }
+, {
+  "type": 101,
+  "name": "materialTemplate_ziluolan",
+  "parameters": {
+    "frontTexture": {
+      "type": "Texture2D",
+      "value": "/data/materialTemplate/images/ziluolan.png"
+    },
+    "u_useFrontTexture": {
+      "type": "Bool",
+      "value": true
+    },
+    "u_useFrontCubeTexture": {
+      "type": "Bool",
+      "value": false
+    },
+     "u_useTriangleMap": {
+      "type": "Bool",
+      "value": false
+    },
+    "u_diffuse": {
+      "type": "Vector4",
+      "value": [1.0, 1.0, 1.0, 1.0]
+    },
+    "backTexture": {
+      "type": "Texture2D",
+      "value": "/data/materialTemplate/images/J_Greentemp.png"
+    },
+    "u_useBackTexture": {
+      "type": "Bool",
+      "value": true
+    },
+    "u_useBackCubeTexture": {
+      "type": "Bool",
+      "value": false
+    },
+    "highlightTexture": {
+      "type": "Texture2D",
+      "value": "/data/materialTemplate/images/gaoliang4.png"
+    },
+    "mixFactor": {
+      "type": "Float",
+      "value": [0.22]
+    },
+    "u_useHighlightTexture": {
+      "type": "Bool",
+      "value": true
+    },
+    "u_keepDirection": {
+      "type": "Bool",
+      "value": true
+    }
+  }
+},{
+"type": 1,
+"name": "materialTemplate_SVLXRender7|4438",
+"transparency": 1.0,
+"diffuseColor": [
+-1.0,
+-1.0,
+-1.0,
+1.0
+],
+"ambientColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"emissiveColor": [
+-1.0,
+-1.0,
+-1.0,
+1.0
+],
+"specularColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"shininess": 0.0
+},
+{
+"type": 1,
+"name": "materialTemplate_SVLXRender7|4769",
+"transparency": 1.0,
+"diffuseColor": [
+0.882352948,
+0.5647059,
+0.0,
+1.0
+],
+"ambientColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"emissiveColor": [
+0.882352948,
+0.5647059,
+0.0,
+1.0
+],
+"specularColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"shininess": 0.0
+},
+{
+"type": 1,
+"name": "materialTemplate_SVLXRender7|4777",
+"transparency": 1.0,
+"diffuseColor": [
+0.34117648,
+0.215686277,
+0.0,
+1.0
+],
+"ambientColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"emissiveColor": [
+0.34117648,
+0.215686277,
+0.0,
+1.0
+],
+"specularColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"shininess": 0.0
+},
+{
+"type": 1,
+"name": "materialTemplate_SVLXRender7|5211",
+"transparency": 1.0,
+"diffuseColor": [
+0.478431374,
+0.478431374,
+0.478431374,
+1.0
+],
+"ambientColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"emissiveColor": [
+0.478431374,
+0.478431374,
+0.478431374,
+1.0
+],
+"specularColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"shininess": 0.0
+},
+{
+"type": 1,
+"name": "materialTemplate_SVLXRender7|5781",
+"transparency": 1.0,
+"diffuseColor": [
+0.0,
+0.8980392,
+0.0,
+1.0
+],
+"ambientColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"emissiveColor": [
+0.0,
+0.8980392,
+0.0,
+1.0
+],
+"specularColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"shininess": 0.0
+},
+{
+"type": 1,
+"name": "materialTemplate_SVLXRender7|5846",
+"transparency": 1.0,
+"diffuseColor": [
+0.07058824,
+0.07058824,
+0.07058824,
+1.0
+],
+"ambientColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"emissiveColor": [
+0.07058824,
+0.07058824,
+0.07058824,
+1.0
+],
+"specularColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"shininess": 0.0
+},
+{
+"type": 1,
+"name": "materialTemplate_SVLXRender7|5886",
+"transparency": 1.0,
+"diffuseColor": [
+0.7764706,
+0.7764706,
+0.7764706,
+1.0
+],
+"ambientColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"emissiveColor": [
+0.7764706,
+0.7764706,
+0.7764706,
+1.0
+],
+"specularColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"shininess": 0.0
+},
+{
+"type": 2,
+"name": "materialTemplate_material_pbr_2",
+"transparency": 1.0,
+"diffuseColor": [
+0.6444797,
+0.141263291,
+0.0129830325,
+1.0
+],
+"emissiveColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"metalnessFactor": 0.28,
+"roughnessFactor": 0.5
+},
+{
+"type": 2,
+"name": "materialTemplate_material_pbr_11307095-ad87-4f7e-b6dc-efecef479385",
+"transparency": 1.0,
+"diffuseColor": [
+0.8,
+0.8,
+0.8,
+1.0
+],
+"emissiveColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"metalnessFactor": 0.04,
+"roughnessFactor": 0.5
+},
+{
+"type": 1,
+"name": "materialTemplate_material_phong_be77a3ca-09a9-4f75-b798-f4a4355e9842",
+"transparency": 1.0,
+"diffuseColor": [
+0.8,
+0.8,
+0.8,
+1.0
+],
+"ambientColor": [
+0.8,
+0.8,
+0.8,
+1.0
+],
+"emissiveColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"specularColor": [
+0.067,
+0.067,
+0.067,
+1.0
+],
+"shininess": 30.0
+},
+{
+"type": 1,
+"name": "materialTemplate_material_phong_7033f89e-d7b1-4621-9836-ec71323360b2",
+"transparency": 1.0,
+"diffuseColor": [
+0.8,
+0.8,
+0.8,
+1.0
+],
+"ambientColor": [
+0.8,
+0.8,
+0.8,
+1.0
+],
+"emissiveColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"specularColor": [
+0.067,
+0.067,
+0.067,
+1.0
+],
+"shininess": 30.0
+},
+{
+"type": 1,
+"name": "materialTemplate_material_phong_41a731f5-8902-4597-b89e-01df5bb4821b",
+"transparency": 1.0,
+"diffuseColor": [
+0.8,
+0.8,
+0.8,
+1.0
+],
+"ambientColor": [
+0.8,
+0.8,
+0.8,
+1.0
+],
+"emissiveColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"specularColor": [
+0.067,
+0.067,
+0.067,
+1.0
+],
+"shininess": 30.0
+},
+{
+"type": 1,
+"name": "materialTemplate_material_phong_e8640cd5-7627-4e04-be17-a8eabb6031ec",
+"transparency": 1.0,
+"diffuseColor": [
+0.8,
+0.8,
+0.8,
+1.0
+],
+"ambientColor": [
+0.8,
+0.8,
+0.8,
+1.0
+],
+"emissiveColor": [
+0.0,
+0.0,
+0.0,
+1.0
+],
+"specularColor": [
+0.067,
+0.067,
+0.067,
+1.0
+],
+"shininess": 30.0
+}
+  ]
+}

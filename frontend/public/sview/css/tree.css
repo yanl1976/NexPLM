@@ -1,0 +1,412 @@
+* {
+    margin: 0;
+    padding: 0
+}
+
+.SView-tree img {
+    border: 0;
+    vertical-align: middle
+}
+/* body {
+	width: 1000px;
+	color: #000;
+	font-size: 14px
+} */
+.SView-tree-content {
+    width: max-content;
+    height: max-content;
+    min-height: 100%;
+    min-width: 100%;
+    text-align: left;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+.SView-tree-prefix {
+    margin-right: 10px;
+    width: 16px;
+    height: 16px;
+    display: inline-block
+}
+
+    .SView-tree-prefix > img {
+        width: 100%;
+        height: 100%
+    }
+
+.SView-tree-header .SView-tree-addUser {
+    margin: 0 auto;
+    width: 90%;
+    font-size: 20px
+}
+
+.SView-tree-header .SView-tree-flow {
+    margin: 0 auto;
+    padding: 15px 0;
+    width: 90%;
+    display: block
+}
+
+    .SView-tree-header .SView-tree-flow .SView-tree-flow__item {
+        position: relative;
+        width: 30%;
+        color: #999;
+        display: inline-block
+    }
+
+        .SView-tree-header .SView-tree-flow .SView-tree-flow__item .SView-tree-round {
+            margin-right: 12px;
+            width: 20px;
+            height: 20px;
+            line-height: 20px;
+            text-align: center;
+            border: 1px solid #999;
+            border-radius: 50%;
+            display: inline-block
+        }
+
+        .SView-tree-header .SView-tree-flow .SView-tree-flow__item .SView-tree-active {
+            color: #fff;
+            background-color: #175ad8;
+            border: 1px solid #175ad8
+        }
+
+        .SView-tree-header .SView-tree-flow .SView-tree-flow__item .SView-tree-flow__name {
+            display: inline-block;
+            cursor: pointer
+        }
+
+        .SView-tree-header .SView-tree-flow .SView-tree-flow__item::after {
+            margin: auto 0;
+            content: ">";
+            position: absolute;
+            right: 33%;
+            top: 0;
+            bottom: 0;
+            height: 20px;
+            line-height: 20px;
+            font-size: 26px
+        }
+
+        .SView-tree-header .SView-tree-flow .SView-tree-flow__item:last-child::after {
+            content: ""
+        }
+
+.SView-tree-block {
+    padding-left: 10px;
+    text-align: center
+}
+
+    .SView-tree-block .SView-tree-parentName {
+        margin-left: 6px;
+        color: #999;
+        font-size: 12px;
+        display: inline-block;
+        vertical-align: middle
+    }
+
+    .SView-tree-block .SView-tree-left {
+        width: 45%;
+        display: inline-block;
+        vertical-align: text-top
+    }
+
+.SView-tree-item,
+.SView-tree-item {
+    margin-left: -100px;
+    padding-left: 140px;
+    height: 40px;
+    line-height: 40px;
+    border-bottom: 1px solid #eee
+}
+
+.SView-tree-title,
+.SView-tree-title {
+    line-height: 30px;
+    text-align: left
+}
+
+    .SView-tree-title .SView-tree-remark,
+    .SView-tree-title .SView-tree-remark {
+        color: #999;
+        display: inline-block
+    }
+
+
+.SView-tree .SView-tree-search,
+.SView-tree .SView-tree-search {
+    position: relative;
+    height: 30px;
+    line-height: 30px;
+    border-bottom: 1px solid #ccc
+}
+
+    .SView-tree .SView-tree-search input,
+    .SView-tree .SView-tree-search input {
+        padding-left: 20px;
+        padding-right: 100px;
+        width: 100%;
+        border: none;
+        box-sizing: border-box
+    }
+
+    .SView-tree .SView-tree-search .SView-tree-icon__search,
+    .SView-tree .SView-tree-search .SView-tree-icon__search {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 50px;
+        height: 30px;
+        border-left: 1px solid #ccc
+    }
+
+        .SView-tree .SView-tree-search .SView-tree-icon__search svg,
+        .SView-tree .SView-tree-search .SView-tree-icon__search svg {
+            margin: auto;
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0
+        }
+
+/* {
+	position: relative;
+	margin-right: 30px
+} */
+
+.SView-tree .SView-tree-subItem {
+    padding-left: 20px;
+    display: none
+}
+
+.SView-tree .SView-tree-show {
+    display: block
+}
+
+.SView-tree-arrow {
+    margin: auto 0;
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    color: #999;
+    height: 30px;
+    line-height: 30px;
+    font-size: 20px;
+    transform: translateX(120%)
+}
+
+    .SView-tree-arrow span:last-child {
+        margin-left: -16px
+    }
+
+.SView-tree-item {
+    position: relative
+}
+
+    .SView-tree-item .SView-tree-dropdownList {
+        position: relative
+    }
+
+        .SView-tree-item .SView-tree-dropdownList i {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            right: 6px;
+            width: 12px;
+            height: 12px;
+            display: inline-block;
+            margin: auto 0;
+            cursor: pointer;
+            transform: rotate(-90deg)
+        }
+
+            .SView-tree-item .SView-tree-dropdownList i svg {
+                position: absolute;
+                z-index: 2
+            }
+
+        .SView-tree-item .SView-tree-dropdownList .SView-tree-roate {
+            transform: rotate(0)
+        }
+
+    .SView-tree-item input[type="checkbox"] {
+        margin: auto 0;
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        right: 10px;
+        margin-right: 6px;
+        -webkit-appearance: none;
+        vertical-align: middle;
+        background: #fff;
+        border: #ccc solid 1px;
+        width: 12px;
+        height: 12px;
+        opacity: 0
+    }
+
+        .SView-tree-item input[type="checkbox"]:checked {
+            background: #3190e8
+        }
+
+    .SView-tree-item input[type=checkbox]:checked::after {
+        content: '';
+        top: 2px;
+        left: 1px;
+        position: absolute;
+        background: transparent;
+        border: #fff solid 2px;
+        border-top: none;
+        border-right: none;
+        height: 2px;
+        width: 6px;
+        -moz-transform: rotate(-45deg);
+        -ms-transform: rotate(-45deg);
+        -webkit-transform: rotate(-45deg);
+        transform: rotate(-45deg)
+    }
+
+    .SView-tree-item .SView-tree-name {
+        display: inline-block;
+        vertical-align: middle;
+        cursor: pointer
+    }
+
+    .SView-tree-item .SView-tree-number {
+        margin-left: 6px;
+        color: #999;
+        font-size: 12px;
+        display: inline-block;
+        vertical-align: middle
+    }
+
+    .SView-tree-item .icon__round {
+        margin: auto 0;
+        position: absolute;
+        top: 4px;
+        bottom: 0;
+        right: 3px;
+        margin-right: 0px;
+        width: 16px;
+        height: 16px;
+        background-repeat: no-repeat;
+        background-size: 100%;
+        display: inline-block;
+        vertical-align: middle;
+        cursor: pointer
+    }
+
+    .SView-tree-item .icon__round--false {
+        background-image: url("../images/icon/checkbox_false_full.png")
+    }
+
+    .SView-tree-item .icon__round--true {
+        background-image: url("../images/icon/checkbox_true_full.png")
+    }
+
+    .SView-tree-item .icon__round--part {
+        background-image: url("../images/icon/checkbox_true_part.png")
+    }
+
+    .SView-tree-item .icon__round--disabled {
+        background-image: url("../images/icon/checkbox_true_disable.png")
+    }
+
+/* {
+	position: relative
+} */
+
+.SView-tree-item {
+    position: relative
+}
+
+    .SView-tree-item .SView-tree-close {
+        margin: auto 0;
+        position: absolute;
+        right: 12px;
+        top: 0;
+        bottom: 0;
+        width: 16px;
+        height: 16px;
+        background: url("../images/icon-close.svg") no-repeat;
+        background-size: 100%;
+        display: inline-block;
+        cursor: pointer
+    }
+
+.SView-tree-footer {
+    margin-top: 15px;
+    text-align: center
+}
+
+    .SView-tree-footer .SView-tree-btn__group {
+        display: inline-block
+    }
+
+        .SView-tree-footer .SView-tree-btn__group .SView-tree-btn {
+            margin: 0 25px;
+            padding: 8px 0;
+            width: 80px;
+            border: 1px solid #999;
+            display: inline-block
+        }
+
+        .SView-tree-footer .SView-tree-btn__group .SView-tree-btn__primary {
+            color: #fff;
+            background-color: #175ad8
+        }
+
+.tree-open {
+    position: absolute;
+    top: 6px;
+    bottom: 0;
+    right: 21px;
+    width: 12px;
+    height: 12px;
+    display: inline-block;
+    vertical-align: middle;
+    background-repeat: no-repeat;
+    background-image: url(../images/icon/open.png);
+    background-size: 100% 100%;
+}
+
+.tree-close {
+    position: absolute;
+    top: 6px;
+    bottom: 0;
+    right: 21px;
+    width: 12px;
+    height: 12px;
+    display: inline-block;
+    vertical-align: middle;
+    background-repeat: no-repeat;
+    background-image: url(../images/icon/close.png);
+    background-size: 100% 100%;
+}
+
+.leftCheckbox {
+    position: relative;
+}
+
+.tree-node-active {
+    background-color: #bae7ff;
+    padding-bottom: 3px;
+}
+
+.SView-tree-rightClickMenu {
+    min-width: 60px !important;
+}
+
+    .SView-tree-rightClickMenu li {
+        height: 25px !important;
+        padding: 0 0px 5px 10px !important;
+        line-height: 25px !important;
+    }
+
+.SView-node-input {
+    width: calc(100% - 40px);
+    display: none;
+}

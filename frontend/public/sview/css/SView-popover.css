@@ -1,0 +1,108 @@
+.SView-popover {
+    /* visibility: hidden; */
+    display: inline-block;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    position: absolute;
+    left: 15px;
+    /* padding: 3px 3px 3px 10px; */
+}
+
+#sectionePopover {
+    left: 0px;
+}
+
+.SView-popover-down {
+    top: 50px;
+}
+
+.SView-popover-up {
+    bottom: 50px;
+}
+
+.SView-popover table td {
+    font-size: 14px;
+    text-align: left;
+}
+
+.SView-popover table tr td {
+    cursor: default;
+    /* width: fit-content; */
+}
+
+.animationSetting {
+    min-width: 160px;
+    padding-left: 5px;
+    padding-top: 5px;
+}
+
+    .animationSetting td {
+        /* width: 60px; */
+        width: fit-content;
+    }
+
+.SView-popover .sectionSetting {
+    width: 200px;
+}
+
+@media screen and (min-width: 305px) and (max-width: 900px) {
+    .animationPopover {
+        transform: translateX(-50%);
+    }
+
+    .SView-popover-down {
+        top: 32px;
+    }
+
+    .SView-popover-up {
+        bottom: 32px;
+    }
+
+    .SView-popover table td {
+        font-size: 12px;
+    }
+
+    .SView-popover .animationSetting {
+        width: 120px;
+    }
+
+        .SView-popover .animationSetting td {
+            /* width: 48px; */
+            width: fit-content;
+        }
+
+    .SView-popover .sectionSetting {
+        width: 160px;
+    }
+}
+
+@media screen and (max-width: 305px) {
+    .animationPopover {
+        transform: translateX(-50%);
+    }
+
+    .SView-popover-down {
+        top: 26px;
+    }
+
+    .SView-popover-up {
+        bottom: 26px;
+    }
+
+    .SView-popover table td {
+        font-size: 10px;
+    }
+
+    .SView-popover .animationSetting {
+        width: 120px;
+    }
+
+        .SView-popover .animationSetting td {
+            /* width: 48px; */
+            width: fit-content;
+        }
+
+    .SView-popover .sectionSetting {
+        width: 130px;
+    }
+}

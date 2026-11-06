@@ -98,6 +98,12 @@
             </el-table>
           </template>
 
+          <visual-preview
+            v-else-if="tab.tabType === 'VISUAL'"
+            object-type="doc"
+            :object-id="docId"
+          />
+
           <el-table v-else-if="tab.tabType === 'VERSIONS'" :data="versions" border @row-click="switchVersion">
             <el-table-column prop="revisionLabel" label="版本" width="100" />
             <el-table-column label="状态" width="120">
@@ -374,6 +380,7 @@ import {
 import { metaApi, type MetaTabDef } from '@/api/system'
 import { workspaceApi } from '@/api/workspace'
 import WorkflowPanel from '@/components/WorkflowPanel.vue'
+import VisualPreview from '@/components/VisualPreview.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import { useUserStore } from '@/stores/user'
 

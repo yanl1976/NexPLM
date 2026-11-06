@@ -169,11 +169,13 @@ class DocSmokeTest {
                         .content(json(Map.of("name", "已发布后改名", "docType", "DESIGN"))))
                 .andExpect(status().isConflict());
 
-        // 13. 对象查看器页签：元数据驱动，PdmDoc 默认 7 个页签
+        // 13. 对象查看器页签：元数据驱动，PdmDoc 默认 8 个页签（V54 补「可视化」）
         JsonNode tabs = call(get("/api/v1/meta/entities/PdmDoc/tabs"), admin, null);
-        assertThat(tabs.size()).isEqualTo(7);
+        assertThat(tabs.size()).isEqualTo(8);
         assertThat(tabs.get(0).path("tabType").asText()).isEqualTo("PROPS");
-        assertThat(tabs.get(6).path("tabType").asText()).isEqualTo("LOGS");
+        assertThat(tabs.get(1).path("tabType").asText()).isEqualTo("FILES");
+        assertThat(tabs.get(2).path("tabType").asText()).isEqualTo("VISUAL");
+        assertThat(tabs.get(7).path("tabType").asText()).isEqualTo("LOGS");
 
         // 14. 操作日志：审计事件可见（检出/检入/强制解锁）
         JsonNode logs = call(get("/api/v1/docs/{id}/logs?limit=50", newId), admin, null);
@@ -351,6 +353,60 @@ class DocSmokeTest {
         assertThat(imported.path("errors").size()).isEqualTo(2);
         assertThat(imported.path("errors").get(0).path("line").asInt()).isEqualTo(4);
         assertThat(imported.path("createdIds").size()).isEqualTo(2);
+
+        // 30. 可视化：按旧系统 BrowseType 迁移的映射判定查看器与转换命令
+        //     dwg 属 ViewTool=ImageView + FileToPDF → 二维图纸待转 PDF
+        JsonNode visualDwg = call(get("/api/v1/visual/docs/{id}", docId), admin, null);
+        assertThat(visualDwg.path("engine").asText()).isEqualTo("PDF");
+        assertThat(visualDwg.path("needsConvert").asBoolean()).isTrue();
+        assertThat(visualDwg.path("convertCommand").asText()).isEqualTo("FileToPDF");
+        assertThat(visualDwg.path("file").path("ext").asText()).isEqualTo("dwg");
+
+        //     图片直通 → IMAGE，不需要转换
+        JsonNode visualPng = call(get("/api/v1/visual/docs/{id}", pngDocId), admin, null);
+        assertThat(visualPng.path("engine").asText()).isEqualTo("IMAGE");
+        assertThat(visualPng.path("needsConvert").asBoolean()).isFalse();
+        assertThat(visualPng.path("file").path("fileId").asLong()).isPositive();
+
+        //     已有 .svlx 轻量化产物 → SView 直接打开
+        long svlxDocId = call(post("/api/v1/docs"), admin, json(Map.of(
+                "name", "三维轻量化模型", "docType", "DESIGN", "source", "CAD"))).path("id").asLong();
+        uploadFile(admin, svlxDocId, "总成.svlx", "MAIN", "svlx-bytes");
+        JsonNode visualSvlx = call(get("/api/v1/visual/docs/{id}", svlxDocId), admin, null);
+        assertThat(visualSvlx.path("engine").asText()).isEqualTo("SVIEW");
+        assertThat(visualSvlx.path("needsConvert").asBoolean()).isFalse();
+
+        //     三维源文件 .step → SView 待 FileToSvl 转换
+        long stepDocId = call(post("/api/v1/docs"), admin, json(Map.of(
+                "name", "三维源模型", "docType", "DESIGN", "source", "CAD"))).path("id").asLong();
+        uploadFile(admin, stepDocId, "总成.step", "MAIN", "step-bytes");
+        JsonNode visualStep = call(get("/api/v1/visual/docs/{id}", stepDocId), admin, null);
+        assertThat(visualStep.path("engine").asText()).isEqualTo("SVIEW");
+        assertThat(visualStep.path("needsConvert").asBoolean()).isTrue();
+        assertThat(visualStep.path("convertCommand").asText()).isEqualTo("FileToSvl");
+
+        //     无文件 → NONE，返回空态而不是报错
+        long emptyDocId = call(post("/api/v1/docs"), admin, json(Map.of(
+                "name", "空文档", "docType", "OTHER"))).path("id").asLong();
+        JsonNode visualEmpty = call(get("/api/v1/visual/docs/{id}", emptyDocId), admin, null);
+        assertThat(visualEmpty.path("engine").asText()).isEqualTo("NONE");
+        assertThat(visualEmpty.path("files").size()).isZero();
+
+        // 31. 零部件可视化：三维源文件同样走 SView（文件挂在对象上，走通用文件仓）
+        long visualItemId = call(post("/api/v1/items"), admin, json(Map.of(
+                "name", "可视化测试零件", "itemType", "PART"))).path("id").asLong();
+        mockMvc.perform(multipart("/api/v1/files")
+                        .file(new MockMultipartFile("file", "零件.sldprt", "application/octet-stream",
+                                "sldprt-bytes".getBytes(StandardCharsets.UTF_8)))
+                        .param("ownerObjectId", String.valueOf(visualItemId))
+                        .param("fileRole", "MAIN")
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk());
+        JsonNode visualItem = call(get("/api/v1/visual/items/{id}", visualItemId), admin, null);
+        assertThat(visualItem.path("engine").asText()).isEqualTo("SVIEW");
+        assertThat(visualItem.path("needsConvert").asBoolean()).isTrue();
+        assertThat(visualItem.path("convertCommand").asText()).isEqualTo("FileToSvl");
+        assertThat(visualItem.path("objectType").asText()).isEqualTo("PdmItem");
     }
 
     // ---------------------------------------------------------------- 工具
