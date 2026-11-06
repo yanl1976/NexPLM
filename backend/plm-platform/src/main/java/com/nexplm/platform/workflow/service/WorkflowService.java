@@ -1,6 +1,8 @@
 package com.nexplm.platform.workflow.service;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.workflow.api.WfDtos;
@@ -36,6 +38,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -65,11 +68,12 @@ public class WorkflowService {
     private final JdbcTemplate jdbcTemplate;
     private final AssigneeResolverRegistry assigneeResolvers;
     private final WfPluginRegistry pluginRegistry;
+    private final ObjectMapper objectMapper;
 
     public WorkflowService(RuntimeService runtimeService, TaskService taskService,
                            RepositoryService repositoryService, HistoryService historyService,
                            JdbcTemplate jdbcTemplate, AssigneeResolverRegistry assigneeResolvers,
-                           WfPluginRegistry pluginRegistry) {
+                           WfPluginRegistry pluginRegistry, ObjectMapper objectMapper) {
         this.runtimeService = runtimeService;
         this.taskService = taskService;
         this.repositoryService = repositoryService;
@@ -77,6 +81,7 @@ public class WorkflowService {
         this.jdbcTemplate = jdbcTemplate;
         this.assigneeResolvers = assigneeResolvers;
         this.pluginRegistry = pluginRegistry;
+        this.objectMapper = objectMapper;
     }
 
     /** 业务对象与流程实例的关联信息（用于把任务行补全为可展示的业务上下文）。 */
@@ -88,7 +93,7 @@ public class WorkflowService {
     @Transactional
     public WfDtos.StartResp start(WfDtos.StartReq req, Long userId) {
         requireObject(req.objectId());
-        String processKey = resolveProcessKey(req.objectType(), req.processKey());
+        String processKey = resolveProcessKey(req.objectType(), req.objectId(), req.processKey(), req.variables());
         ProcessDefinition definition = repositoryService.createProcessDefinitionQuery()
                 .processDefinitionKey(processKey).latestVersion().singleResult();
         if (definition == null) {
@@ -1020,20 +1025,125 @@ public class WorkflowService {
         }
     }
 
-    private String resolveProcessKey(String objectType, String processKey) {
+    /**
+     * 选流程：显式 processKey 优先，否则按 {@code wf_binding} 的优先级 + {@code condition_json} 判定。
+     *
+     * <p>条件语法（扁平等值，够用且不会有表达式注入风险）：</p>
+     * <pre>
+     * {}                                  → 无条件，兜底
+     * {"lifecycleState":"Draft"}          → 对象生命周期状态为该值
+     * {"objectType":"PdmDoc"}             → 对象类型
+     * {"code":"DOC-000001","x":"y"}       → 多个条件为 AND
+     * {"lifecycleState":["Draft","InWorkflow"]} → 命中任一即可
+     * </pre>
+     * <p>可判定字段 = plm_object 的 objectType/code/name/lifecycleState/phaseState/workflowState/
+     * securityLevel + {@code ext_json} 展平 + 发起时传入的流程变量（后者覆盖前者）。</p>
+     */
+    private String resolveProcessKey(String objectType, Long objectId, String processKey,
+                                     Map<String, Object> variables) {
         if (processKey != null && !processKey.isBlank()) {
             return processKey;
         }
-        List<String> keys = jdbcTemplate.queryForList("""
-                SELECT process_key FROM wf_binding
+        List<String[]> bindings = new ArrayList<>();
+        jdbcTemplate.query("""
+                SELECT process_key, condition_json::text AS condition_text
+                  FROM wf_binding
                  WHERE object_type = ? AND enabled = true
                  ORDER BY priority, id
-                 LIMIT 1
-                """, String.class, objectType);
-        if (keys.isEmpty()) {
+                """, rs -> {
+            bindings.add(new String[]{rs.getString("process_key"), rs.getString("condition_text")});
+        }, objectType);
+        if (bindings.isEmpty()) {
             throw BizException.of(ErrorCode.WF_BINDING_NOT_FOUND, "对象类型未配置流程：" + objectType);
         }
-        return keys.get(0);
+        Map<String, Object> context = bindingContext(objectId, variables);
+        for (String[] binding : bindings) {
+            if (matchesCondition(binding[1], context)) {
+                return binding[0];
+            }
+        }
+        throw BizException.of(ErrorCode.WF_BINDING_NOT_FOUND,
+                "对象类型 " + objectType + " 的流程绑定条件均未命中，判定上下文：" + context.keySet());
+    }
+
+    /** 条件判定上下文：对象快照 + ext_json 展平 + 流程变量（变量优先级最高）。 */
+    private Map<String, Object> bindingContext(Long objectId, Map<String, Object> variables) {
+        Map<String, Object> context = new HashMap<>();
+        jdbcTemplate.query("""
+                SELECT object_type, code, name, lifecycle_state, phase_state, workflow_state,
+                       security_level, ext_json::text AS ext_text
+                  FROM plm_object WHERE id = ?
+                """, rs -> {
+            context.put("objectType", rs.getString("object_type"));
+            context.put("code", rs.getString("code"));
+            context.put("name", rs.getString("name"));
+            context.put("lifecycleState", rs.getString("lifecycle_state"));
+            context.put("phaseState", rs.getString("phase_state"));
+            context.put("workflowState", rs.getString("workflow_state"));
+            context.put("securityLevel", String.valueOf(rs.getInt("security_level")));
+            String ext = rs.getString("ext_text");
+            if (ext != null && !ext.isBlank()) {
+                try {
+                    objectMapper.readTree(ext).fields().forEachRemaining(entry ->
+                            context.putIfAbsent(entry.getKey(), scalarText(entry.getValue())));
+                } catch (Exception ignored) {
+                    // ext_json 不是合法 JSON 时忽略，不影响主判定字段
+                }
+            }
+        }, objectId);
+        if (variables != null) {
+            variables.forEach((key, value) -> context.put(key, value == null ? null : String.valueOf(value)));
+        }
+        return context;
+    }
+
+    /** 扁平等值判定：对象条件下每个字段都必须命中（AND），字段值为数组时为「任一命中」。 */
+    private boolean matchesCondition(String conditionJson, Map<String, Object> context) {
+        if (conditionJson == null || conditionJson.isBlank()) {
+            return true;
+        }
+        JsonNode condition;
+        try {
+            condition = objectMapper.readTree(conditionJson);
+        } catch (Exception ex) {
+            // 条件写坏了就当不命中，避免把对象发到错误的流程上
+            return false;
+        }
+        if (condition == null || condition.isNull() || (condition.isObject() && condition.isEmpty())) {
+            return true;
+        }
+        if (!condition.isObject()) {
+            return false;
+        }
+        Iterator<Map.Entry<String, JsonNode>> fields = condition.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> field = fields.next();
+            Object actual = context.get(field.getKey());
+            JsonNode expected = field.getValue();
+            if (expected.isArray()) {
+                boolean hit = false;
+                for (JsonNode item : expected) {
+                    if (sameValue(actual, scalarText(item))) {
+                        hit = true;
+                        break;
+                    }
+                }
+                if (!hit) {
+                    return false;
+                }
+            } else if (!sameValue(actual, scalarText(expected))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean sameValue(Object actual, String expected) {
+        return actual == null ? expected == null : String.valueOf(actual).equals(expected);
+    }
+
+    private static String scalarText(JsonNode node) {
+        return node == null || node.isNull() ? null : node.asText();
     }
 
     private OffsetDateTime toOffsetDateTime(Date date) {

@@ -149,6 +149,43 @@ class WorkflowSmokeTest {
                 .andExpect(status().isBadRequest());
     }
 
+    /** 业务绑定按 condition_json 选流程：命中的优先于兜底绑定。 */
+    @Test
+    void bindingConditionSelectsProcess() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long countersignerId = createUser(admin, "wf_cond", "条件会签");
+
+        // 1. 部署一个同构流程，仅换 process id，用于区分命中了哪条绑定
+        JsonNode definitions = call(get("/api/v1/workflow/definitions"), admin, null);
+        String baseId = null;
+        for (JsonNode row : definitions) {
+            if ("nexplmApproval".equals(row.path("key").asText())) {
+                baseId = row.path("id").asText();
+            }
+        }
+        String xml = call(get("/api/v1/workflow/definitions/{id}/xml", baseId), admin, null).path("xml").asText();
+        String altXml = xml.replace("id=\"nexplmApproval\"", "id=\"nexplmApprovalAlt\"");
+        JsonNode alt = call(post("/api/v1/workflow/definitions"), admin,
+                json(Map.of("name", "冒烟-条件流程", "bpmnXml", altXml)));
+        assertThat(alt.path("key").asText()).isEqualTo("nexplmApprovalAlt");
+
+        long bindingId = IdWorker.getId();
+        jdbcTemplate.update("""
+                INSERT INTO wf_binding (id, object_type, category, condition_json, process_key, name, priority, enabled)
+                VALUES (?, 'PdmItem', 'SMOKE_COND', '{"lifecycleState":"Draft"}'::jsonb,
+                        'nexplmApprovalAlt', '冒烟-条件绑定', 1, true)
+                """, bindingId);
+        try {
+            long itemId = createItem(admin, "条件零件");
+            JsonNode started = start(admin, itemId, adminId, List.of(adminId, countersignerId));
+            assertThat(started.path("processKey").asText()).isEqualTo("nexplmApprovalAlt");
+        } finally {
+            // 条件绑定会影响后续用例（同样是 PdmItem + Draft），必须清理
+            jdbcTemplate.update("DELETE FROM wf_binding WHERE id = ?", bindingId);
+        }
+    }
+
     @Test
     void countersignPassesOnlyWhenAllApprove() throws Exception {
         String admin = login("admin", "Admin@12345");
