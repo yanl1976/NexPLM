@@ -333,6 +333,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '安全策略' }
       },
       {
+        path: 'system/coding',
+        name: 'system-coding',
+        component: () => import('@/views/system/CodingView.vue'),
+        meta: { title: '编码管理' }
+      },
+      {
         path: 'system/sso',
         name: 'system-sso',
         component: () => import('@/views/system/SsoView.vue'),
