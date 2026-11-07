@@ -159,6 +159,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '工艺路线' }
       },
       {
+        path: 'capp/position',
+        name: 'capp-position',
+        component: () => import('@/views/capp/PositionView.vue'),
+        meta: { title: '工厂结构与消耗' }
+      },
+      {
         path: 'capp/resource',
         name: 'capp-resource',
         component: () => import('@/views/capp/ResourceView.vue'),
