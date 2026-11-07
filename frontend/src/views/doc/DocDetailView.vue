@@ -622,7 +622,7 @@ async function openPreview(fileId?: string): Promise<void> {
   try {
     // 优先判定能否在浏览器内直接渲染（.docx / 表格）。
     // 这一类文件根本不需要转换代理，也就不会出现「未配置 LibreOffice」的 SKIPPED 提示。
-    const visual = await visualApi.doc(docId.value).catch(() => null)
+    const visual = await visualApi.doc(docId.value, fileId).catch(() => null)
     if (
       visual &&
       !visual.needsConvert &&

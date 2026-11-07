@@ -1,5 +1,7 @@
 package com.nexplm.platform.object.visual;
 
+import com.nexplm.common.exception.BizException;
+import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.file.service.FileService;
 import com.nexplm.platform.object.domain.PlmObject;
 import com.nexplm.platform.object.service.ObjectAccessGuard;
@@ -72,17 +74,27 @@ public class VisualService {
         this.fileService = fileService;
     }
 
-    /** 文档的在线可视化信息。 */
+    /** 文档的在线可视化信息（按主文件判定）。 */
     public VisualDtos.VisualInfo forDoc(Long docId) {
-        return resolve(docId, TYPE_DOC, "文档");
+        return forDoc(docId, null);
+    }
+
+    /**
+     * 文档的在线可视化信息。
+     *
+     * @param fileId 指定要查看的文件；为空时按主文件判定。文档详情页文件表里逐行「预览」
+     *               必须带上该行的 fileId，否则主文件类型会盖住用户真正要看的那份附件。
+     */
+    public VisualDtos.VisualInfo forDoc(Long docId, Long fileId) {
+        return resolve(docId, TYPE_DOC, "文档", fileId);
     }
 
     /** 零部件的在线可视化信息（零部件挂设计文档/三维模型，与文档同一套判定）。 */
     public VisualDtos.VisualInfo forItem(Long itemId) {
-        return resolve(itemId, TYPE_ITEM, "零部件");
+        return resolve(itemId, TYPE_ITEM, "零部件", null);
     }
 
-    private VisualDtos.VisualInfo resolve(Long objectId, String objectType, String label) {
+    private VisualDtos.VisualInfo resolve(Long objectId, String objectType, String label, Long pinnedFileId) {
         PlmObject object = objectAccessGuard.requireType(objectId, objectType, label);
         // 预览产物（file_role=VIEW，如 preview-xxx.pdf）是 PreviewService 生成的派生物，
         // 不参与「用什么查看器」的判定：否则文档生成过预览后，判定会从原始格式漂移到产物格式，
@@ -101,21 +113,32 @@ public class VisualService {
                     "该对象还没有文件，无法预览", null, files);
         }
 
-        // 1) 已有轻量化产物（转换过一次后再看直接命中，不必再走转换代理）
-        VisualDtos.VisualFile ready = files.stream()
-                .filter(f -> SVIEW_READY.contains(lower(f.ext())))
-                .findFirst()
-                .orElse(null);
+        // 指定了文件时以该文件为准：文件表逐行「预览」的场景，不能被主文件的类型盖住
+        VisualDtos.VisualFile pinned = null;
+        if (pinnedFileId != null) {
+            pinned = files.stream()
+                    .filter(f -> pinnedFileId.equals(f.fileId()))
+                    .findFirst()
+                    .orElseThrow(() -> BizException.of(ErrorCode.COMMON_NOT_FOUND,
+                            "文件不属于该对象或不存在：" + pinnedFileId));
+        }
+
+        // 1) 已有轻量化产物（转换过一次后再看直接命中，不必再走转换代理）。
+        //    未指定文件时才做全局命中，否则会把用户要看的那份文件换成别的产物。
+        VisualDtos.VisualFile ready = pinned != null
+                ? (SVIEW_READY.contains(lower(pinned.ext())) ? pinned : null)
+                : files.stream().filter(f -> SVIEW_READY.contains(lower(f.ext()))).findFirst().orElse(null);
         if (ready != null) {
             return info(object, objectType, VisualDtos.Engine.SVIEW, false, null,
                     "三维轻量化模型（SView）", ready, files);
         }
 
-        // 2) 没有产物：按主文件（缺失则取第一个）判定原始格式
-        VisualDtos.VisualFile primary = files.stream()
-                .filter(f -> FileService.ROLE_MAIN.equals(f.fileRole()))
-                .findFirst()
-                .orElse(files.get(0));
+        // 2) 没有产物：指定文件优先，否则按主文件（缺失则取第一个）判定原始格式
+        VisualDtos.VisualFile primary = pinned != null ? pinned
+                : files.stream()
+                        .filter(f -> FileService.ROLE_MAIN.equals(f.fileRole()))
+                        .findFirst()
+                        .orElse(files.get(0));
         String ext = primary.ext() == null ? "" : primary.ext();
 
         if (SVIEW_SOURCE.contains(ext)) {

@@ -95,6 +95,7 @@ public class PreviewService {
                 .findFirst()
                 .orElse(null);
         if (converter == null) {
+            record.setConverter(null);
             return toStatus(mark(record, "SKIPPED",
                     "暂不支持 ." + (ext.isEmpty() ? "未知" : ext) + " 格式的在线预览，可上传 PDF 或图片附件", null, userId));
         }

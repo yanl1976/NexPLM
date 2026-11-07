@@ -7,6 +7,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -27,8 +28,9 @@ public class VisualController {
     @Operation(summary = "文档可视化信息（引擎/是否需要转换/候选文件）")
     @GetMapping("/docs/{id}")
     @PreAuthorize("hasAuthority('pdm.doc.read')")
-    public Result<VisualDtos.VisualInfo> docVisual(@PathVariable Long id) {
-        return Result.ok(visualService.forDoc(id));
+    public Result<VisualDtos.VisualInfo> docVisual(@PathVariable Long id,
+                                                   @RequestParam(value = "fileId", required = false) Long fileId) {
+        return Result.ok(visualService.forDoc(id, fileId));
     }
 
     @Operation(summary = "零部件可视化信息（三维模型走 SView，二维图纸走 PDF）")

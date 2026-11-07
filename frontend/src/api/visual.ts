@@ -33,8 +33,9 @@ export interface VisualInfo {
 }
 
 export const visualApi = {
-  doc(docId: string): Promise<VisualInfo> {
-    return http.get<VisualInfo>(`/visual/docs/${docId}`)
+  /** 传 fileId 时按该文件判定引擎（文件表逐行预览）；不传按主文件判定 */
+  doc(docId: string, fileId?: string): Promise<VisualInfo> {
+    return http.get<VisualInfo>(`/visual/docs/${docId}`, fileId ? { fileId } : undefined)
   },
   item(itemId: string): Promise<VisualInfo> {
     return http.get<VisualInfo>(`/visual/items/${itemId}`)
