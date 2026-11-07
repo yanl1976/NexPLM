@@ -147,7 +147,7 @@ export interface ItemSaveReq {
   ext?: Record<string, unknown> | null
 }
 
-/** 列表查询条件（对齐旧系统 PSEITEM 的 8 项 + 材料/规格）。 */
+/** 列表查询条件（对齐旧系统 PSEITEM 的 8 项 + 材料/规格 + 分类维度）。 */
 export interface ItemQuery {
   page?: number
   size?: number
@@ -164,6 +164,73 @@ export interface ItemQuery {
   releasedTo?: string
   material?: string
   specification?: string
+  /** 分类过滤（分类树见 itemClassApi.tree）。 */
+  classId?: string
+  /** true = 含子分类（对应蓝本 ClassifyUse 的含子分类检索）。 */
+  includeChildren?: boolean
+  /** 分类属性过滤：键为属性编码，请求时拼成 attr.<code>=值。 */
+  classAttrs?: Record<string, string>
+}
+
+/** 零部件分类节点（复用 doc_class，entity_code=PdmItem）。 */
+export interface ItemClassNode {
+  id: string
+  parentId?: string | null
+  code: string
+  name: string
+  path: string
+  sort: number
+  status: string
+  remark?: string | null
+  /** 该分类下（不含子分类）的对象数。 */
+  docCount: number
+  children?: ItemClassNode[]
+}
+
+/** 分类属性定义（生效属性 = 自身 + 祖先可继承）。 */
+export interface ItemClassAttrDef {
+  id: string
+  code: string
+  name: string
+  valueType: 'STRING' | 'NUMBER' | 'DATE' | 'ENUM' | 'BOOL' | string
+  enumCode?: string | null
+  required: boolean
+  inheritable: boolean
+  defaultValue?: string | null
+  sort: number
+  ownerClassId?: string | null
+  ownerClassName?: string | null
+  inherited?: boolean
+}
+
+export interface ItemClassSaveReq {
+  code: string
+  name: string
+  parentId?: string | null
+  sort?: number
+  status?: string
+  remark?: string | null
+}
+
+export interface ItemClassAttrItem {
+  code: string
+  name: string
+  valueType: string
+  enumCode?: string | null
+  required?: boolean
+  inheritable?: boolean
+  defaultValue?: string | null
+  sort?: number
+}
+
+/** 零件的分类信息：基本分类 + 生效属性定义 + 已填值。 */
+export interface ItemClassifyInfo {
+  classId?: string | null
+  classCode?: string | null
+  className?: string | null
+  classPath?: string | null
+  attrs: Record<string, string>
+  attrDefs: ItemClassAttrDef[]
 }
 
 /** 零件视图行（旧系统 PSEITEMVIEW）。 */
@@ -629,7 +696,15 @@ export const alternateApi = {
 
 export const itemApi = {
   list(params: ItemQuery): Promise<{ items: ItemSummary[]; total: number; page: number; size: number }> {
-    return http.get('/items', { ...params } as Record<string, string | number | boolean | undefined>)
+    const { classAttrs, ...rest } = params
+    const query: Record<string, string | number | boolean | undefined> = { ...rest }
+    // 分类属性过滤按 attr.<编码>=值 展开（后端统一从参数前缀识别）
+    Object.entries(classAttrs ?? {}).forEach(([code, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        query[`attr.${code}`] = value
+      }
+    })
+    return http.get('/items', query)
   },
   detail(id: string): Promise<ItemDetail> {
     return http.get<ItemDetail>(`/items/${id}`)
@@ -725,5 +800,40 @@ export const itemApi = {
     messages: string[]
   }> {
     return uploadFile('/items/import', file)
+  }
+}
+
+/**
+ * 零部件分类接口（批次 H·T-H-01）。
+ * 分类树与属性复用文档分类表（entity_code=PdmItem），维护需 `pse.classify.manage`，查看只需 `pse.item.read`。
+ */
+export const itemClassApi = {
+  tree(): Promise<ItemClassNode[]> {
+    return http.get<ItemClassNode[]>('/item-classes')
+  },
+  create(req: ItemClassSaveReq): Promise<ItemClassNode> {
+    return http.post<ItemClassNode>('/item-classes', req)
+  },
+  update(id: string, req: ItemClassSaveReq): Promise<ItemClassNode> {
+    return http.put<ItemClassNode>(`/item-classes/${id}`, req)
+  },
+  remove(id: string): Promise<void> {
+    return http.delete<void>(`/item-classes/${id}`)
+  },
+  /** 生效属性：自身 + 祖先可继承。 */
+  attrs(id: string): Promise<ItemClassAttrDef[]> {
+    return http.get<ItemClassAttrDef[]>(`/item-classes/${id}/attributes`)
+  },
+  /** 全量替换分类自身属性（空数组 = 清空）。 */
+  saveAttrs(id: string, items: ItemClassAttrItem[]): Promise<ItemClassAttrDef[]> {
+    return http.put<ItemClassAttrDef[]>(`/item-classes/${id}/attributes`, { items })
+  },
+  /** 读取零件的分类与属性值。 */
+  info(itemId: string): Promise<ItemClassifyInfo> {
+    return http.get<ItemClassifyInfo>(`/items/${itemId}/classify`)
+  },
+  /** 归类 / 取消归类（classId 传 null 表示取消）。 */
+  assign(itemId: string, classId: string | null, attrs: Record<string, string>): Promise<ItemClassifyInfo> {
+    return http.put<ItemClassifyInfo>(`/items/${itemId}/classify`, { classId, attrs })
   }
 }

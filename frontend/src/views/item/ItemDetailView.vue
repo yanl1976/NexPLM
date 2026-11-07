@@ -117,6 +117,23 @@
                 </el-descriptions-item>
               </el-descriptions>
 
+              <div class="prop-title">分类</div>
+              <el-descriptions :column="3" border size="small">
+                <el-descriptions-item label="所属分类">
+                  {{ classify.className || '未归类' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="分类路径">{{ classify.classPath || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="操作">
+                  <el-button v-if="canWrite" link type="primary" size="small" @click="openClassify">
+                    归类
+                  </el-button>
+                  <span v-else class="prop-hint">无编辑权限</span>
+                </el-descriptions-item>
+                <el-descriptions-item v-for="def in classify.attrDefs" :key="def.code" :label="def.name">
+                  {{ classify.attrs[def.code] || '-' }}
+                </el-descriptions-item>
+              </el-descriptions>
+
               <template v-if="customFields.length">
                 <div class="prop-title">ERP 扩展属性</div>
                 <el-descriptions :column="3" border size="small">
@@ -918,6 +935,53 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="classifyDialog" title="零部件归类" width="560px">
+      <el-form label-width="110px">
+        <el-form-item label="所属分类">
+          <el-tree-select
+            v-model="classifyForm.classId"
+            :data="classTree"
+            node-key="id"
+            :props="{ label: 'name', children: 'children' }"
+            check-strictly
+            clearable
+            placeholder="选择分类（清空后保存 = 取消归类）"
+            style="width: 100%"
+            @change="onClassPicked"
+          />
+        </el-form-item>
+        <el-form-item
+          v-for="def in classifyDefs"
+          :key="def.code"
+          :label="def.name"
+          :required="def.required"
+        >
+          <el-select
+            v-if="def.valueType === 'BOOL'"
+            v-model="classifyAttrs[def.code]"
+            clearable
+            style="width: 100%"
+          >
+            <el-option label="是" value="true" />
+            <el-option label="否" value="false" />
+          </el-select>
+          <el-date-picker
+            v-else-if="def.valueType === 'DATE'"
+            v-model="classifyAttrs[def.code]"
+            type="date"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+          <el-input v-else v-model="classifyAttrs[def.code]" />
+        </el-form-item>
+      </el-form>
+      <div v-if="classifyForm.classId && !classifyDefs.length" class="prop-hint">该分类未定义属性</div>
+      <template #footer>
+        <el-button @click="classifyDialog = false">取消</el-button>
+        <el-button type="primary" :loading="classifySaving" @click="onSaveClassify">保存</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="dialogVisible" title="编辑零部件" width="760px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="名称" prop="name">
@@ -1120,6 +1184,7 @@ import {
   bomApi,
   bomExcelApi,
   itemApi,
+  itemClassApi,
   type BomAlternateReq,
   type BomAlternateRow,
   type BomBatchResult,
@@ -1143,6 +1208,9 @@ import {
   type ItemVersionDiff,
   type ItemVersionRow,
   type ItemViewRow,
+  type ItemClassAttrDef,
+  type ItemClassNode,
+  type ItemClassifyInfo,
   type WhereUsedRow
 } from '@/api/item'
 import { DOC_STATE_LABEL } from '@/api/doc'
@@ -2418,8 +2486,83 @@ function goBack(): void {
   router.push({ name: 'item-list' })
 }
 
+// ------------------------------------------------------------ 分类（批次 H·T-H-01）
+
+const classify = ref<ItemClassifyInfo>({ attrs: {}, attrDefs: [] })
+const classTree = ref<ItemClassNode[]>([])
+const classifyDialog = ref(false)
+const classifySaving = ref(false)
+const classifyDefs = ref<ItemClassAttrDef[]>([])
+const classifyForm = reactive<{ classId: string | null }>({ classId: null })
+const classifyAttrs = reactive<Record<string, string>>({})
+
+/** 分类读取失败不应影响详情主体（兼容未执行 V71 的库） */
+async function loadClassify(): Promise<void> {
+  try {
+    classify.value = await itemClassApi.info(itemId.value)
+  } catch {
+    classify.value = { attrs: {}, attrDefs: [] }
+  }
+}
+
+function resetClassifyAttrs(source?: Record<string, string>): void {
+  Object.keys(classifyAttrs).forEach((key) => delete classifyAttrs[key])
+  Object.entries(source ?? {}).forEach(([key, value]) => {
+    classifyAttrs[key] = value ?? ''
+  })
+}
+
+async function openClassify(): Promise<void> {
+  if (!classTree.value.length) {
+    try {
+      classTree.value = await itemClassApi.tree()
+    } catch (error) {
+      ElMessage.error(error instanceof Error ? error.message : '加载分类树失败')
+      return
+    }
+  }
+  classifyForm.classId = classify.value.classId ?? null
+  classifyDefs.value = classify.value.attrDefs ?? []
+  resetClassifyAttrs(classify.value.attrs)
+  classifyDialog.value = true
+}
+
+/** 切换分类时重新取生效属性（含继承），已填值保留 */
+async function onClassPicked(classId: string | null): Promise<void> {
+  if (!classId) {
+    classifyDefs.value = []
+    return
+  }
+  try {
+    classifyDefs.value = await itemClassApi.attrs(classId)
+  } catch (error) {
+    classifyDefs.value = []
+    ElMessage.error(error instanceof Error ? error.message : '加载分类属性失败')
+  }
+}
+
+async function onSaveClassify(): Promise<void> {
+  const attrs: Record<string, string> = {}
+  Object.entries(classifyAttrs).forEach(([code, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      attrs[code] = value
+    }
+  })
+  classifySaving.value = true
+  try {
+    classify.value = await itemClassApi.assign(itemId.value, classifyForm.classId, attrs)
+    ElMessage.success(classifyForm.classId ? '已归类' : '已取消归类')
+    classifyDialog.value = false
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '归类失败')
+  } finally {
+    classifySaving.value = false
+  }
+}
+
 async function reloadAll(): Promise<void> {
   await load()
+  await loadClassify()
   if (activeTab.value === 'bom') {
     await loadBom()
   } else if (activeTab.value === 'views') {

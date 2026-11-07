@@ -101,6 +101,7 @@
               <span>零部件/BOM</span>
             </template>
             <el-menu-item index="/item">零部件</el-menu-item>
+            <el-menu-item index="/item/classify">零部件分类</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="/wf">
             <template #title>

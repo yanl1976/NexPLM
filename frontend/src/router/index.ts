@@ -129,6 +129,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '文档分类' }
       },
       {
+        path: 'item/classify',
+        name: 'item-classify',
+        component: () => import('@/views/item/ItemClassifyView.vue'),
+        meta: { title: '零部件分类' }
+      },
+      {
         path: 'doc/:id',
         name: 'doc-detail',
         component: () => import('@/views/doc/DocDetailView.vue'),
