@@ -46,6 +46,10 @@ public class NotifyService {
     public static final String EVENT_CHANGE_EFFECTIVE = "change.effective";
     /** 任务完成（prj_task → DONE）。 */
     public static final String EVENT_TASK_COMPLETED = "task.completed";
+    /** 流程节点办理完成（工作流单个任务，会签每票一条）。 */
+    public static final String EVENT_WF_TASK_COMPLETED = "wf.task.completed";
+    /** 流程审批通过并归档（工作流实例走完全部分支）。 */
+    public static final String EVENT_WF_PROCESS_COMPLETED = "wf.process.completed";
 
     public static final Map<String, String> EVENT_LABELS;
 
@@ -54,6 +58,8 @@ public class NotifyService {
         labels.put(EVENT_DOC_RELEASED, "文档发布");
         labels.put(EVENT_CHANGE_EFFECTIVE, "变更生效");
         labels.put(EVENT_TASK_COMPLETED, "任务完成");
+        labels.put(EVENT_WF_TASK_COMPLETED, "流程节点办理");
+        labels.put(EVENT_WF_PROCESS_COMPLETED, "流程审批通过");
         EVENT_LABELS = Collections.unmodifiableMap(labels);
     }
 

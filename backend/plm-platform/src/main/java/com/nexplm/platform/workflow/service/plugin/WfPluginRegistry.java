@@ -20,6 +20,10 @@ import java.util.List;
  *       避免插件动作先落库而流程事务回滚导致数据不一致；</li>
  *   <li>每个插件用独立事务（{@code REQUIRES_NEW}）执行，异常只记日志，不影响流程与其他插件。</li>
  * </ol>
+ *
+ * <p><b>顺序敏感</b>：插件按 Spring 注入顺序串行执行，即 {@code @Order} 升序。因此
+ * 「改状态」（{@code ChangeState}）必须排在「用状态做判断」的插件（如 {@code ErpPublish}
+ * 只下发 {@code Released} 对象）之前，否则读到的是流程事务提交前、尚未推进的状态。</p>
  */
 @Component
 public class WfPluginRegistry {

@@ -59,8 +59,10 @@ class NotifySmokeTest {
             var handler = (com.sun.net.httpserver.HttpHandler) exchange -> {
                 String body = new String(exchange.getRequestBody().readAllBytes(),
                         StandardCharsets.UTF_8);
+                // 取原始查询串：getQuery() 已解码一次，parseQuery 再解一次会把 sign 里的 '+'
+                // 变成空格（base64 随机含 '+' 时用例偶发失败）
                 RECEIVED.add(new Received(exchange.getRequestURI().getPath(),
-                        exchange.getRequestURI().getQuery(), body));
+                        exchange.getRequestURI().getRawQuery(), body));
                 respond(exchange, 200, "{\"errcode\":0,\"errmsg\":\"ok\"}");
             };
             ROBOT.createContext("/wecom", handler);

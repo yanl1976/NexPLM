@@ -4,6 +4,7 @@ import com.nexplm.common.exception.BizException;
 import com.nexplm.platform.lifecycle.service.LifecycleService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +23,7 @@ import java.util.List;
  * <p>状态不允许流转时只记日志，不让流程失败——生命周期是业务副作用，不是流程前置条件。</p>
  */
 @Component
+@Order(10)
 public class LifecycleAdvancePlugin implements WfBusinessPlugin {
 
     private static final Logger log = LoggerFactory.getLogger(LifecycleAdvancePlugin.class);

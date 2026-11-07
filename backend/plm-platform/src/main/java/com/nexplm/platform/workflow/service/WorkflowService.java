@@ -197,9 +197,12 @@ public class WorkflowService {
             taskService.complete(taskId);
         }
         String processInstanceId = task.getProcessInstanceId();
+        String taskKey = task.getTaskDefinitionKey();
         boolean running = refreshLinkStatus(processInstanceId);
+        // 任务级事件每票都发（会签逐票通知），流程级事件只在归档时发一次
+        firePlugin(processInstanceId, WfPluginContext.ACTION_TASK_COMPLETED, userId, taskKey);
         if (!running) {
-            firePlugin(processInstanceId, WfPluginContext.ACTION_COMPLETED, userId, task.getTaskDefinitionKey());
+            firePlugin(processInstanceId, WfPluginContext.ACTION_COMPLETED, userId, taskKey);
         }
     }
 
