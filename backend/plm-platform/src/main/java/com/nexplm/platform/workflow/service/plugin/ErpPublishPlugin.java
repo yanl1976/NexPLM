@@ -23,7 +23,9 @@ import java.util.Set;
  *   <li>对象类型在支持清单内（零部件 → {@code Material}，文档 → {@code Doc}）；</li>
  *   <li>对象生命周期已是 {@code Released}——审批通过但状态没推进（如自定义流程）不自动下发，
  *       避免把草稿/未发布版本推给 ERP；</li>
- *   <li>公司内存在启用的金蝶端点（{@code itg_endpoint.system_code = 'KINGDEE'}）。</li>
+ *   <li>公司内存在启用的金蝶端点（{@code itg_endpoint.system_code = 'KINGDEE'}）；
+ *       若配置了 {@code nexplm.workflow.erp-publish.endpoint-code}，则只认该 code 对应的端点
+ *       （多账套：测试/生产），配了却找不到就跳过下发，不静默换账套。</li>
  * </ol>
  *
  * <p><b>为什么不直接 HTTP</b>：走 {@code IntegrationService.submitJob} 才能拿到
@@ -48,17 +50,21 @@ public class ErpPublishPlugin implements WfBusinessPlugin {
     private final IntegrationService integrationService;
     private final boolean enabled;
     private final boolean dryRun;
+    /** 指定下发到哪个金蝶账套（itg_endpoint.code）；留空沿用"id 最小的启用端点"。 */
+    private final String endpointCode;
 
     public ErpPublishPlugin(JdbcTemplate jdbcTemplate,
                             KingdeePayloadService payloadService,
                             IntegrationService integrationService,
                             @Value("${nexplm.workflow.erp-publish.enabled:true}") boolean enabled,
-                            @Value("${nexplm.workflow.erp-publish.dry-run:false}") boolean dryRun) {
+                            @Value("${nexplm.workflow.erp-publish.dry-run:false}") boolean dryRun,
+                            @Value("${nexplm.workflow.erp-publish.endpoint-code:}") String endpointCode) {
         this.jdbcTemplate = jdbcTemplate;
         this.payloadService = payloadService;
         this.integrationService = integrationService;
         this.enabled = enabled;
         this.dryRun = dryRun;
+        this.endpointCode = endpointCode;
     }
 
     @Override
@@ -125,8 +131,26 @@ public class ErpPublishPlugin implements WfBusinessPlugin {
         }
     }
 
-    /** 同一公司可能有多个金蝶端点（测试/生产账套），插件不猜业务意图，取 id 最小的启用端点。 */
+    /**
+     * 同一公司可能有多个金蝶端点（测试/生产账套）。
+     * <p>配置了 {@code endpoint-code} 时按 code 精确选；配了却找不到（停用/删除/改名）就跳过下发，
+     * <b>不回退</b>到别的账套——把生产数据推到测试账套或反之，比"这次没下发"严重得多（R4 禁止静默降级）。
+     * 未配置时保持既有行为：取 id 最小的启用端点。</p>
+     */
     private Long kingdeeEndpoint(Long companyId) {
+        if (endpointCode != null && !endpointCode.isBlank()) {
+            List<Long> pinned = jdbcTemplate.queryForList("""
+                    SELECT id FROM itg_endpoint
+                     WHERE company_id = ? AND system_code = 'KINGDEE' AND code = ?
+                       AND enabled = true AND deleted = false
+                    """, Long.class, companyId, endpointCode.trim());
+            if (!pinned.isEmpty()) {
+                return pinned.get(0);
+            }
+            log.warn("ErpPublish 跳过：公司 {} 未找到启用的金蝶端点 code={}，不回退到其它账套",
+                    companyId, endpointCode);
+            return null;
+        }
         List<Long> ids = jdbcTemplate.queryForList("""
                 SELECT id FROM itg_endpoint
                  WHERE company_id = ? AND system_code = 'KINGDEE' AND enabled = true AND deleted = false

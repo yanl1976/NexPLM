@@ -67,6 +67,14 @@ flowable:
     enabled: false
 
 nexplm:
+  # 流程归档后的 ERP 自动下发（ErpPublish 插件）
+  workflow:
+    erp-publish:
+      enabled: ${NEXPLM_WF_ERP_PUBLISH_ENABLED:true}
+      dry-run: ${NEXPLM_WF_ERP_PUBLISH_DRY_RUN:false}
+      # 多账套时指定 itg_endpoint.code（测试/生产）；留空取 id 最小的启用端点。
+      # 配置后找不到该端点会跳过下发，不会静默改用其它账套。
+      endpoint-code: ${NEXPLM_WF_ERP_PUBLISH_ENDPOINT_CODE:}
   security:
     jwt:
       # 生产必须通过环境变量覆盖，长度 >= 32 字节

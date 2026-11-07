@@ -55,6 +55,8 @@ class WfPluginSmokeTest {
         registry.add("spring.datasource.username", () -> "postgres");
         registry.add("spring.datasource.password", () -> "");
         registry.add("nexplm.security.bootstrap.admin-password", () -> "Admin@12345");
+        // 本测试类验证多账套：配置指定端点 code，与 createKingdeeEndpoint 的 code 一致
+        registry.add("nexplm.workflow.erp-publish.endpoint-code", () -> "kingdee-test");
     }
 
     @Autowired
@@ -130,6 +132,58 @@ class WfPluginSmokeTest {
         assertThat(jobsOf(itemCode)).isEmpty();
     }
 
+    /**
+     * 多账套（台账 B8）：配置了 endpoint-code 时只选该端点，即使另一个启用端点 id 更小；
+     * 指定端点停用后跳过下发，不静默回退到其它账套。
+     */
+    @Test
+    void erpPublishUsesConfiguredEndpointAndDoesNotFallBack() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long itemId = createItem(admin, "多账套零件");
+        String itemCode = itemCode(itemId);
+        long companyId = jdbcTemplate.queryForObject(
+                "SELECT company_id FROM plm_object WHERE id = ?", Long.class, itemId);
+
+        // 清掉其它用例残留的端点（软删，避免影响历史 itg_job 的引用）
+        jdbcTemplate.update("""
+                UPDATE itg_endpoint SET deleted = true, enabled = false
+                 WHERE system_code = 'KINGDEE' AND company_id = ?
+                """, companyId);
+        long configuredId = 900_001L;
+        long smallerId = 100L;
+        jdbcTemplate.update("""
+                INSERT INTO itg_endpoint(id, company_id, code, name, system_code, base_url, timeout_ms, enabled)
+                VALUES (?, ?, 'kingdee-test', '指定账套', 'KINGDEE', 'http://127.0.0.1:1/', 500, true)
+                """, configuredId, companyId);
+        jdbcTemplate.update("""
+                INSERT INTO itg_endpoint(id, company_id, code, name, system_code, base_url, timeout_ms, enabled)
+                VALUES (?, ?, 'kingdee-other', 'id 更小的备用账套', 'KINGDEE', 'http://127.0.0.1:2/', 500, true)
+                """, smallerId, companyId);
+
+        JsonNode started = start(admin, itemId, adminId);
+        String pid = started.path("processInstanceId").asText();
+        completeByAdmin(admin, pid);
+        completeByAdmin(admin, pid);
+        List<Map<String, Object>> jobs = jobsOf(itemCode);
+        assertThat(jobs).hasSize(1);
+        assertThat(((Number) jobs.get(0).get("endpoint_id")).longValue()).isEqualTo(configuredId);
+
+        // 指定端点停用 → 剩下 id 更小的备用端点也不得被选中
+        jdbcTemplate.update("UPDATE itg_endpoint SET enabled = false WHERE id = ?", configuredId);
+        long secondItemId = createItem(admin, "指定账套不可用零件");
+        String secondCode = itemCode(secondItemId);
+        JsonNode second = start(admin, secondItemId, adminId);
+        String secondPid = second.path("processInstanceId").asText();
+        completeByAdmin(admin, secondPid);
+        completeByAdmin(admin, secondPid);
+        assertThat(jobsOf(secondCode)).isEmpty();
+
+        // 复位，避免影响其它用例
+        jdbcTemplate.update("UPDATE itg_endpoint SET deleted = true WHERE id IN (?, ?)",
+                configuredId, smallerId);
+    }
+
     // ------------------------------------------------------------ 工具
 
     private void completeByAdmin(String token, String pid) throws Exception {
@@ -170,7 +224,7 @@ class WfPluginSmokeTest {
 
     private List<Map<String, Object>> jobsOf(String itemCode) {
         return jdbcTemplate.queryForList(
-                "SELECT biz_type, biz_key, status FROM itg_job WHERE biz_key LIKE ?", itemCode + "%");
+                "SELECT biz_type, biz_key, status, endpoint_id FROM itg_job WHERE biz_key LIKE ?", itemCode + "%");
     }
 
     private String lifecycleState(long itemId) {
