@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.capp.api.CappErpDtos;
+import com.nexplm.platform.coding.service.CodeRuleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,10 +42,12 @@ public class CappErpDispatchService {
     private static final String PAYLOAD_VERSION = "1.0";
 
     private final JdbcTemplate jdbcTemplate;
+    private final CodeRuleService codeRuleService;
     private final ObjectMapper jsonMapper;
 
-    public CappErpDispatchService(JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper) {
+    public CappErpDispatchService(JdbcTemplate jdbcTemplate, CodeRuleService codeRuleService, ObjectMapper jsonMapper) {
         this.jdbcTemplate = jdbcTemplate;
+        this.codeRuleService = codeRuleService;
         this.jsonMapper = jsonMapper;
     }
 
@@ -309,14 +312,8 @@ public class CappErpDispatchService {
         }
     }
 
+    /** 统一由编码规则引擎取号（批次 B2）：格式来自 code_rule.segments_json。 */
     private String nextCode(String ruleCode, String prefix) {
-        Long no = jdbcTemplate.queryForObject("""
-                        INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
-                        VALUES (?, ?, 'DEFAULT', 1)
-                        ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
-                        RETURNING current_no
-                        """, Long.class, IdWorker.getId(), ruleCode);
-        return String.format("%s-%06d", prefix, no == null ? 1L : no);
+        return codeRuleService.next(ruleCode);
     }
 }

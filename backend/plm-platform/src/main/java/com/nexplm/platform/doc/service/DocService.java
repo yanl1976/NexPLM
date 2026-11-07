@@ -19,6 +19,7 @@ import com.nexplm.platform.object.mapper.PlmObjectMapper;
 import com.nexplm.platform.object.service.ObjectAccessGuard;
 import com.nexplm.platform.object.version.VersionFormatter;
 import com.nexplm.platform.security.scope.ScopeApplier;
+import com.nexplm.platform.coding.service.CodeRuleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,13 +66,14 @@ public class DocService {
     private final ObjectAccessGuard objectAccessGuard;
     private final ScopeApplier scopeApplier;
     private final JdbcTemplate jdbcTemplate;
+    private final CodeRuleService codeRuleService;
     private final ObjectMapper jsonMapper;
 
     public DocService(PlmObjectMapper objectMapper, DocMasterMapper docMapper, FileService fileService,
                       CheckoutService checkoutService, MetaService metaService,
                       LifecycleService lifecycleService, DocClassService docClassService,
                       ObjectAccessGuard objectAccessGuard, ScopeApplier scopeApplier,
-                      JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper) {
+                      JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper, CodeRuleService codeRuleService) {
         this.objectMapper = objectMapper;
         this.docMapper = docMapper;
         this.fileService = fileService;
@@ -82,6 +84,7 @@ public class DocService {
         this.objectAccessGuard = objectAccessGuard;
         this.scopeApplier = scopeApplier;
         this.jdbcTemplate = jdbcTemplate;
+        this.codeRuleService = codeRuleService;
         this.jsonMapper = jsonMapper;
     }
 
@@ -475,18 +478,12 @@ public class DocService {
         return value;
     }
 
+    /** 取号统一走编码规则引擎（批次 B2）：规则 PdmDoc 的段定义可配、可归零。 */
     private String resolveCode(String code) {
         if (code != null && !code.isBlank()) {
             return code.trim();
         }
-        Long no = jdbcTemplate.queryForObject("""
-                        INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
-                        VALUES (?, 'PdmDoc', 'DEFAULT', 1)
-                        ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
-                        RETURNING current_no
-                        """, Long.class, IdWorker.getId());
-        return String.format("DOC-%06d", no == null ? 1L : no);
+        return codeRuleService.next("PdmDoc");
     }
 
     private Long companyId(Long userId) {

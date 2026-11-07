@@ -18,6 +18,7 @@ import com.nexplm.platform.object.domain.PlmObject;
 import com.nexplm.platform.object.mapper.PlmObjectMapper;
 import com.nexplm.platform.object.version.VersionFormatter;
 import com.nexplm.platform.security.scope.ScopeApplier;
+import com.nexplm.platform.coding.service.CodeRuleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
@@ -59,11 +60,12 @@ public class ItemService {
     private final ScopeApplier scopeApplier;
     private final CheckoutService checkoutService;
     private final JdbcTemplate jdbcTemplate;
+    private final CodeRuleService codeRuleService;
     private final ObjectMapper jsonMapper;
 
     public ItemService(PlmObjectMapper objectMapper, ItemMasterMapper itemMapper, MetaService metaService,
                        LifecycleService lifecycleService, ScopeApplier scopeApplier,
-                       CheckoutService checkoutService, JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper) {
+                       CheckoutService checkoutService, JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper, CodeRuleService codeRuleService) {
         this.objectMapper = objectMapper;
         this.itemMapper = itemMapper;
         this.metaService = metaService;
@@ -72,6 +74,7 @@ public class ItemService {
         // 检出锁按 object_id 通用（plm_checkout），零部件与图文档共用一套实现
         this.checkoutService = checkoutService;
         this.jdbcTemplate = jdbcTemplate;
+        this.codeRuleService = codeRuleService;
         this.jsonMapper = jsonMapper;
     }
 
@@ -635,18 +638,12 @@ public class ItemService {
         }
     }
 
+    /** 取号统一走编码规则引擎（批次 B2）：规则 PdmItem 的段定义可配、可归零。 */
     private String resolveCode(String code) {
         if (code != null && !code.isBlank()) {
             return code.trim();
         }
-        Long no = jdbcTemplate.queryForObject("""
-                        INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
-                        VALUES (?, 'PdmItem', 'DEFAULT', 1)
-                        ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
-                        RETURNING current_no
-                        """, Long.class, IdWorker.getId());
-        return String.format("PN-%06d", no == null ? 1L : no);
+        return codeRuleService.next("PdmItem");
     }
 
     private String normalizeItemType(String itemType) {
