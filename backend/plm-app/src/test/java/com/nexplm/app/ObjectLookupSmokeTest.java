@@ -110,7 +110,19 @@ class ObjectLookupSmokeTest {
         JsonNode missing = call("/api/v1/objects/lookup?code=NOPE-9999", admin);
         assertThat(missing).isEmpty();
 
-        // ---- 7. 空白编码 → 400（用 param 传真实空格，避免 uri 模板里的 %20 不解码）
+        // ---- 7. 模糊检索（对象选择器）：编码/名称命中，可按类型收窄；空关键词不报错
+        JsonNode fuzzy = call("/api/v1/objects/search?keyword=9200", admin);
+        assertThat(fuzzy.findValuesAsText("code")).contains("PN-920001", "DOC-920001");
+        JsonNode typed = call("/api/v1/objects/search?keyword=9200&objectType=PdmItem", admin);
+        assertThat(typed.findValuesAsText("code")).containsExactly("PN-920001");
+        assertThat(call("/api/v1/objects/search?keyword=扫码变更&objectType=ChgEcr", admin))
+                .hasSize(1);
+        // 选择器刚打开时可能还没有关键词：null 参数不能把 SQL 炸成 500
+        assertThat(call("/api/v1/objects/search", admin)).isNotNull();
+        JsonNode byName = searchByKeyword("同码", admin);
+        assertThat(byName.findValuesAsText("code")).contains("SAME-001");
+
+        // ---- 8. 空白编码 → 400（用 param 传真实空格，避免 uri 模板里的 %20 不解码）
         mockMvc.perform(get("/api/v1/objects/lookup").param("code", "   ")
                         .header("Authorization", "Bearer " + admin))
                 .andExpect(status().isBadRequest());
@@ -135,6 +147,16 @@ class ObjectLookupSmokeTest {
         JsonNode root = objectMapper.readTree(
                 result.getResponse().getContentAsString(StandardCharsets.UTF_8));
         return root.has("data") ? root.path("data") : root;
+    }
+
+    /** 中文关键词必须走 param 传参，拼进 URL 会被 MockMvc 当作非法 URI 字符。 */
+    private JsonNode searchByKeyword(String keyword, String token) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/objects/search").param("keyword", keyword)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .path("data");
     }
 
     private String login(String username, String password) throws Exception {

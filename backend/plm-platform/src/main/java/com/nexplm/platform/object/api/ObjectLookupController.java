@@ -36,4 +36,20 @@ public class ObjectLookupController {
     public Result<List<ObjectLookupDtos.LookupResult>> lookup(@RequestParam String code) {
         return Result.ok(objectLookupService.lookup(CurrentUser.companyId(), code));
     }
+
+    /**
+     * 通用对象选择器的数据源：编码/名称模糊检索，可按对象类型收窄。
+     *
+     * <p>权限与扫码一致（任一域可读）——选择器是各页面挑对象的统一入口，
+     * 若按域拆权限，每个调用页都得再配一遍。</p>
+     */
+    @Operation(summary = "模糊检索对象（对象选择器用）")
+    @GetMapping("/search")
+    @PreAuthorize("hasAnyAuthority('pse.item.read', 'pdm.doc.read', 'chg.ecr.read')")
+    public Result<List<ObjectLookupDtos.LookupResult>> search(
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "objectType", required = false) String objectType,
+            @RequestParam(value = "limit", required = false) Integer limit) {
+        return Result.ok(objectLookupService.search(CurrentUser.companyId(), keyword, objectType, limit));
+    }
 }

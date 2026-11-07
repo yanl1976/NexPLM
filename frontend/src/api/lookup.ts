@@ -33,5 +33,9 @@ export const OBJECT_TYPE_LABEL: Record<string, string> = {
 export const lookupApi = {
   byCode(code: string): Promise<LookupResult[]> {
     return http.get<LookupResult[]>('/objects/lookup', { code })
+  },
+  /** 通用对象选择器数据源：编码/名称模糊检索，objectType 留空=跨类型。 */
+  search(keyword?: string, objectType?: string, limit = 20): Promise<LookupResult[]> {
+    return http.get<LookupResult[]>('/objects/search', { keyword, objectType, limit })
   }
 }

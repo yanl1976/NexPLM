@@ -31,6 +31,63 @@ public class ObjectLookupService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /**
+     * 通用对象模糊检索（对象选择器用）：按编码/名称模糊匹配，可按对象类型过滤。
+     *
+     * <p>与 {@link #lookup} 的分工：扫码要"精确且唯一"，选择器要"边输边缩小范围"，
+     * 所以这里走 {@code ILIKE} 并限制返回条数，编码/名称命中优先、更新时间次之排序。</p>
+     */
+    public List<ObjectLookupDtos.LookupResult> search(Long companyId, String keyword, String objectType,
+                                                      Integer limit) {
+        int size = limit == null ? 20 : Math.min(Math.max(limit, 1), 50);
+        String kw = keyword == null || keyword.isBlank() ? null : keyword.trim();
+        if ("ChgEcr".equalsIgnoreCase(objectType)) {
+            return searchChgEcr(companyId, kw, size);
+        }
+        String type = objectType == null || objectType.isBlank() ? null : objectType.trim();
+        List<ObjectLookupDtos.LookupResult> results = jdbcTemplate.query("""
+                        SELECT id, object_type, code, name, revision, iteration, lifecycle_state, updated_at
+                          FROM plm_object
+                         WHERE company_id = ? AND deleted = false AND is_latest = true
+                           AND (?::varchar IS NULL OR object_type = ?)
+                           AND (?::varchar IS NULL OR code ILIKE ? OR name ILIKE ?)
+                         ORDER BY (code = ?) DESC, (code ILIKE ?) DESC, updated_at DESC
+                         LIMIT ?
+                        """,
+                (rs, rowNum) -> new ObjectLookupDtos.LookupResult(
+                        rs.getLong("id"), rs.getString("object_type"), rs.getString("code"),
+                        rs.getString("name"), rs.getInt("revision"), rs.getInt("iteration"),
+                        rs.getString("lifecycle_state"),
+                        rs.getObject("updated_at", OffsetDateTime.class)),
+                companyId, type, type, kw, like(kw), like(kw), kw == null ? "" : kw,
+                kw == null ? "" : kw + "%", size);
+        if (!results.isEmpty() || type != null) {
+            return results;
+        }
+        // 不限类型时的兜底与扫码保持一致：变更单不在 plm_object
+        return searchChgEcr(companyId, kw, size);
+    }
+
+    private List<ObjectLookupDtos.LookupResult> searchChgEcr(Long companyId, String keyword, int limit) {
+        return jdbcTemplate.query("""
+                        SELECT id, code, title, status, updated_at
+                          FROM chg_ecr
+                         WHERE company_id = ? AND deleted = false
+                           AND (?::varchar IS NULL OR code ILIKE ? OR title ILIKE ?)
+                         ORDER BY updated_at DESC
+                         LIMIT ?
+                        """,
+                (rs, rowNum) -> new ObjectLookupDtos.LookupResult(
+                        rs.getLong("id"), "ChgEcr", rs.getString("code"), rs.getString("title"),
+                        null, null, rs.getString("status"),
+                        rs.getObject("updated_at", OffsetDateTime.class)),
+                companyId, keyword, like(keyword), like(keyword), limit);
+    }
+
+    private String like(String keyword) {
+        return keyword == null ? null : "%" + keyword + "%";
+    }
+
     public List<ObjectLookupDtos.LookupResult> lookup(Long companyId, String code) {
         if (code == null || code.isBlank()) {
             throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "请提供要查询的编码");

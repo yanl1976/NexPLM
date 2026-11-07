@@ -147,11 +147,17 @@
           </el-table>
 
           <div class="add-object">
-            <el-select v-model="objForm.objectType" style="width: 130px">
+            <el-select v-model="objForm.objectType" style="width: 130px" @change="objForm.objectId = ''">
               <el-option label="零部件" value="PdmItem" />
               <el-option label="图文档" value="PdmDoc" />
             </el-select>
-            <el-input v-model="objForm.objectId" placeholder="对象 ID" style="width: 200px" />
+            <div class="object-picker-slot">
+              <ObjectPicker
+                v-model="objForm.objectId"
+                :object-type="objForm.objectType"
+                placeholder="编码 / 名称检索"
+              />
+            </div>
             <el-select v-model="objForm.relation" style="width: 130px" @change="onRelationChange">
               <el-option label="受影响" value="AFFECTED" />
               <el-option label="影响" value="IMPACT" />
@@ -423,6 +429,7 @@ import {
 import { workflowApi, type ActorUserRow } from '@/api/workflow'
 import WorkflowPanel from '@/components/WorkflowPanel.vue'
 import StatusDot from '@/components/StatusDot.vue'
+import ObjectPicker from '@/components/ObjectPicker.vue'
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: '草稿',
@@ -1005,6 +1012,11 @@ onMounted(load)
   display: flex;
   gap: 8px;
   margin-top: 12px;
+  align-items: center;
+}
+
+.object-picker-slot {
+  width: 240px;
 }
 
 .tl-title {
