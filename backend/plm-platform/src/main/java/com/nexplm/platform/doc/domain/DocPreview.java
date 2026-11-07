@@ -1,6 +1,7 @@
 package com.nexplm.platform.doc.domain;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -23,6 +24,12 @@ public class DocPreview {
     private String status;
     private String message;
     private Integer pageCount;
+    /**
+     * 转换器名称：仅内存态，供 generate 的响应回填，不落库（表无该列）。
+     * 若要 status 接口也持久返回，需加列 + 迁移脚本（见 docs/06 EXP-20261108-04 遗留）。
+     */
+    @TableField(exist = false)
+    private String converter;
     private Long createdBy;
     private OffsetDateTime createdAt;
     private Long updatedBy;

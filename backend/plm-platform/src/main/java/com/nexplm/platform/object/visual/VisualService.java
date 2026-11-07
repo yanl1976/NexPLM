@@ -51,7 +51,12 @@ public class VisualService {
     private static final Set<String> TO_PDF = Set.of("dwg", "drw", "idw", "cdrw", "slddrw", "catdrawing",
             "dft", "exb", "elk", "doc", "ppt", "pptx", "xps", "report");
 
-    private static final Set<String> IMAGE = Set.of("jpg", "jpeg", "png", "gif", "bmp", "ico", "webp", "tif", "tiff");
+    /**
+     * 浏览器原生可显示的位图。TIFF 不在其中：主流浏览器无法渲染，且 ImagePreviewConverter
+     * 也只做直通（不转 PNG），放进来会让前端拿到打不开的流 → 归入 NONE「下载后本地打开」，
+     * 待接入转换代理后按需转 PNG（EXP-20261108-04 第 6 条）。
+     */
+    private static final Set<String> IMAGE = Set.of("jpg", "jpeg", "png", "gif", "bmp", "ico", "webp");
 
     /** 纯文本：浏览器按文本渲染（前端做 GBK/UTF-8 编码自适应，避免国内 csv/txt 乱码）。 */
     private static final Set<String> PLAIN_TEXT = Set.of("txt", "md", "csv", "log", "json", "xml", "yml", "yaml");
@@ -79,7 +84,12 @@ public class VisualService {
 
     private VisualDtos.VisualInfo resolve(Long objectId, String objectType, String label) {
         PlmObject object = objectAccessGuard.requireType(objectId, objectType, label);
-        List<FileService.FileView> latest = fileService.listByOwner(objectId, true);
+        // 预览产物（file_role=VIEW，如 preview-xxx.pdf）是 PreviewService 生成的派生物，
+        // 不参与「用什么查看器」的判定：否则文档生成过预览后，判定会从原始格式漂移到产物格式，
+        // 且派生物会被当成「可切换查看的文件」暴露给前端（EXP-20261108-04 第 1 条）。
+        List<FileService.FileView> latest = fileService.listByOwner(objectId, true).stream()
+                .filter(file -> !FileService.ROLE_VIEW.equals(file.fileRole()))
+                .toList();
         List<VisualDtos.VisualFile> files = latest.stream()
                 .sorted(Comparator.comparing((FileService.FileView f) -> !FileService.ROLE_MAIN.equals(f.fileRole()))
                         .thenComparing(f -> f.ext() == null ? "" : f.ext()))

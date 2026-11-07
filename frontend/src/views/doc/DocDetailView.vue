@@ -633,10 +633,10 @@ async function openPreview(fileId?: string): Promise<void> {
       localFile.value = visual.file
       return
     }
-    const current = await docApi.preview(docId.value)
+    const current = await docApi.preview(docId.value, fileId)
     previewInfo.value = current
     if (fileId) {
-      if (current.sourceFileId !== fileId || current.status !== 'READY') {
+      if (current.status !== 'READY') {
         await generatePreview(fileId)
       } else {
         await loadPreviewBlob()

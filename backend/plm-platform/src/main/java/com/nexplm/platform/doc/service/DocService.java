@@ -431,12 +431,20 @@ public class DocService {
 
     // ------------------------------------------------------------ 内部
 
+    /**
+     * 文件数（含 VIEW 派生物）+ 主文件（无 MAIN 时取排序第一）。
+     * <p>主文件候选排除 VIEW：预览产物不能充当文档主文件，否则只有预览的文档
+     * 会把 file_ext 写成 pdf、main_file_id 指向 preview-xxx.pdf（EXP-20261108-04）。</p>
+     */
     private void refreshFileStats(Long docId) {
         List<FileService.FileView> files = fileService.listByOwner(docId, true);
         FileService.FileView main = files.stream()
                 .filter(file -> FileService.ROLE_MAIN.equals(file.fileRole()))
                 .findFirst()
-                .orElse(files.isEmpty() ? null : files.get(0));
+                .orElseGet(() -> files.stream()
+                        .filter(file -> !FileService.ROLE_VIEW.equals(file.fileRole()))
+                        .findFirst()
+                        .orElse(null));
         docMapper.updateFileStats(docId, files.size(),
                 main == null ? null : main.fileId(),
                 main == null ? null : main.ext());

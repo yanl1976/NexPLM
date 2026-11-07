@@ -270,8 +270,9 @@ export const docApi = {
   removeFile(id: string, linkId: string): Promise<void> {
     return http.delete<void>(`/docs/${id}/files/${linkId}`)
   },
-  preview(id: string): Promise<DocPreviewStatus> {
-    return http.get<DocPreviewStatus>(`/docs/${id}/preview`)
+  /** 预览状态：传 fileId 时精确取该源文件的记录（一个文档可按源文件存多条） */
+  preview(id: string, fileId?: string): Promise<DocPreviewStatus> {
+    return http.get<DocPreviewStatus>(`/docs/${id}/preview`, fileId ? { fileId } : undefined)
   },
   generatePreview(id: string, fileId?: string): Promise<DocPreviewStatus> {
     const suffix = fileId ? `?fileId=${encodeURIComponent(fileId)}` : ''

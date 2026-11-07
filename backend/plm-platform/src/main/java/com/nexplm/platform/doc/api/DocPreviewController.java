@@ -31,8 +31,9 @@ public class DocPreviewController {
     @Operation(summary = "预览状态（NONE/PENDING/READY/FAILED/SKIPPED）")
     @GetMapping
     @PreAuthorize("hasAuthority('pdm.doc.read')")
-    public Result<DocPreviewDtos.PreviewStatus> status(@PathVariable Long id) {
-        return Result.ok(previewService.status(id));
+    public Result<DocPreviewDtos.PreviewStatus> status(@PathVariable Long id,
+                                                       @RequestParam(value = "fileId", required = false) Long fileId) {
+        return Result.ok(previewService.status(id, fileId));
     }
 
     /**

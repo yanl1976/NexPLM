@@ -16,7 +16,6 @@ import com.nexplm.platform.object.service.ObjectAccessGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -58,8 +57,17 @@ public class PreviewService {
 
     /** 预览状态（取该文档最近一次记录；无记录返回 NONE）。 */
     public DocPreviewDtos.PreviewStatus status(Long objectId) {
+        return status(objectId, null);
+    }
+
+    /**
+     * 预览状态。
+     * <p>一个文档可按源文件存多条记录（唯一键 object_id + source_file_id），
+     * 因此指定 {@code fileId} 时取该源文件的记录；不指定才回退到"最近更新的一条"。</p>
+     */
+    public DocPreviewDtos.PreviewStatus status(Long objectId, Long fileId) {
         objectAccessGuard.requireType(objectId, DocService.OBJECT_TYPE, "文档");
-        DocPreview record = latest(objectId);
+        DocPreview record = latest(objectId, fileId);
         if (record == null) {
             return new DocPreviewDtos.PreviewStatus(null, objectId, null, null, null, "NONE",
                     null, null, null, null, null);
@@ -67,8 +75,14 @@ public class PreviewService {
         return toStatus(record);
     }
 
-    /** 生成/重新生成预览。fileId 为空时取主文件（无主文件取排序第一的文件）。 */
-    @Transactional
+    /**
+     * 生成/重新生成预览。fileId 为空时取主文件（无主文件取排序第一的文件）。
+     *
+     * <p>刻意<b>不加</b> {@code @Transactional}：转换要等在外部 soffice 进程上（最长 90 秒），
+     * 包在事务里会长期占用数据库连接。这里每一步都是独立原子的（findOrCreate=单条 insert、
+     * mark=单条 update、upload/detach=FileService 自己的事务），去掉外层事务反而得到
+     * 更短的锁持有时间与可重试语义（EXP-20261108-04 第 5 条）。</p>
+     */
     public DocPreviewDtos.PreviewStatus generate(Long objectId, Long fileId, Long userId) {
         objectAccessGuard.requireType(objectId, DocService.OBJECT_TYPE, "文档");
         FileService.FileView source = resolveSource(objectId, fileId);
@@ -97,24 +111,30 @@ public class PreviewService {
                 throw new IOException("转换器未返回任何产物");
             }
             PreviewOutput output = outputs.get(0);
-            detachPrevious(objectId, record.getPreviewFileId());
+            Long previousFileId = record.getPreviewFileId();
+            // 先上传新产物、成功后再解绑旧产物。顺序反了会在上传失败时把「原本能看的预览」清掉，
+            // 而异常会被下面的 catch 吞掉、外层事务不回滚，用户直接退化为看不了（EXP-20261108-04 第 3 条）。
             FileService.UploadResult uploaded = fileService.upload(objectId, FileService.ROLE_VIEW, 100,
                     previewName(source.fileName(), output.format()),
                     mimeOf(output.format()),
                     new ByteArrayInputStream(output.content()), userId);
+            detachPrevious(objectId, previousFileId);
             record.setFormat(output.format());
+            record.setConverter(converter.name());
             // 预览产物是 VIEW 角色的文件链接，落库后同步子表统计，
             // 否则详情/列表的文件数会与真实链接数不一致（上传时统计含 VIEW）
             refreshFileStats(objectId);
-            return toStatus(mark(record, "READY", converter.name(), uploaded.fileId(), userId,
+            return toStatus(mark(record, "READY", null, uploaded.fileId(), userId,
                     output.pageCount()));
         } catch (PreviewUnavailableException ex) {
             return toStatus(mark(record, "SKIPPED", ex.getMessage(), null, userId));
         } catch (Exception ex) {
             log.warn("文档预览转换失败 objectId={} fileId={} converter={}", objectId, source.fileId(),
                     converter.name(), ex);
+            // 保留原产物指针：失败时旧预览（未被解绑）仍可继续查看，不能把记录清成"无产物"
+            record.setConverter(converter.name());
             return toStatus(mark(record, "FAILED", ex.getMessage() == null ? ex.toString() : ex.getMessage(),
-                    null, userId));
+                    record.getPreviewFileId(), userId));
         } finally {
             deleteQuietly(workDir);
         }
@@ -142,9 +162,10 @@ public class PreviewService {
                         "文件不属于该文档或不存在：" + fileId));
     }
 
-    private DocPreview latest(Long objectId) {
+    private DocPreview latest(Long objectId, Long fileId) {
         List<DocPreview> rows = previewMapper.selectList(new LambdaQueryWrapper<DocPreview>()
                 .eq(DocPreview::getObjectId, objectId)
+                .eq(fileId != null, DocPreview::getSourceFileId, fileId)
                 .orderByDesc(DocPreview::getUpdatedAt)
                 .last("limit 1"));
         return rows.isEmpty() ? null : rows.get(0);
@@ -221,7 +242,7 @@ public class PreviewService {
         }
         return new DocPreviewDtos.PreviewStatus(record.getId(), record.getObjectId(), record.getSourceFileId(),
                 record.getPreviewFileId(), record.getFormat(), record.getStatus(), record.getMessage(),
-                record.getPageCount(), fileName, null, record.getUpdatedAt());
+                record.getPageCount(), fileName, record.getConverter(), record.getUpdatedAt());
     }
 
     private String previewName(String sourceName, String format) {
@@ -249,13 +270,20 @@ public class PreviewService {
         };
     }
 
-    /** 与 DocService.refreshFileStats 同口径：文件数 + 主文件（无 MAIN 时取排序第一）。 */
+    /**
+     * 与 DocService.refreshFileStats 同口径：文件数（含 VIEW）+ 主文件（无 MAIN 时取排序第一）。
+     * <p>主文件候选必须排除 VIEW 派生物，否则"只有预览产物"的文档会把 doc_master 的主文件
+     * 指成 preview-xxx.pdf（EXP-20261108-04 第 1 条）。</p>
+     */
     private void refreshFileStats(Long docId) {
         List<FileService.FileView> files = fileService.listByOwner(docId, true);
         FileService.FileView main = files.stream()
                 .filter(file -> FileService.ROLE_MAIN.equals(file.fileRole()))
                 .findFirst()
-                .orElse(files.isEmpty() ? null : files.get(0));
+                .orElseGet(() -> files.stream()
+                        .filter(file -> !FileService.ROLE_VIEW.equals(file.fileRole()))
+                        .findFirst()
+                        .orElse(null));
         docMasterMapper.updateFileStats(docId, files.size(),
                 main == null ? null : main.fileId(), main == null ? null : main.ext());
     }
