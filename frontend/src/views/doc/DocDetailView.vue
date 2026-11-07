@@ -312,7 +312,7 @@
     </el-dialog>
 
     <el-dialog v-model="previewVisible" title="文档预览" width="1040px" @closed="clearPreviewUrl">
-      <div v-if="previewLoading" v-loading="true" class="preview-loading" />
+      <div v-if="previewLoading" v-loading="true" element-loading-text="转换中…" class="preview-loading" />
       <!-- 浏览器内可直接渲染的格式（.docx / 电子表格）：不依赖 LibreOffice 转换代理 -->
       <template v-else-if="localEngine && localFile">
         <docx-preview v-if="localEngine === 'DOCX'" :file-id="localFile.fileId" :file-name="localFile.fileName" />
@@ -357,7 +357,7 @@
           :loading="previewLoading"
           @click="generatePreview(previewTargetFileId ?? undefined)"
         >
-          {{ previewInfo?.status === 'READY' ? '重新生成' : '生成预览' }}
+          {{ previewInfo?.status === 'PENDING' ? '转换中…' : previewInfo?.status === 'READY' ? '重新生成' : '生成预览' }}
         </el-button>
       </template>
     </el-dialog>
@@ -455,6 +455,10 @@ const previewTargetFileId = ref<string | null>(null)
  */
 const localEngine = ref<'DOCX' | 'SHEET' | ''>('')
 const localFile = ref<VisualInfo['file']>(null)
+
+/** 预览转换是异步的：轮询间隔与上限（外部 soffice 最长 90 秒，留余量）。 */
+const PREVIEW_POLL_INTERVAL = 1500
+const PREVIEW_POLL_TIMEOUT = 120000
 
 const IMAGE_FORMATS = ['PNG', 'JPG', 'JPEG', 'GIF', 'BMP', 'WEBP']
 const isImagePreview = computed(() =>
@@ -643,6 +647,11 @@ async function openPreview(fileId?: string): Promise<void> {
       }
     } else if (current.status === 'READY') {
       await loadPreviewBlob()
+    } else if (current.status === 'PENDING') {
+      // 上一次触发还在转换（例如中途关闭/刷新过弹窗）：继续跟随进度
+      if ((await waitPreviewSettled(fileId)) && previewInfo.value?.status === 'READY') {
+        await loadPreviewBlob()
+      }
     }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '查询预览状态失败')
@@ -653,10 +662,15 @@ async function openPreview(fileId?: string): Promise<void> {
 
 async function generatePreview(fileId?: string): Promise<void> {
   previewLoading.value = true
+  const target = fileId ?? previewTargetFileId.value ?? undefined
   try {
-    const result = await docApi.generatePreview(docId.value, fileId ?? previewTargetFileId.value ?? undefined)
-    previewInfo.value = result
-    if (result.status === 'READY') {
+    previewInfo.value = await docApi.generatePreview(docId.value, target)
+    // 转换已改为异步：POST 返回 PENDING，需要轮询到终态，弹窗才不会停在「生成中」
+    if (previewInfo.value.status === 'PENDING' && !(await waitPreviewSettled(target))) {
+      ElMessage.warning('转换耗时较长，可稍后重新打开预览查看结果')
+      return
+    }
+    if (previewInfo.value?.status === 'READY') {
       await loadPreviewBlob()
     } else {
       clearPreviewUrl()
@@ -666,6 +680,23 @@ async function generatePreview(fileId?: string): Promise<void> {
   } finally {
     previewLoading.value = false
   }
+}
+
+/** 轮询刷新预览状态直到离开 PENDING；返回 true 表示已到终态（READY/FAILED/SKIPPED）。 */
+async function waitPreviewSettled(target?: string): Promise<boolean> {
+  let waited = 0
+  while (waited < PREVIEW_POLL_TIMEOUT) {
+    await new Promise((resolve) => setTimeout(resolve, PREVIEW_POLL_INTERVAL))
+    waited += PREVIEW_POLL_INTERVAL
+    if (!previewVisible.value) {
+      return false
+    }
+    previewInfo.value = await docApi.preview(docId.value, target)
+    if (previewInfo.value.status !== 'PENDING') {
+      return true
+    }
+  }
+  return false
 }
 
 async function loadPreviewBlob(): Promise<void> {

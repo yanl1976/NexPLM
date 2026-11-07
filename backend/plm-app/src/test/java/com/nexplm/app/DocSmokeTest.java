@@ -322,10 +322,13 @@ class DocSmokeTest {
                 .andExpect(status().isOk())
                 .andReturn();
         long pngFileId = body(pngUpload).path("data").path("fileId").asLong();
-        JsonNode previewReady = call(
+        JsonNode previewAccepted = call(
                 post("/api/v1/docs/{id}/preview?fileId=" + pngFileId, pngDocId), admin, null);
+        assertThat(previewAccepted.path("status").asText()).isEqualTo("PENDING");
+        JsonNode previewReady = waitPreview(pngDocId, pngFileId, admin);
         assertThat(previewReady.path("status").asText()).isEqualTo("READY");
         assertThat(previewReady.path("format").asText()).isEqualTo("PNG");
+        assertThat(previewReady.path("converter").asText()).isEqualTo("image-passthrough");
         assertThat(previewReady.path("previewFileId").asLong()).isPositive();
         long previewFileId = previewReady.path("previewFileId").asLong();
         MvcResult previewDownload = mockMvc.perform(get("/api/v1/files/{fileId}/content", previewFileId)
@@ -458,6 +461,21 @@ class DocSmokeTest {
         }
         MvcResult result = mockMvc.perform(builder).andExpect(status().isOk()).andReturn();
         return body(result).path("data");
+    }
+
+    /**
+     * 预览转换已改为异步：POST 只返回 PENDING，轮询到终态（READY/FAILED/SKIPPED）为止。
+     * 图片直通转换是毫秒级，100 × 100ms 足够。
+     */
+    private JsonNode waitPreview(long docId, long fileId, String token) throws Exception {
+        for (int i = 0; i < 100; i++) {
+            JsonNode status = call(get("/api/v1/docs/{id}/preview?fileId=" + fileId, docId), token, null);
+            if (!"PENDING".equals(status.path("status").asText())) {
+                return status;
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("预览转换未在 10 秒内完成");
     }
 
     private JsonNode body(MvcResult result) throws Exception {

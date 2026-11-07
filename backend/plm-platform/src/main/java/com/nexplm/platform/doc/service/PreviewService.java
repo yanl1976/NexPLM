@@ -1,6 +1,7 @@
 package com.nexplm.platform.doc.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
@@ -13,13 +14,13 @@ import com.nexplm.platform.doc.preview.PreviewOutput;
 import com.nexplm.platform.doc.preview.PreviewUnavailableException;
 import com.nexplm.platform.file.service.FileService;
 import com.nexplm.platform.object.service.ObjectAccessGuard;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -27,23 +28,56 @@ import java.time.OffsetDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 /**
- * 文档预览：选择转换器 → 转换 → 产物入文件仓（file_role=VIEW）→ 登记状态。
- * <p>状态语义：READY 就绪、FAILED 失败（可重试）、SKIPPED 环境不支持该格式（不视为错误）。</p>
+ * 文档预览：选择转换器 → （异步）转换 → 产物入文件仓（file_role=VIEW）→ 登记状态。
+ *
+ * <p>状态语义：NONE 未生成、PENDING 转换中、READY 就绪、FAILED 失败（可重试）、
+ * SKIPPED 环境不支持该格式（不视为错误）。</p>
+ *
+ * <p>转换是<b>异步</b>的：外部 soffice 最长 90 秒，放请求线程里会拖慢响应，也让"只读用户
+ * 随手点一下"就能占满容器线程。提交前完成全部需要请求上下文的动作（数据范围校验、源文件
+ * 解析、转换器选择），再丢进有界线程池，接口立即返回 PENDING 由前端轮询。</p>
  */
 @Service
 public class PreviewService {
 
     private static final Logger log = LoggerFactory.getLogger(PreviewService.class);
     private static final int MESSAGE_MAX = 500;
+    /** PENDING 超过该时长视为卡死（进程重启/线程被回收），允许重新触发而不是永久占位。 */
+    private static final int PENDING_STALE_MINUTES = 5;
+    /** 转换并发数：外部进程（soffice）吃 CPU/内存，2 路足够，同时充当全局限流。 */
+    private static final int CONVERT_THREADS = 2;
+    /** 排队上限：满了直接返回「可重试的失败」，不无限堆积、也不阻塞请求线程。 */
+    private static final int CONVERT_QUEUE = 8;
 
     private final DocPreviewMapper previewMapper;
     private final DocMasterMapper docMasterMapper;
     private final ObjectAccessGuard objectAccessGuard;
     private final FileService fileService;
     private final List<PreviewConverter> converters;
+
+    /** 转换线程池：转换要等外部进程（最长 90s），必须离开请求线程；有界队列即资源护栏。 */
+    private final ExecutorService converterPool = new ThreadPoolExecutor(
+            CONVERT_THREADS, CONVERT_THREADS, 0L, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(CONVERT_QUEUE),
+            runnable -> {
+                Thread thread = new Thread(runnable, "plm-preview-converter");
+                thread.setDaemon(true);
+                return thread;
+            },
+            new ThreadPoolExecutor.AbortPolicy());
+
+    /** 在途任务键（objectId:sourceFileId）：单实例去重，与 DB 的 PENDING CAS 双保险。 */
+    private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
 
     public PreviewService(DocPreviewMapper previewMapper, DocMasterMapper docMasterMapper,
                           ObjectAccessGuard objectAccessGuard,
@@ -53,6 +87,11 @@ public class PreviewService {
         this.objectAccessGuard = objectAccessGuard;
         this.fileService = fileService;
         this.converters = converters;
+    }
+
+    @PreDestroy
+    void shutdown() {
+        converterPool.shutdownNow();
     }
 
     /** 预览状态（取该文档最近一次记录；无记录返回 NONE）。 */
@@ -76,30 +115,59 @@ public class PreviewService {
     }
 
     /**
-     * 生成/重新生成预览。fileId 为空时取主文件（无主文件取排序第一的文件）。
+     * 触发预览生成/重试。fileId 为空时取主文件（无主文件取排序第一的文件）。
      *
-     * <p>刻意<b>不加</b> {@code @Transactional}：转换要等在外部 soffice 进程上（最长 90 秒），
-     * 包在事务里会长期占用数据库连接。这里每一步都是独立原子的（findOrCreate=单条 insert、
-     * mark=单条 update、upload/detach=FileService 自己的事务），去掉外层事务反而得到
-     * 更短的锁持有时间与可重试语义（EXP-20261108-04 第 5 条）。</p>
+     * <p>同步部分只做三件事：数据范围校验（必须用请求线程的 CurrentUser）、解析源文件、
+     * 选择转换器并抢占 PENDING；实际转换丢线程池，接口立即返回 PENDING。</p>
+     *
+     * <p>刻意<b>不加</b> {@code @Transactional}：每一步都是独立原子的（findOrCreate=单条 insert、
+     * mark=单条 update、upload/detach=FileService 自己的事务），外层事务只会把外部进程等待
+     * 包成长期占用连接的长事务（EXP-20261108-04 第 5 条）。</p>
      */
     public DocPreviewDtos.PreviewStatus generate(Long objectId, Long fileId, Long userId) {
         objectAccessGuard.requireType(objectId, DocService.OBJECT_TYPE, "文档");
         FileService.FileView source = resolveSource(objectId, fileId);
         String ext = source.ext() == null ? "" : source.ext().toLowerCase(Locale.ROOT);
         DocPreview record = findOrCreate(objectId, source.fileId(), userId);
-        mark(record, "PENDING", null, null, userId);
 
         PreviewConverter converter = converters.stream()
                 .filter(item -> item.supports(ext))
                 .findFirst()
                 .orElse(null);
         if (converter == null) {
+            // 无转换器是纯内存判断，保持同步返回，前端不必轮询
             record.setConverter(null);
             return toStatus(mark(record, "SKIPPED",
                     "暂不支持 ." + (ext.isEmpty() ? "未知" : ext) + " 格式的在线预览，可上传 PDF 或图片附件", null, userId));
         }
 
+        String key = objectId + ":" + source.fileId();
+        if (inFlight.contains(key) || !claimPending(record, converter.name(), userId)) {
+            // 已有在途任务（或另一实例刚抢到）→ 返回当前状态，不重复起转换
+            return toStatus(reload(record.getId()));
+        }
+
+        inFlight.add(key);
+        try {
+            converterPool.execute(() -> runConversion(objectId, record.getId(), source, converter, userId, key));
+        } catch (RejectedExecutionException ex) {
+            inFlight.remove(key);
+            log.warn("预览转换队列已满 objectId={} fileId={}", objectId, source.fileId());
+            return toStatus(mark(reload(record.getId()), "FAILED",
+                    "预览转换排队已满，请稍后重试", record.getPreviewFileId(), userId));
+        }
+        return toStatus(reload(record.getId()));
+    }
+
+    // ------------------------------------------------------------ 异步转换
+
+    /**
+     * 线程池里执行的实际转换。
+     * <p>所有上下文（objectId/userId/源文件/转换器）都在提交前取好，线程内不再碰 CurrentUser。</p>
+     */
+    private void runConversion(Long objectId, Long recordId, FileService.FileView source,
+                               PreviewConverter converter, Long userId, String key) {
+        String ext = source.ext() == null ? "" : source.ext().toLowerCase(Locale.ROOT);
         Path workDir = null;
         try {
             workDir = Files.createTempDirectory("plm-preview-");
@@ -112,33 +180,72 @@ public class PreviewService {
                 throw new IOException("转换器未返回任何产物");
             }
             PreviewOutput output = outputs.get(0);
-            Long previousFileId = record.getPreviewFileId();
-            // 先上传新产物、成功后再解绑旧产物。顺序反了会在上传失败时把「原本能看的预览」清掉，
-            // 而异常会被下面的 catch 吞掉、外层事务不回滚，用户直接退化为看不了（EXP-20261108-04 第 3 条）。
+            DocPreview record = reload(recordId);
+            Long previousFileId = record == null ? null : record.getPreviewFileId();
+            // 先上传新产物、成功后再解绑旧产物：顺序反了会在上传失败时把「原本能看的预览」清掉
+            // （异常走 settle，且外层没有事务可回滚，见 EXP-20261108-04 第 3 条）
             FileService.UploadResult uploaded = fileService.upload(objectId, FileService.ROLE_VIEW, 100,
                     previewName(source.fileName(), output.format()),
                     mimeOf(output.format()),
                     new ByteArrayInputStream(output.content()), userId);
             detachPrevious(objectId, previousFileId);
-            record.setFormat(output.format());
-            record.setConverter(converter.name());
-            // 预览产物是 VIEW 角色的文件链接，落库后同步子表统计，
-            // 否则详情/列表的文件数会与真实链接数不一致（上传时统计含 VIEW）
+            DocPreview done = reload(recordId);
+            if (done == null) {
+                throw new IOException("预览记录已不存在：" + recordId);
+            }
+            done.setFormat(output.format());
+            done.setConverter(converter.name());
+            // 预览产物是 VIEW 角色的文件链接，落库后同步子表统计（上传时统计已含 VIEW）
             refreshFileStats(objectId);
-            return toStatus(mark(record, "READY", null, uploaded.fileId(), userId,
-                    output.pageCount()));
+            mark(done, "READY", null, uploaded.fileId(), userId, output.pageCount());
         } catch (PreviewUnavailableException ex) {
-            return toStatus(mark(record, "SKIPPED", ex.getMessage(), null, userId));
+            settle(recordId, converter, "SKIPPED", ex.getMessage(), userId);
         } catch (Exception ex) {
             log.warn("文档预览转换失败 objectId={} fileId={} converter={}", objectId, source.fileId(),
                     converter.name(), ex);
-            // 保留原产物指针：失败时旧预览（未被解绑）仍可继续查看，不能把记录清成"无产物"
-            record.setConverter(converter.name());
-            return toStatus(mark(record, "FAILED", ex.getMessage() == null ? ex.toString() : ex.getMessage(),
-                    record.getPreviewFileId(), userId));
+            settle(recordId, converter, "FAILED",
+                    ex.getMessage() == null ? ex.toString() : ex.getMessage(), userId);
         } finally {
             deleteQuietly(workDir);
+            inFlight.remove(key);
         }
+    }
+
+    /** 转换失败/跳过着陆：保留原产物指针，避免"这次失败把原本能看的预览也清掉"。 */
+    private void settle(Long recordId, PreviewConverter converter, String status, String message, Long userId) {
+        DocPreview record = reload(recordId);
+        if (record == null) {
+            return;
+        }
+        record.setConverter(converter.name());
+        mark(record, status, message, record.getPreviewFileId(), userId);
+    }
+
+    /**
+     * 抢占 PENDING（DB 侧 CAS）：只有"当前不是 PENDING"或"PENDING 已超时"才抢得到。
+     * <p>多实例并发触发时只有一个能把状态改成 PENDING，其余直接返回当前状态。</p>
+     */
+    private boolean claimPending(DocPreview record, String converterName, Long userId) {
+        OffsetDateTime now = OffsetDateTime.now();
+        int rows = previewMapper.update(null, new LambdaUpdateWrapper<DocPreview>()
+                .eq(DocPreview::getId, record.getId())
+                .and(w -> w.ne(DocPreview::getStatus, "PENDING")
+                        .or()
+                        .lt(DocPreview::getUpdatedAt, now.minusMinutes(PENDING_STALE_MINUTES)))
+                .set(DocPreview::getStatus, "PENDING")
+                .set(DocPreview::getMessage, null)
+                .set(DocPreview::getConverter, converterName)
+                .set(DocPreview::getUpdatedBy, userId)
+                .set(DocPreview::getUpdatedAt, now));
+        if (rows <= 0) {
+            log.debug("预览已在转换中，跳过重复触发 objectId={} fileId={}",
+                    record.getObjectId(), record.getSourceFileId());
+        }
+        return rows > 0;
+    }
+
+    private DocPreview reload(Long recordId) {
+        return recordId == null ? null : previewMapper.selectById(recordId);
     }
 
     // ------------------------------------------------------------ 内部
@@ -186,7 +293,8 @@ public class PreviewService {
         record.setObjectId(objectId);
         record.setSourceFileId(sourceFileId);
         record.setFormat("PDF");
-        record.setStatus("PENDING");
+        // 新建记录尚未开始转换：用 NONE 而不是 PENDING，否则下面的 PENDING CAS 会把自己挡在门外
+        record.setStatus("NONE");
         record.setCreatedBy(userId);
         record.setCreatedAt(now);
         record.setUpdatedBy(userId);
