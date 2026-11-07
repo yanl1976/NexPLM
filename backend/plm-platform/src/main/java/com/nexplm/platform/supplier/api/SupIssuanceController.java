@@ -103,6 +103,40 @@ public class SupIssuanceController {
                 CurrentUser.userId()));
     }
 
+    @Operation(summary = "标记已读（进入详情即已读，旧系统 ReadState 等价物）")
+    @PostMapping("/sup/issuances/{id}/read")
+    @PreAuthorize("hasAuthority('sup.issuance.read')")
+    public Result<Void> markRead(@PathVariable Long id) {
+        issuanceService.markRead(id, CurrentUser.companyId());
+        return Result.ok(null);
+    }
+
+    @Operation(summary = "置/取消重要标记")
+    @PostMapping("/sup/issuances/{id}/important")
+    @PreAuthorize("hasAuthority('sup.issuance.read')")
+    public Result<Void> setImportant(@PathVariable Long id, @RequestParam boolean important) {
+        issuanceService.setImportant(id, CurrentUser.companyId(), important);
+        return Result.ok(null);
+    }
+
+    @Operation(summary = "协同回复（多轮，可带附件与逐条确认）")
+    @PostMapping("/sup/issuances/{id}/replies")
+    @PreAuthorize("hasAuthority('sup.coordination.write')")
+    @Audit(module = "SUP", action = "ISSUANCE_REPLY", objectType = "SupIssuance")
+    public Result<SupIssuanceDtos.IssuanceDetail> reply(
+            @PathVariable Long id, @Valid @RequestBody SupIssuanceDtos.ReplyReq req) {
+        return Result.ok(issuanceService.reply(id, req, CurrentUser.companyId(),
+                CurrentUser.userId()));
+    }
+
+    @Operation(summary = "附件已拉取标记（旧系统 PULLSTATE）")
+    @PostMapping("/sup/issuances/{id}/items/{itemId}/pull")
+    @PreAuthorize("hasAuthority('sup.coordination.write')")
+    public Result<Void> markItemPulled(@PathVariable Long id, @PathVariable Long itemId) {
+        issuanceService.markItemPulled(id, itemId, CurrentUser.companyId());
+        return Result.ok(null);
+    }
+
     @Operation(summary = "打包导出（manifest.csv + 零件主文件）")
     @PostMapping(value = "/sup/issuances/{id}/export", produces = "application/zip")
     @PreAuthorize("hasAuthority('sup.issuance.read')")

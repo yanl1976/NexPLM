@@ -401,6 +401,7 @@ export const ISSUANCE_STATUS_LABEL: Record<string, string> = {
   CANCELLED: '已取消'
 }
 
+/** 明细行状态：pullState=附件是否已拉取，replyState=该条图纸是否被确认（批次 E-1 新增）。 */
 export interface IssuanceItemRow {
   id: string
   objectType: string
@@ -409,6 +410,21 @@ export interface IssuanceItemRow {
   itemName?: string | null
   revision?: string | null
   sortNo: number
+  pullState?: string | null
+  replyState?: string | null
+}
+
+/** 协同回复（往来记录）。 */
+export interface IssuanceReplyRow {
+  id: string
+  replyType: string
+  content?: string | null
+  promisedDate?: string | null
+  attachmentFileIds?: string[]
+  attachmentNames?: string[]
+  repliedBy?: string | null
+  repliedByName?: string | null
+  repliedAt?: string | null
 }
 
 export interface IssuanceRow {
@@ -421,9 +437,15 @@ export interface IssuanceRow {
   type: string
   status: string
   itemCount: number
+  replyCount?: number
   sentAt?: string | null
   receivedAt?: string | null
   receiptFileName?: string | null
+  important?: boolean
+  readAt?: string | null
+  effectiveDate?: string | null
+  expireDate?: string | null
+  supplierGroup?: string | null
   updatedAt?: string | null
 }
 
@@ -432,6 +454,25 @@ export interface IssuanceDetail extends IssuanceRow {
   receiptFileId?: string | null
   receiptNote?: string | null
   items: IssuanceItemRow[]
+  replies: IssuanceReplyRow[]
+}
+
+export interface IssuanceReplyReq {
+  replyType?: string
+  content?: string | null
+  promisedDate?: string | null
+  attachmentFileIds?: string[]
+  attachmentNames?: string[]
+  confirmedItemIds?: string[]
+  rejectedItemIds?: string[]
+}
+
+/** 协同回复类型（旧系统没有业务分类，本批按需求方口径定义）。 */
+export const ISSUANCE_REPLY_TYPE_LABEL: Record<string, string> = {
+  ACK: '已收阅',
+  CONFIRM: '图纸确认',
+  COMMIT_DATE: '承诺交期',
+  REJECT: '无法满足'
 }
 
 export interface IssuanceSaveReq {
@@ -439,6 +480,11 @@ export interface IssuanceSaveReq {
   title: string
   type?: string
   remark?: string | null
+  /** 批次 E-1：供应商分组 / 生效失效 / 重要标记（失效由服务端在 send/reply/receipt 校验）。 */
+  supplierGroup?: string | null
+  effectiveDate?: string | null
+  expireDate?: string | null
+  important?: boolean
   items: { objectType?: string; objectId: string }[]
 }
 
@@ -475,6 +521,19 @@ export const issuanceApi = {
   },
   bySupplier(supplierId: string): Promise<IssuanceRow[]> {
     return http.get<IssuanceRow[]>(`/sup/suppliers/${supplierId}/issuances`)
+  },
+  /** 协同回复（多轮，可带附件与逐条确认/驳回）。 */
+  reply(id: string, req: IssuanceReplyReq): Promise<IssuanceDetail> {
+    return http.post<IssuanceDetail>(`/sup/issuances/${id}/replies`, req)
+  },
+  markRead(id: string): Promise<void> {
+    return http.post<void>(`/sup/issuances/${id}/read`)
+  },
+  setImportant(id: string, important: boolean): Promise<void> {
+    return http.post<void>(`/sup/issuances/${id}/important?important=${important}`)
+  },
+  markItemPulled(id: string, itemId: string): Promise<void> {
+    return http.post<void>(`/sup/issuances/${id}/items/${itemId}/pull`)
   },
   /** 上传回执文件（不绑对象，文件中心只存内容），返回 fileId 供登记。 */
   async uploadReceipt(file: File): Promise<{ fileId: string; fileName: string }> {

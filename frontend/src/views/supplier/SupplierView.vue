@@ -289,6 +289,18 @@
           <span class="hint">发放单固定清单快照（编码/名称/版本）；导出为 manifest.csv + 零件主文件</span>
         </div>
         <el-table :data="issuances" border size="small">
+          <el-table-column label="" width="46" align="center">
+            <template #default="{ row }">
+              <span
+                class="star"
+                :style="{ color: row.important ? '#e6a23c' : '#c0c4cc' }"
+                :title="row.important ? '取消重要' : '标记重要'"
+                @click="onToggleImportant(row)"
+              >
+                {{ row.important ? '★' : '☆' }}
+              </span>
+            </template>
+          </el-table-column>
           <el-table-column prop="code" label="单号" width="130" />
           <el-table-column prop="title" label="标题" min-width="150" show-overflow-tooltip />
           <el-table-column label="类型" width="100" align="center">
@@ -298,6 +310,20 @@
           <el-table-column label="状态" width="90" align="center">
             <template #default="{ row }">
               <StatusDot :tone="issuanceStatusTone(row.status)" :label="ISSUANCE_STATUS_LABEL[row.status] ?? row.status" />
+            </template>
+          </el-table-column>
+          <el-table-column label="往来" width="80" align="center">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openIssuanceDetail(row.id)">
+                {{ row.replyCount ?? 0 }} 条
+              </el-button>
+            </template>
+          </el-table-column>
+          <el-table-column label="有效期" width="120" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.expireDate && isExpired(row.expireDate)" size="small" type="danger">已失效</el-tag>
+              <span v-else-if="row.expireDate" class="hint">{{ row.expireDate }}</span>
+              <span v-else class="hint">-</span>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="230" align="center">
@@ -572,6 +598,34 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="生效/失效">
+          <el-date-picker
+            v-model="issuanceForm.effectiveDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="生效日期"
+            style="width: 150px"
+          />
+          <span class="label-gap">至</span>
+          <el-date-picker
+            v-model="issuanceForm.expireDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="失效日期"
+            style="width: 150px"
+          />
+          <span class="hint form-hint">过期后服务端拒绝发送/回执/回复</span>
+        </el-form-item>
+        <el-form-item label="供应商分组">
+          <el-input
+            v-model="issuanceForm.supplierGroup"
+            maxlength="100"
+            placeholder="可选，如：紧固件组"
+            style="width: 220px"
+          />
+          <span class="label-gap">重要</span>
+          <el-switch v-model="issuanceForm.important" />
+        </el-form-item>
         <el-form-item label="发放零件" required>
           <el-select
             v-model="issuanceForm.objectIds"
@@ -626,8 +680,18 @@
         <el-descriptions-item label="回执文件">
           {{ issuanceDetail.receiptFileName || '-' }}
         </el-descriptions-item>
-        <el-descriptions-item label="回执说明" :span="3">
+        <el-descriptions-item label="回执说明" :span="2">
           {{ issuanceDetail.receiptNote || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="有效期">
+          <el-tag v-if="issuanceDetail.expireDate && isExpired(issuanceDetail.expireDate)" size="small" type="danger">
+            已失效（{{ issuanceDetail.expireDate }}）
+          </el-tag>
+          <span v-else-if="issuanceDetail.expireDate">{{ issuanceDetail.effectiveDate || '-' }} 至 {{ issuanceDetail.expireDate }}</span>
+          <span v-else>-</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="供应商分组" :span="3">
+          {{ issuanceDetail.supplierGroup || '-' }}
         </el-descriptions-item>
       </el-descriptions>
       <el-table
@@ -638,15 +702,142 @@
         class="rating-items"
       >
         <el-table-column prop="itemCode" label="零件编码" width="140" />
-        <el-table-column prop="itemName" label="零件名称" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="revision" label="版本" width="80" align="center" />
+        <el-table-column prop="itemName" label="零件名称" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="revision" label="版本" width="70" align="center" />
+        <el-table-column label="附件" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.pullState === 'PULL' ? 'success' : 'info'">
+              {{ row.pullState === 'PULL' ? '已拉取' : '未拉取' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="确认" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag
+              v-if="row.replyState === 'CONFIRMED'"
+              size="small"
+              type="success"
+            >已确认</el-tag>
+            <el-tag v-else-if="row.replyState === 'REJECTED'" size="small" type="danger">无法满足</el-tag>
+            <el-tag v-else size="small" type="info">待确认</el-tag>
+          </template>
+        </el-table-column>
       </el-table>
+
+      <div class="section-title reply-title">
+        协同往来（{{ issuanceDetail?.replies?.length ?? 0 }}）
+        <el-button
+          v-if="canWrite && issuanceDetail && ['SENT', 'RECEIVED'].includes(issuanceDetail.status)"
+          size="small"
+          type="primary"
+          plain
+          class="reply-btn"
+          @click="openReplyDialog"
+        >
+          登记回复
+        </el-button>
+      </div>
+      <el-empty
+        v-if="issuanceDetail && !issuanceDetail.replies?.length"
+        description="还没有往来回复"
+        :image-size="48"
+      />
+      <el-timeline v-else-if="issuanceDetail" class="reply-timeline">
+        <el-timeline-item
+          v-for="item in issuanceDetail.replies"
+          :key="item.id"
+          :timestamp="formatTime(item.repliedAt)"
+          placement="top"
+        >
+          <div class="reply-head">
+            <el-tag size="small">{{ ISSUANCE_REPLY_TYPE_LABEL[item.replyType] ?? item.replyType }}</el-tag>
+            <span class="hint">{{ item.repliedByName || '供应商' }}</span>
+            <span v-if="item.promisedDate" class="hint">承诺交期：{{ item.promisedDate }}</span>
+          </div>
+          <div class="reply-content">{{ item.content || '-' }}</div>
+          <div v-if="item.attachmentNames?.length" class="hint">
+            附件：{{ item.attachmentNames.join('、') }}
+          </div>
+        </el-timeline-item>
+      </el-timeline>
+
       <div v-if="canWrite && issuanceDetail?.status === 'SENT'" class="receipt-bar">
         <el-upload :show-file-list="false" :http-request="onReceiptUpload">
           <el-button size="small" type="primary" plain>上传回执（对方签收单）</el-button>
         </el-upload>
         <span class="hint">登记后发放单置为「已回执」；文件存文件中心，仅登记 fileId</span>
       </div>
+    </el-dialog>
+
+    <!-- 协同回复（批次 E-1：多轮往来 + 逐条确认 + 附件） -->
+    <el-dialog v-model="replyVisible" title="登记协同回复" width="660px" destroy-on-close>
+      <el-form label-width="96px">
+        <el-form-item label="回复类型">
+          <el-select v-model="replyForm.replyType" style="width: 180px">
+            <el-option
+              v-for="(label, value) in ISSUANCE_REPLY_TYPE_LABEL"
+              :key="value"
+              :label="label"
+              :value="value"
+            />
+          </el-select>
+          <span v-if="replyForm.replyType === 'COMMIT_DATE'" class="label-gap">承诺交期</span>
+          <el-date-picker
+            v-if="replyForm.replyType === 'COMMIT_DATE'"
+            v-model="replyForm.promisedDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            style="width: 160px"
+          />
+        </el-form-item>
+        <el-form-item label="回复内容">
+          <el-input v-model="replyForm.content" type="textarea" :rows="3" maxlength="2000" />
+        </el-form-item>
+        <el-form-item label="附件">
+          <el-upload :show-file-list="false" :http-request="onReplyUpload">
+            <el-button size="small" plain>上传附件</el-button>
+          </el-upload>
+          <span v-if="replyForm.attachmentNames.length" class="hint file-list">
+            {{ replyForm.attachmentNames.join('、') }}
+          </span>
+        </el-form-item>
+        <el-form-item label="逐条确认">
+          <el-select
+            v-model="replyForm.confirmedItemIds"
+            multiple
+            collapse-tags
+            placeholder="确认无误的零件"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in issuanceDetail?.items ?? []"
+              :key="item.id"
+              :label="`${item.itemCode} ${item.itemName}`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="无法满足">
+          <el-select
+            v-model="replyForm.rejectedItemIds"
+            multiple
+            collapse-tags
+            placeholder="无法满足的零件（可选）"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in issuanceDetail?.items ?? []"
+              :key="item.id"
+              :label="`${item.itemCode} ${item.itemName}`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="replyVisible = false">取消</el-button>
+        <el-button type="primary" :loading="replySaving" @click="onSaveReply">登记</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -661,6 +852,7 @@ import {
   ADMISSION_STATUS_LABEL,
   ADMISSION_TYPE_LABEL,
   issuanceApi,
+  ISSUANCE_REPLY_TYPE_LABEL,
   ISSUANCE_STATUS_LABEL,
   ISSUANCE_TYPE_LABEL,
   ratingApi,
@@ -826,7 +1018,24 @@ const issuanceForm = reactive({
   title: '',
   type: 'DESIGN',
   remark: '',
-  objectIds: [] as string[]
+  objectIds: [] as string[],
+  effectiveDate: null as string | null,
+  expireDate: null as string | null,
+  supplierGroup: '',
+  important: false
+})
+
+/** 协同回复（批次 E-1）：多轮往来，可带附件与逐条确认。 */
+const replyVisible = ref(false)
+const replySaving = ref(false)
+const replyForm = reactive({
+  replyType: 'ACK',
+  content: '',
+  promisedDate: null as string | null,
+  attachmentFileIds: [] as string[],
+  attachmentNames: [] as string[],
+  confirmedItemIds: [] as string[],
+  rejectedItemIds: [] as string[]
 })
 
 onMounted(async () => {
@@ -1404,6 +1613,10 @@ function openIssuanceDialog(): void {
   issuanceForm.type = 'DESIGN'
   issuanceForm.remark = ''
   issuanceForm.objectIds = []
+  issuanceForm.effectiveDate = null
+  issuanceForm.expireDate = null
+  issuanceForm.supplierGroup = ''
+  issuanceForm.important = false
   issuanceItemOptions.value = []
   issuanceVisible.value = true
 }
@@ -1447,6 +1660,10 @@ async function onSaveIssuance(): Promise<void> {
       title: issuanceForm.title.trim(),
       type: issuanceForm.type,
       remark: issuanceForm.remark.trim() || null,
+      supplierGroup: issuanceForm.supplierGroup.trim() || undefined,
+      effectiveDate: issuanceForm.effectiveDate || undefined,
+      expireDate: issuanceForm.expireDate || undefined,
+      important: issuanceForm.important,
       items: issuanceForm.objectIds.map((objectId) => ({ objectType: 'PdmItem', objectId }))
     })
     ElMessage.success('发放单草稿已保存')
@@ -1515,8 +1732,87 @@ async function openIssuanceDetail(id: string): Promise<void> {
   try {
     issuanceDetail.value = await issuanceApi.detail(id)
     issuanceDetailVisible.value = true
+    // 打开即已读（旧系统进入查看器自动置 Read，CoordinationManager.js:214-228）
+    if (issuanceDetail.value && !issuanceDetail.value.readAt) {
+      await issuanceApi.markRead(id)
+      issuanceDetail.value.readAt = new Date().toISOString()
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载发放单失败')
+  }
+}
+
+function isExpired(expireDate?: string | null): boolean {
+  if (!expireDate) {
+    return false
+  }
+  return expireDate < new Date().toISOString().slice(0, 10)
+}
+
+async function onToggleImportant(row: IssuanceRow): Promise<void> {
+  try {
+    await issuanceApi.setImportant(row.id, !row.important)
+    row.important = !row.important
+    if (issuanceDetail.value?.id === row.id) {
+      issuanceDetail.value.important = row.important
+    }
+    ElMessage.success(row.important ? '已标记重要' : '已取消重要')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '操作失败')
+  }
+}
+
+function openReplyDialog(): void {
+  replyForm.replyType = 'ACK'
+  replyForm.content = ''
+  replyForm.promisedDate = null
+  replyForm.attachmentFileIds = []
+  replyForm.attachmentNames = []
+  replyForm.confirmedItemIds = []
+  replyForm.rejectedItemIds = []
+  replyVisible.value = true
+}
+
+/** 回复附件：走文件中心上传（不绑对象），拿 fileId 由回复接口登记。 */
+async function onReplyUpload(options: UploadRequestOptions): Promise<void> {
+  try {
+    const uploaded = await issuanceApi.uploadReceipt(options.file as File)
+    replyForm.attachmentFileIds.push(uploaded.fileId)
+    replyForm.attachmentNames.push(uploaded.fileName)
+    ElMessage.success('附件已上传')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '上传附件失败')
+  }
+}
+
+async function onSaveReply(): Promise<void> {
+  if (!issuanceDetail.value) {
+    return
+  }
+  if (replyForm.replyType === 'COMMIT_DATE' && !replyForm.promisedDate) {
+    ElMessage.warning('承诺交期需要选择日期')
+    return
+  }
+  replySaving.value = true
+  try {
+    issuanceDetail.value = await issuanceApi.reply(issuanceDetail.value.id, {
+      replyType: replyForm.replyType,
+      content: replyForm.content.trim() || null,
+      promisedDate: replyForm.promisedDate,
+      attachmentFileIds: replyForm.attachmentFileIds,
+      attachmentNames: replyForm.attachmentNames,
+      confirmedItemIds: replyForm.confirmedItemIds,
+      rejectedItemIds: replyForm.rejectedItemIds
+    })
+    replyVisible.value = false
+    ElMessage.success('协同回复已登记')
+    if (detail.value) {
+      await loadIssuances(detail.value.id)
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '登记回复失败')
+  } finally {
+    replySaving.value = false
   }
 }
 
@@ -1682,6 +1978,50 @@ function statusTone(value: string): StatusTone {
 .label-gap {
   margin: 0 8px;
   color: #606266;
+}
+
+/* ---- 协同回复（批次 E-1） ---- */
+.star {
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+}
+
+.form-hint {
+  margin-left: 8px;
+}
+
+.reply-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 8px;
+}
+
+.reply-btn {
+  margin-left: auto;
+}
+
+.reply-timeline {
+  margin-top: 6px;
+  padding-left: 2px;
+}
+
+.reply-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.reply-content {
+  white-space: pre-wrap;
+  color: #303133;
+}
+
+.file-list {
+  margin-left: 8px;
 }
 
 .pager {

@@ -1,11 +1,16 @@
 package com.nexplm.platform.supplier.service;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexplm.common.api.PageResult;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.file.service.FileService;
+import com.nexplm.platform.notify.service.NotifyService;
 import com.nexplm.platform.supplier.api.SupIssuanceDtos;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -41,24 +47,36 @@ import java.util.zip.ZipOutputStream;
 @Service
 public class SupplierIssuanceService {
 
+    private static final Logger log = LoggerFactory.getLogger(SupplierIssuanceService.class);
+
     private static final Set<String> TYPES = Set.of("DESIGN", "QUALITY", "OTHER");
+    private static final Set<String> REPLY_TYPES = Set.of("ACK", "CONFIRM", "COMMIT_DATE", "REJECT");
+    private static final Map<String, String> REPLY_TYPE_LABELS = Map.of(
+            "ACK", "已收阅", "CONFIRM", "图纸确认", "COMMIT_DATE", "承诺交期", "REJECT", "无法满足");
     private static final String ILLEGAL_NAME = "[\\\\/:*?\"<>|]";
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private static final String ISSUANCE_SELECT = """
             SELECT a.*, s.code AS supplier_code, s.name AS supplier_name,
                    (SELECT COUNT(1) FROM sup_issuance_item i
-                     WHERE i.issuance_id = a.id) AS item_count
+                     WHERE i.issuance_id = a.id) AS item_count,
+                   (SELECT COUNT(1) FROM sup_issuance_reply r
+                     WHERE r.issuance_id = a.id AND r.deleted = false) AS reply_count
               FROM sup_issuance a
               JOIN sup_supplier s ON s.id = a.supplier_id
             """;
 
     private final JdbcTemplate jdbcTemplate;
     private final FileService fileService;
+    private final ObjectMapper objectMapper;
+    private final NotifyService notifyService;
 
-    public SupplierIssuanceService(JdbcTemplate jdbcTemplate, FileService fileService) {
+    public SupplierIssuanceService(JdbcTemplate jdbcTemplate, FileService fileService,
+                                   ObjectMapper objectMapper, NotifyService notifyService) {
         this.jdbcTemplate = jdbcTemplate;
         this.fileService = fileService;
+        this.objectMapper = objectMapper;
+        this.notifyService = notifyService;
     }
 
     public PageResult<SupIssuanceDtos.IssuanceRow> page(Long companyId, Long supplierId,
@@ -108,7 +126,8 @@ public class SupplierIssuanceService {
         }
         SupIssuanceDtos.IssuanceRow r = rows.get(0);
         Map<String, Object> extra = jdbcTemplate.queryForMap("""
-                SELECT remark, receipt_file_id, receipt_file_name, receipt_note
+                SELECT remark, receipt_file_id, receipt_file_name, receipt_note,
+                       supplier_group, effective_at, expire_at, is_important, read_at
                   FROM sup_issuance WHERE id = ?
                 """, id);
         Object receiptFileId = extra.get("receipt_file_id");
@@ -118,22 +137,31 @@ public class SupplierIssuanceService {
                 r.supplierCode(), r.supplierName(), r.title(), r.type(), r.status(),
                 str(extra.get("remark")), receiptFileIdValue,
                 str(extra.get("receipt_file_name")), str(extra.get("receipt_note")),
-                r.sentAt(), r.receivedAt(), items(id));
+                r.sentAt(), r.receivedAt(),
+                Boolean.TRUE.equals(extra.get("is_important")),
+                r.readAt(), dateOf(extra.get("effective_at")), dateOf(extra.get("expire_at")),
+                str(extra.get("supplier_group")),
+                items(id), replies(id));
     }
 
     @Transactional
     public SupIssuanceDtos.IssuanceDetail create(SupIssuanceDtos.IssuanceSaveReq req,
                                                  Long companyId, Long userId) {
         requireSupplier(req.supplierId(), companyId);
+        requireValidWindow(req.effectiveDate(), req.expireDate());
         long id = IdWorker.getId();
         jdbcTemplate.update("""
                         INSERT INTO sup_issuance (id, company_id, code, supplier_id, title, type,
-                                                  status, remark, created_by, updated_by)
-                        VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
+                                                  status, remark, supplier_group, effective_at,
+                                                  expire_at, is_important, created_by, updated_by)
+                        VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, CAST(? AS date), CAST(? AS date),
+                                ?, ?, ?)
                         """,
                 id, companyId, nextCode(), req.supplierId(), req.title().trim(),
                 normalize(req.type() == null ? "DESIGN" : req.type(), TYPES, "发放类型"),
-                blankToNull(req.remark()), userId, userId);
+                blankToNull(req.remark()), blankToNull(req.supplierGroup()),
+                req.effectiveDate(), req.expireDate(),
+                Boolean.TRUE.equals(req.important()), userId, userId);
         writeItems(id, companyId, req.items());
         return detail(id, companyId);
     }
@@ -143,14 +171,19 @@ public class SupplierIssuanceService {
                                                  Long companyId, Long userId) {
         Map<String, Object> issuance = requireIssuance(id, companyId);
         requireStatus(issuance, "DRAFT", "只有草稿状态的发放单可以修改");
+        requireValidWindow(req.effectiveDate(), req.expireDate());
         jdbcTemplate.update("""
                         UPDATE sup_issuance
-                           SET title = ?, type = ?, remark = ?, updated_by = ?, updated_at = now()
+                           SET title = ?, type = ?, remark = ?, supplier_group = ?,
+                               effective_at = CAST(? AS date), expire_at = CAST(? AS date),
+                               is_important = ?, updated_by = ?, updated_at = now()
                          WHERE id = ? AND company_id = ?
                         """,
                 req.title().trim(),
                 normalize(req.type() == null ? "DESIGN" : req.type(), TYPES, "发放类型"),
-                blankToNull(req.remark()), userId, id, companyId);
+                blankToNull(req.remark()), blankToNull(req.supplierGroup()),
+                req.effectiveDate(), req.expireDate(), Boolean.TRUE.equals(req.important()),
+                userId, id, companyId);
         jdbcTemplate.update("DELETE FROM sup_issuance_item WHERE issuance_id = ?", id);
         writeItems(id, companyId, req.items());
         return detail(id, companyId);
@@ -171,13 +204,21 @@ public class SupplierIssuanceService {
     public SupIssuanceDtos.IssuanceDetail send(Long id, Long companyId, Long userId) {
         Map<String, Object> issuance = requireIssuance(id, companyId);
         requireStatus(issuance, "DRAFT", "只有草稿状态的发放单可以发出");
+        requireNotExpired(issuance);
         jdbcTemplate.update("""
                 UPDATE sup_issuance
                    SET status = 'SENT', sent_by = ?, sent_at = now(), updated_by = ?,
                        updated_at = now()
                  WHERE id = ? AND company_id = ?
                 """, userId, userId, id, companyId);
-        return detail(id, companyId);
+        SupIssuanceDtos.IssuanceDetail sent = detail(id, companyId);
+        notifyQuietly(NotifyService.EVENT_SUPPLIER_ISSUANCE_SENT,
+                "supplier.issuance.sent:" + sent.code(),
+                "供应商数据已发放：" + sent.code() + " " + sent.title(),
+                "供应商 " + sent.supplierName() + "；共 " + sent.items().size() + " 个零件"
+                        + (sent.expireDate() == null ? "" : "；有效期至 " + sent.expireDate()),
+                companyId, issuance, userId);
+        return sent;
     }
 
     /** 回执登记：只能对已发出的发放单登记，登记后置 RECEIVED（不可重复登记）。 */
@@ -186,6 +227,7 @@ public class SupplierIssuanceService {
                                                   Long companyId, Long userId) {
         Map<String, Object> issuance = requireIssuance(id, companyId);
         requireStatus(issuance, "SENT", "只有已发出的发放单可以登记回执");
+        requireNotExpired(issuance);
         fileService.meta(req.fileId());
         String fileName = req.fileName() == null || req.fileName().isBlank()
                 ? "receipt-" + req.fileId() : req.fileName().trim();
@@ -196,7 +238,156 @@ public class SupplierIssuanceService {
                        updated_by = ?, updated_at = now()
                  WHERE id = ? AND company_id = ?
                 """, req.fileId(), fileName, blankToNull(req.note()), userId, userId, id, companyId);
-        return detail(id, companyId);
+        SupIssuanceDtos.IssuanceDetail received = detail(id, companyId);
+        notifyQuietly(NotifyService.EVENT_SUPPLIER_RECEIPT_RECEIVED,
+                "supplier.receipt.received:" + received.code(),
+                "供应商已回执：" + received.code() + " " + received.title(),
+                "回执文件：" + fileName + (blankToNull(req.note()) == null ? "" : "；说明：" + req.note()),
+                companyId, issuance, userId);
+        return received;
+    }
+
+    /** 标记已读（旧系统进入查看器即置 Read，CoordinationManager.js:214-228）。 */
+    @Transactional
+    public void markRead(Long id, Long companyId) {
+        requireIssuance(id, companyId);
+        jdbcTemplate.update("""
+                UPDATE sup_issuance SET read_at = COALESCE(read_at, now())
+                 WHERE id = ? AND company_id = ?
+                """, id, companyId);
+    }
+
+    @Transactional
+    public void setImportant(Long id, Long companyId, boolean important) {
+        requireIssuance(id, companyId);
+        jdbcTemplate.update("""
+                UPDATE sup_issuance SET is_important = ?, updated_at = now()
+                 WHERE id = ? AND company_id = ?
+                """, important, id, companyId);
+    }
+
+    /**
+     * 协同回复（多轮）：已发出（SENT）或已回执（RECEIVED）都可以继续回复。
+     *
+     * <p>与旧系统的差别：旧系统"回复"是再建一条 DISTRIBUTE 并把原说明拼进文本，父子无关联；
+     * 这里落在 {@code sup_issuance_reply}，可按单查往来、可统计回复次数，并可把
+     * 「逐条确认/驳回」落到明细行（旧系统只有附件级 PULLSTATE）。</p>
+     */
+    @Transactional
+    public SupIssuanceDtos.IssuanceDetail reply(Long id, SupIssuanceDtos.ReplyReq req,
+                                                Long companyId, Long userId) {
+        Map<String, Object> issuance = requireIssuance(id, companyId);
+        String status = str(issuance.get("status"));
+        if (!"SENT".equals(status) && !"RECEIVED".equals(status)) {
+            throw BizException.of(ErrorCode.SUP_ISSUANCE_STATE_INVALID,
+                    "只有已发出或已回执的发放单可以登记协同回复（当前 " + status + "）");
+        }
+        requireNotExpired(issuance);
+        String replyType = normalize(req.replyType() == null ? "ACK" : req.replyType(),
+                REPLY_TYPES, "回复类型");
+        if ("COMMIT_DATE".equals(replyType) && req.promisedDate() == null) {
+            throw BizException.of(ErrorCode.SUP_ISSUANCE_INVALID, "承诺交期回复必须填写承诺日期");
+        }
+        List<Long> fileIds = req.attachmentFileIds() == null ? List.of() : req.attachmentFileIds();
+        List<String> names = req.attachmentNames() == null ? List.of() : req.attachmentNames();
+        List<Long> validFileIds = new ArrayList<>();
+        List<String> validNames = new ArrayList<>();
+        for (int i = 0; i < fileIds.size(); i++) {
+            Long fileId = fileIds.get(i);
+            if (fileId == null) {
+                continue;
+            }
+            fileService.meta(fileId);
+            validFileIds.add(fileId);
+            String name = i < names.size() && names.get(i) != null && !names.get(i).isBlank()
+                    ? names.get(i).trim() : "attachment-" + fileId;
+            validNames.add(name);
+        }
+        String content = blankToNull(req.content());
+        if (content == null && "ACK".equals(replyType)) {
+            content = "已收阅";
+        }
+        long replyId = IdWorker.getId();
+        jdbcTemplate.update("""
+                        INSERT INTO sup_issuance_reply (id, company_id, issuance_id, reply_type,
+                               content, promised_date, attachment_file_ids, attachment_names, replied_by)
+                        VALUES (?, ?, ?, ?, ?, CAST(? AS date), CAST(? AS jsonb), CAST(? AS jsonb), ?)
+                        """,
+                replyId, companyId, id, replyType, content, req.promisedDate(),
+                toJson(validFileIds), toJson(validNames), userId);
+        updateItemReplyState(id, companyId, req.confirmedItemIds(), "CONFIRMED");
+        updateItemReplyState(id, companyId, req.rejectedItemIds(), "REJECTED");
+        jdbcTemplate.update(
+                "UPDATE sup_issuance SET updated_by = ?, updated_at = now() WHERE id = ?",
+                userId, id);
+        SupIssuanceDtos.IssuanceDetail replied = detail(id, companyId);
+        String typeLabel = REPLY_TYPE_LABELS.getOrDefault(replyType, replyType);
+        StringBuilder text = new StringBuilder(typeLabel);
+        if (content != null) {
+            text.append("：").append(content);
+        }
+        if (req.promisedDate() != null) {
+            text.append("（承诺交期 ").append(req.promisedDate()).append("）");
+        }
+        if (!validNames.isEmpty()) {
+            text.append("；附件：").append(String.join("、", validNames));
+        }
+        notifyQuietly(NotifyService.EVENT_SUPPLIER_REPLY_CREATED,
+                "supplier.reply.created:" + replyId,
+                "供应商协同回复：" + replied.code() + " " + typeLabel,
+                text.toString(), companyId, issuance, userId);
+        return replied;
+    }
+
+    /**
+     * 站内通知：投递失败只记日志，不能把「发放/回执/回复」这些业务动作带崩。
+     *
+     * <p>投递本身跑在 {@code REQUIRES_NEW} 事务里（NotifyService），因此失败不会污染业务事务。</p>
+     */
+    private void notifyQuietly(String eventType, String eventKey, String title, String content,
+                               Long companyId, Map<String, Object> issuance, Long actorId) {
+        try {
+            Long owner = issuance.get("created_by") instanceof Number number
+                    ? number.longValue() : null;
+            Long recipient = owner != null ? owner : actorId;
+            if (recipient == null) {
+                return;
+            }
+            notifyService.dispatchToUsers(eventType, eventKey, title, content, companyId,
+                    List.of(recipient));
+        } catch (RuntimeException ex) {
+            log.warn("供应商协同站内通知投递失败：event={} key={} 原因={}",
+                    eventType, eventKey, ex.getMessage());
+        }
+    }
+
+    /** 附件拉取标记（旧系统 PULLSTATE Pull/UnPull 的等价物，粒度到明细行）。 */
+    @Transactional
+    public void markItemPulled(Long id, Long itemId, Long companyId) {
+        requireIssuance(id, companyId);
+        int updated = jdbcTemplate.update("""
+                UPDATE sup_issuance_item SET pull_state = 'PULL'
+                 WHERE id = ? AND issuance_id = ? AND company_id = ?
+                """, itemId, id, companyId);
+        if (updated == 0) {
+            throw BizException.of(ErrorCode.SUP_ISSUANCE_INVALID, "发放清单明细不存在：" + itemId);
+        }
+    }
+
+    private void updateItemReplyState(Long issuanceId, Long companyId, List<Long> itemIds,
+                                      String state) {
+        if (itemIds == null || itemIds.isEmpty()) {
+            return;
+        }
+        for (Long itemId : itemIds) {
+            if (itemId == null) {
+                continue;
+            }
+            jdbcTemplate.update("""
+                    UPDATE sup_issuance_item SET reply_state = ?
+                     WHERE id = ? AND issuance_id = ? AND company_id = ?
+                    """, state, itemId, issuanceId, companyId);
+        }
     }
 
     /**
@@ -313,8 +504,84 @@ public class SupplierIssuanceService {
                 (rs, rowNum) -> new SupIssuanceDtos.IssuanceItemRow(rs.getLong("id"),
                         rs.getString("object_type"), rs.getLong("object_id"),
                         rs.getString("item_code"), rs.getString("item_name"),
-                        rs.getString("revision"), rs.getInt("sort_no")),
+                        rs.getString("revision"), rs.getInt("sort_no"),
+                        rs.getString("pull_state"), rs.getString("reply_state")),
                 issuanceId);
+    }
+
+    /** 协同往来（时间正序）：一条发放单下可能有多轮回复（旧系统 AnswerAgain 语义）。 */
+    private List<SupIssuanceDtos.ReplyRow> replies(Long issuanceId) {
+        return jdbcTemplate.query("""
+                        SELECT r.*, u.display_name AS replied_by_name
+                          FROM sup_issuance_reply r
+                          LEFT JOIN sys_user u ON u.id = r.replied_by
+                         WHERE r.issuance_id = ? AND r.deleted = false
+                         ORDER BY r.replied_at, r.id
+                        """,
+                (rs, rowNum) -> new SupIssuanceDtos.ReplyRow(rs.getLong("id"),
+                        rs.getString("reply_type"), rs.getString("content"),
+                        dateOf(rs.getDate("promised_date")),
+                        fromJson(rs.getString("attachment_file_ids"), new TypeReference<List<Long>>() {
+                        }),
+                        fromJson(rs.getString("attachment_names"), new TypeReference<List<String>>() {
+                        }),
+                        rs.getObject("replied_by", Long.class), rs.getString("replied_by_name"),
+                        rs.getObject("replied_at", OffsetDateTime.class)),
+                issuanceId);
+    }
+
+    private <T> List<T> fromJson(String json, TypeReference<List<T>> type) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, type);
+        } catch (Exception ex) {
+            return List.of();
+        }
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception ex) {
+            throw BizException.of(ErrorCode.SUP_ISSUANCE_INVALID, "回复附件序列化失败");
+        }
+    }
+
+    private static LocalDate dateOf(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof java.sql.Date date) {
+            return date.toLocalDate();
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toLocalDateTime().toLocalDate();
+        }
+        if (value instanceof LocalDate localDate) {
+            return localDate;
+        }
+        return null;
+    }
+
+    /** 生效/失效窗口合法性：失效日不能早于生效日。 */
+    private static void requireValidWindow(LocalDate effectiveDate, LocalDate expireDate) {
+        if (effectiveDate != null && expireDate != null && expireDate.isBefore(effectiveDate)) {
+            throw BizException.of(ErrorCode.SUP_ISSUANCE_INVALID, "失效日期不能早于生效日期");
+        }
+    }
+
+    /**
+     * 失效拦截放在服务端：旧系统只在列表行点击的 JS 里比字符串日期
+     * （CoordinationManager.js:256-259），绕过前端直接调接口就失效。
+     */
+    private static void requireNotExpired(Map<String, Object> issuance) {
+        LocalDate expireDate = dateOf(issuance.get("expire_at"));
+        if (expireDate != null && expireDate.isBefore(LocalDate.now())) {
+            throw BizException.of(ErrorCode.SUP_ISSUANCE_INVALID,
+                    "该数据已失效（失效日期 " + expireDate + "），不能再发送/回执/回复");
+        }
     }
 
     private Map<String, Object> requireItem(String objectType, Long objectId) {
@@ -354,10 +621,14 @@ public class SupplierIssuanceService {
         return new SupIssuanceDtos.IssuanceRow(rs.getLong("id"), rs.getString("code"),
                 rs.getLong("supplier_id"), rs.getString("supplier_code"),
                 rs.getString("supplier_name"), rs.getString("title"), rs.getString("type"),
-                rs.getString("status"), rs.getInt("item_count"),
+                rs.getString("status"), rs.getInt("item_count"), rs.getInt("reply_count"),
                 rs.getObject("sent_at", OffsetDateTime.class),
                 rs.getObject("received_at", OffsetDateTime.class),
                 rs.getString("receipt_file_name"),
+                rs.getBoolean("is_important"),
+                rs.getObject("read_at", OffsetDateTime.class),
+                dateOf(rs.getDate("effective_at")), dateOf(rs.getDate("expire_at")),
+                rs.getString("supplier_group"),
                 rs.getObject("updated_at", OffsetDateTime.class));
     }
 
