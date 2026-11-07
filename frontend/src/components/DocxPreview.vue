@@ -35,6 +35,44 @@ const host = ref<HTMLElement | null>(null)
 const loading = ref(true)
 const error = ref('')
 
+/** 等待容器可见的布局观察器（见 waitForLayout），卸载时需断开。 */
+let layoutObserver: ResizeObserver | null = null
+
+/**
+ * 等待容器真正参与布局。
+ *
+ * docx-preview 用 getBoundingClientRect 测量段落实际宽度来换算 Word 制表位，
+ * 而 Word 目录的「标题 …… 页码」完全依赖右对齐 leader 制表位。
+ * 容器处于 display:none（未激活的 el-tab-pane、v-show 遮罩）时测量值全为 0，
+ * tab 会被算成整页宽度，表现为点线撑满整行、页码换行、标题折行。
+ */
+function waitForLayout(el: HTMLElement, timeout = 5000): Promise<void> {
+  if (el.clientWidth > 0) {
+    return Promise.resolve()
+  }
+  return new Promise<void>((resolve) => {
+    let settled = false
+    let timer = 0
+    const finish = (): void => {
+      if (settled) {
+        return
+      }
+      settled = true
+      layoutObserver?.disconnect()
+      layoutObserver = null
+      window.clearTimeout(timer)
+      resolve()
+    }
+    timer = window.setTimeout(finish, timeout)
+    layoutObserver = new ResizeObserver(() => {
+      if (el.clientWidth > 0) {
+        finish()
+      }
+    })
+    layoutObserver.observe(el)
+  })
+}
+
 async function load(): Promise<void> {
   loading.value = true
   error.value = ''
@@ -49,13 +87,11 @@ async function load(): Promise<void> {
       return
     }
     container.innerHTML = ''
-    // 关键：docx-preview 用 getBoundingClientRect 测量段落实际宽度来换算 Word 制表位，
-    // Word 目录的「标题 …… 页码」正是靠右对齐 leader 制表位实现的。
-    // 容器若仍处于 display:none（v-show 遮罩未撤），所有尺寸都读成 0，
-    // tab 会被算成整页宽度 → 点线撑满整行、页码被挤到下一行、标题栏折行。
-    // 所以渲染前必须先撤遮罩并等一帧完成布局。
+    // 先撤掉遮罩，再等到容器真正参与布局（未激活的 el-tab-pane 也会走到这里），
+    // 最后让出一帧确保 A4 版面宽度稳定，才交给 docx-preview 去测量制表位。
     loading.value = false
     await nextTick()
+    await waitForLayout(container)
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
     await renderAsync(blob, container, container, {
       className: 'docx',
@@ -91,6 +127,8 @@ async function onDownload(): Promise<void> {
 onMounted(load)
 
 onBeforeUnmount(() => {
+  layoutObserver?.disconnect()
+  layoutObserver = null
   if (host.value) {
     host.value.innerHTML = ''
   }

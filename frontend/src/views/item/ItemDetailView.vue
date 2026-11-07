@@ -201,7 +201,7 @@
           </el-table>
         </el-tab-pane>
 
-        <el-tab-pane label="可视化" name="visual">
+        <el-tab-pane label="可视化" name="visual" lazy>
           <visual-preview object-type="item" :object-id="itemId" />
         </el-tab-pane>
 

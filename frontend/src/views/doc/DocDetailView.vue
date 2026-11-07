@@ -34,7 +34,7 @@
       />
 
       <el-tabs v-model="activeTab" @tab-change="onTabChange">
-        <el-tab-pane v-for="tab in tabs" :key="tab.code" :label="tab.name" :name="tab.code">
+        <el-tab-pane v-for="tab in tabs" :key="tab.code" :label="tab.name" :name="tab.code" lazy>
           <el-descriptions v-if="tab.tabType === 'PROPS'" :column="2" border>
             <el-descriptions-item label="编码">{{ detail?.code }}</el-descriptions-item>
             <el-descriptions-item label="名称">{{ detail?.name }}</el-descriptions-item>
