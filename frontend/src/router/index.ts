@@ -171,10 +171,22 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '工艺资源' }
       },
       {
+        path: 'capp/tooling',
+        name: 'capp-tooling',
+        component: () => import('@/views/capp/ToolingView.vue'),
+        meta: { title: '工装管理' }
+      },
+      {
         path: 'capp/card',
         name: 'capp-card',
         component: () => import('@/views/capp/CardView.vue'),
         meta: { title: '工艺卡片' }
+      },
+      {
+        path: 'capp/formula',
+        name: 'capp-formula',
+        component: () => import('@/views/capp/FormulaView.vue'),
+        meta: { title: '材料定额' }
       },
       {
         path: 'capp/time',

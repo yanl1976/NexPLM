@@ -115,7 +115,9 @@
             <el-menu-item index="/capp/routing">工艺路线</el-menu-item>
             <el-menu-item index="/capp/position">工厂结构与消耗</el-menu-item>
             <el-menu-item index="/capp/resource">工艺资源</el-menu-item>
+            <el-menu-item index="/capp/tooling">工装管理</el-menu-item>
             <el-menu-item index="/capp/card">工艺卡片</el-menu-item>
+            <el-menu-item index="/capp/formula">材料定额</el-menu-item>
             <el-menu-item index="/capp/time">工时定额</el-menu-item>
             <el-menu-item index="/capp/volume">工艺成册</el-menu-item>
             <el-menu-item index="/capp/quality">质量规划</el-menu-item>
