@@ -228,6 +228,42 @@ export interface ItemBatchResult {
   messages: string[]
 }
 
+/** 版本逐字段差异行（值为原始码值，展示时用字典映射）。 */
+export interface ItemVersionDiff {
+  group: string
+  field: string
+  label: string
+  baseValue?: string | null
+  targetValue?: string | null
+  changed: boolean
+}
+
+export interface ItemVersionCompare {
+  baseId: string
+  baseLabel: string
+  targetId: string
+  targetLabel: string
+  rows: ItemVersionDiff[]
+  changedCount: number
+  totalCount: number
+}
+
+/** 批量改属性补丁：null/undefined = 不修改该字段。 */
+export interface ItemBatchPatch {
+  code?: string
+  name?: string
+  itemType?: string
+  specification?: string
+  material?: string
+  unit?: string
+  weight?: number
+  sourceType?: string
+  stdCode?: string
+  remark?: string
+  securityLevel?: number
+  designAttr?: Partial<ItemDesignAttr>
+}
+
 /** BOM 视图（设计/工艺/制造）。 */
 export const BOM_VIEW_LABEL: Record<string, string> = {
   DESIGN: '设计',
@@ -603,6 +639,15 @@ export const itemApi = {
   batchDelete(ids: string[]): Promise<ItemBatchResult> {
     return http.post<ItemBatchResult>('/items/batch-delete', { ids })
   },
+  batchCreate(items: ItemSaveReq[]): Promise<ItemBatchResult> {
+    return http.post<ItemBatchResult>('/items/batch-create', { items })
+  },
+  batchUpdate(ids: string[], patch: ItemBatchPatch): Promise<ItemBatchResult> {
+    return http.put<ItemBatchResult>('/items/batch-update', { ids, patch })
+  },
+  transferOwner(ids: string[], targetUserId: string): Promise<ItemBatchResult> {
+    return http.post<ItemBatchResult>('/items/transfer-owner', { ids, targetUserId })
+  },
   changeUsingState(id: string, usingState: string): Promise<ItemDetail> {
     return http.put<ItemDetail>(`/items/${id}/using-state`, { usingState })
   },
@@ -620,6 +665,9 @@ export const itemApi = {
   },
   versions(id: string): Promise<ItemVersionRow[]> {
     return http.get<ItemVersionRow[]>(`/items/${id}/versions`)
+  },
+  compareVersions(id: string, baseId: string, targetId: string): Promise<ItemVersionCompare> {
+    return http.get<ItemVersionCompare>(`/items/${id}/versions/compare`, { baseId, targetId })
   },
   views(id: string): Promise<ItemViewRow[]> {
     return http.get<ItemViewRow[]>(`/items/${id}/views`)

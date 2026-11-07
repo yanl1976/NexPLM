@@ -154,6 +154,83 @@ class ItemSmokeTest {
     }
 
     @Test
+    void batchCreateUpdateTransferOwnerAndVersionCompare() throws Exception {
+        String admin = login("admin", "Admin@12345");
+
+        // 1. 批量新建：2 行合法 + 1 行缺名称 → 逐条独立，部分成功
+        JsonNode created = call(post("/api/v1/items/batch-create"), admin, json(Map.of("items", List.of(
+                Map.of("name", "批量件甲", "itemType", "PART", "specification", "B-01", "unit", "PCS"),
+                Map.of("name", "批量件乙", "itemType", "PART", "material", "45#"),
+                Map.of("itemType", "PART")))));
+        assertThat(created.path("total").asInt()).isEqualTo(3);
+        assertThat(created.path("done").asInt()).isEqualTo(2);
+        assertThat(created.path("skipped").asInt()).isEqualTo(1);
+        assertThat(created.path("messages").toString()).contains("名称不能为空");
+
+        JsonNode batchItems = call(get("/api/v1/items?page=1&size=200&keyword=批量件"), admin, null).path("items");
+        long itemA = idByName(batchItems, "批量件甲");
+        long itemB = idByName(batchItems, "批量件乙");
+        assertThat(itemA).isPositive();
+        assertThat(itemB).isPositive();
+
+        // 2. 批量改属性：material 生效、规格型号保持不变、设计属性块按字段合并
+        JsonNode updated = call(put("/api/v1/items/batch-update"), admin, json(Map.of(
+                "ids", List.of(itemA, itemB),
+                "patch", Map.of("material", "Q235", "designAttr", Map.of("provider", "宝钢")))));
+        assertThat(updated.path("done").asInt()).isEqualTo(2);
+        JsonNode detailA = call(get("/api/v1/items/{id}", itemA), admin, null);
+        assertThat(detailA.path("material").asText()).isEqualTo("Q235");
+        assertThat(detailA.path("specification").asText()).isEqualTo("B-01");
+        assertThat(detailA.path("designAttr").path("provider").asText()).isEqualTo("宝钢");
+
+        // 3. 转交所有权：同公司内成功，重复转交被跳过提示
+        long newOwner = createUser(admin, "batch_owner", "批量转交测试");
+        JsonNode transferred = call(post("/api/v1/items/transfer-owner"), admin, json(Map.of(
+                "ids", List.of(itemA), "targetUserId", newOwner)));
+        assertThat(transferred.path("done").asInt()).isEqualTo(1);
+        assertThat(call(get("/api/v1/items/{id}", itemA), admin, null).path("ownerId").asLong())
+                .isEqualTo(newOwner);
+        JsonNode again = call(post("/api/v1/items/transfer-owner"), admin, json(Map.of(
+                "ids", List.of(itemA), "targetUserId", newOwner)));
+        assertThat(again.path("done").asInt()).isZero();
+        assertThat(again.path("skipped").asInt()).isEqualTo(1);
+        assertThat(again.path("messages").toString()).contains("已经是");
+
+        // 4. 版本比较：A.1 检出→检入得到 A.2，改 A.2 材料后逐字段差异应命中 material
+        long compareItem = createItem(admin, "版本比较件", "PART", "MAKE");
+        call(post("/api/v1/items/{id}/checkout", compareItem), admin, null);
+        JsonNode second = call(post("/api/v1/items/{id}/checkin", compareItem), admin, null);
+        long secondId = second.path("id").asLong();
+        assertThat(second.path("revisionLabel").asText()).isEqualTo("A.2");
+        call(put("/api/v1/items/{id}", secondId), admin, json(Map.of(
+                "name", "版本比较件", "itemType", "PART", "material", "40Cr")));
+
+        JsonNode compare = call(get("/api/v1/items/" + compareItem + "/versions/compare?baseId="
+                + compareItem + "&targetId=" + secondId), admin, null);
+        assertThat(compare.path("baseLabel").asText()).isEqualTo("A.1");
+        assertThat(compare.path("targetLabel").asText()).isEqualTo("A.2");
+        assertThat(compare.path("totalCount").asInt()).isGreaterThan(20);
+        assertThat(compare.path("changedCount").asInt()).isGreaterThanOrEqualTo(1);
+        JsonNode materialRow = findRow(compare.path("rows"), "material");
+        assertThat(materialRow.path("changed").asBoolean()).isTrue();
+        assertThat(materialRow.path("targetValue").asText()).isEqualTo("40Cr");
+        assertThat(materialRow.path("group").asText()).isEqualTo("基本属性");
+
+        // 5. 比较的边界：同版本、跨零部件都拒绝
+        mockMvc.perform(get("/api/v1/items/{id}/versions/compare", compareItem)
+                        .param("baseId", String.valueOf(compareItem))
+                        .param("targetId", String.valueOf(compareItem))
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isBadRequest());
+        long otherItem = createItem(admin, "无关件", "PART", "MAKE");
+        mockMvc.perform(get("/api/v1/items/{id}/versions/compare", compareItem)
+                        .param("baseId", String.valueOf(compareItem))
+                        .param("targetId", String.valueOf(otherItem))
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void bomTreeWithValidationAndDeleteGuard() throws Exception {
         String admin = login("admin", "Admin@12345");
         long productId = createItem(admin, "BOM 总成", "PRODUCT", "MAKE");
@@ -731,6 +808,47 @@ class ItemSmokeTest {
             workbook.write(out);
             return out.toByteArray();
         }
+    }
+
+    /** 按名称在列表结果里取 id（批量新建不返回逐条 id，走查询更贴近真实调用）。 */
+    private long idByName(JsonNode items, String name) {
+        for (JsonNode item : items) {
+            if (name.equals(item.path("name").asText())) {
+                return item.path("id").asLong();
+            }
+        }
+        return -1L;
+    }
+
+    private JsonNode findRow(JsonNode rows, String field) {
+        for (JsonNode row : rows) {
+            if (field.equals(row.path("field").asText())) {
+                return row;
+            }
+        }
+        throw new IllegalStateException("差异行里没有字段：" + field);
+    }
+
+    private long createUser(String token, String username, String displayName) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/system/users")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("username", username, "password", "Passw0rd!",
+                                "displayName", displayName, "securityLevel", 1,
+                                "roleIds", new long[]{businessRoleId(token)}))))
+                .andExpect(status().isOk())
+                .andReturn();
+        return Long.parseLong(body(result).path("data").asText());
+    }
+
+    private long businessRoleId(String token) throws Exception {
+        // 注意：/system/roles 返回数组本身（不是分页对象），别按 items 取
+        for (JsonNode role : call(get("/api/v1/system/roles"), token, null)) {
+            if ("BUSINESS".equals(role.path("code").asText())) {
+                return role.path("id").asLong();
+            }
+        }
+        throw new IllegalStateException("种子数据缺少 BUSINESS 角色");
     }
 
     private long createItem(String token, String name, String itemType, String sourceType) throws Exception {

@@ -1,6 +1,8 @@
 package com.nexplm.platform.item.api;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -96,5 +98,49 @@ public final class ItemDtos {
 
     /** 批量操作结果（部分成功语义，与 BOM 批量一致）。 */
     public record BatchResult(int total, int done, int skipped, java.util.List<String> messages) {
+    }
+
+    // ------------------------------------------------------------ 版本比较
+
+    /**
+     * 版本逐字段差异行。
+     * <p>值均为<b>原始码值</b>（如 {@code MAKE} / {@code Released}），中文展示由前端字典映射，
+     * 避免后端为了一处 diff 再复制一套枚举翻译。</p>
+     */
+    public record VersionDiff(String group, String field, String label, String baseValue,
+                              String targetValue, boolean changed) {
+    }
+
+    public record VersionCompare(Long baseId, String baseLabel, Long targetId, String targetLabel,
+                                 java.util.List<VersionDiff> rows, int changedCount, int totalCount) {
+    }
+
+    // ------------------------------------------------------------ 批量新建 / 批量改属性 / 转交所有权
+
+    /** 批量新建：逐条独立处理，名称或类型非法的行记入 messages 并跳过。 */
+    public record BatchCreateReq(java.util.List<ItemSaveReq> items) {
+    }
+
+    /**
+     * 批量改属性补丁：<b>null 表示不修改</b>该字段。
+     * <p>与 {@link ItemSaveReq} 的区别是「缺省即保留」，因此不能直接复用全量保存接口。</p>
+     */
+    public record ItemBatchPatch(String code, String name, String itemType, String specification,
+                                 String material, String unit, BigDecimal weight, String sourceType,
+                                 String stdCode, String remark, Integer securityLevel,
+                                 ItemDesignAttr designAttr) {
+    }
+
+    public record BatchUpdateReq(@NotEmpty(message = "请至少选择一个零部件")
+                                 java.util.List<Long> ids,
+                                 @NotNull(message = "请提供要修改的属性")
+                                 ItemBatchPatch patch) {
+    }
+
+    /** 转交所有权：把选中零部件的属主改为目标用户。 */
+    public record TransferOwnerReq(@NotEmpty(message = "请至少选择一个零部件")
+                                   java.util.List<Long> ids,
+                                   @NotNull(message = "请选择接手人")
+                                   Long targetUserId) {
     }
 }

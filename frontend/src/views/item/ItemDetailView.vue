@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page" v-loading="loading">
     <el-card shadow="never">
       <template #header>
@@ -47,8 +47,15 @@
     </el-card>
 
     <el-card shadow="never">
-      <el-tabs v-model="activeTab" @tab-change="onTabChange">
-        <el-tab-pane label="属性" name="props">
+      <ObjectDetailTabs
+        v-model="activeTab"
+        entity-code="PdmItem"
+        :extras="itemExtraTabs"
+        :fallback="ITEM_TAB_FALLBACK"
+        :lazy-codes="['visual']"
+        @change="onTabChange"
+      >
+        <template #props>
           <div v-if="detail" class="props-layout">
             <div class="props-thumb">
               <el-empty description="暂无缩略图" :image-size="56" />
@@ -117,9 +124,9 @@
               </div>
             </div>
           </div>
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="视图" name="views">
+        <template #views>
           <div class="bom-toolbar">
             <el-select v-model="newViewType" placeholder="视图类型" style="width: 150px">
               <el-option
@@ -130,9 +137,23 @@
               />
             </el-select>
             <el-input v-model="newViewDesc" placeholder="视图描述（可空）" style="width: 220px" />
+            <el-select
+              v-model="newViewCopyFrom"
+              placeholder="复制来源视图（可空）"
+              clearable
+              style="width: 200px"
+            >
+              <el-option
+                v-for="row in views"
+                :key="row.id"
+                :label="`${row.viewTypeLabel}${row.description ? ' / ' + row.description : ''}`"
+                :value="row.id"
+                :disabled="row.viewType === newViewType"
+              />
+            </el-select>
             <el-button type="primary" :disabled="!canWrite" @click="onCreateView">新建视图</el-button>
             <el-button @click="loadViews">刷新</el-button>
-            <span class="hint">BOM 行按视图类型归属；复制来源视图可带出结构</span>
+            <span class="hint">BOM 行按视图类型归属；选择来源视图可把该视图的 BOM 行复制到新视图</span>
           </div>
           <el-table v-loading="viewLoading" :data="views" border>
             <el-table-column prop="viewTypeLabel" label="视图类型" width="130" />
@@ -169,9 +190,9 @@
               <el-empty description="暂无视图" />
             </template>
           </el-table>
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="设计文档" name="docs">
+        <template #docs>
           <div class="bom-toolbar">
             <el-button @click="loadDocs">刷新</el-button>
             <span class="hint">零件通过对象关系关联的图文档（任一方向）</span>
@@ -199,13 +220,13 @@
               <el-empty description="暂无关联的设计文档" />
             </template>
           </el-table>
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="可视化" name="visual" lazy>
+        <template #visual>
           <visual-preview object-type="item" :object-id="itemId" />
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="BOM" name="bom">
+        <template #bom>
           <div class="bom-toolbar">
             <el-radio-group v-model="bomView" @change="loadBom">
               <el-radio-button v-for="(label, value) in BOM_VIEW_LABEL" :key="value" :value="value">
@@ -288,9 +309,9 @@
               <el-empty description="暂无子件，点击「添加子件」建立 BOM" />
             </template>
           </el-table>
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="BOM 展开" name="bom-summary">
+        <template #bom-summary>
           <div class="bom-toolbar">
             <el-radio-group v-model="bomView" @change="loadBomSummary">
               <el-radio-button v-for="(label, value) in BOM_VIEW_LABEL" :key="value" :value="value">
@@ -335,9 +356,9 @@
               <el-empty description="该视图下暂无 BOM 结构" />
             </template>
           </el-table>
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="BOM 汇总" name="bom-rollup">
+        <template #bom-rollup>
           <div class="bom-toolbar">
             <el-radio-group v-model="bomView" @change="loadBomRollup">
               <el-radio-button v-for="(label, value) in BOM_VIEW_LABEL" :key="value" :value="value">
@@ -372,9 +393,9 @@
               <el-empty description="该视图下暂无 BOM 结构" />
             </template>
           </el-table>
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="被引用" name="whereused">
+        <template #whereused>
           <el-table v-loading="whereUsedLoading" :data="whereUsedRows" border>
             <el-table-column prop="parentCode" label="父件编码" width="150" />
             <el-table-column prop="parentName" label="父件名称" min-width="200" show-overflow-tooltip />
@@ -387,9 +408,9 @@
               <el-empty description="暂无父件引用该零部件" />
             </template>
           </el-table>
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="基线" name="baselines">
+        <template #baselines>
           <div class="bom-toolbar">
             <el-input v-model="baselineForm.code" placeholder="基线编码（必填）" style="width: 170px" />
             <el-input v-model="baselineForm.name" placeholder="基线名称" style="width: 180px" />
@@ -427,14 +448,25 @@
               <el-empty description="暂无基线，点击「冻结当前结构」创建" />
             </template>
           </el-table>
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="历史" name="versions">
+        <template #versions>
           <div class="bom-toolbar">
             <el-button @click="loadVersions">刷新</el-button>
-            <span class="hint">大版本（修订）与小版本（检入）在旧系统分别对应 A / A.1 展示</span>
+            <el-button :disabled="versionCompareRows.length !== 2" @click="openVersionCompare">
+              比较选中版本
+            </el-button>
+            <span class="hint">
+              大版本（修订）与小版本（检入）在旧系统分别对应 A / A.1 展示；勾选两个版本可逐字段比较
+            </span>
           </div>
-          <el-table v-loading="versionLoading" :data="versions" border>
+          <el-table
+            v-loading="versionLoading"
+            :data="versions"
+            border
+            @selection-change="onVersionSelectionChange"
+          >
+            <el-table-column type="selection" width="46" />
             <el-table-column prop="revisionLabel" label="版本" width="100" />
             <el-table-column label="发布状态" width="120">
               <template #default="{ row }">
@@ -464,13 +496,13 @@
               <el-empty description="暂无历史版本" />
             </template>
           </el-table>
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="流程" name="workflow">
+        <template #workflow>
           <workflow-panel object-type="PdmItem" :object-id="itemId" @changed="load" />
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="权限" name="acl">
+        <template #acl>
           <div class="bom-toolbar">
             <el-button @click="loadAcl">刷新</el-button>
             <span class="hint">实例权限只读；授予与撤销在「系统管理 → 安全策略」或对象授权入口完成</span>
@@ -495,9 +527,9 @@
               <el-empty description="暂无实例权限，按角色或数据作用域继承" />
             </template>
           </el-table>
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="日志" name="logs">
+        <template #logs>
           <div class="bom-toolbar">
             <el-button @click="loadLogs">刷新</el-button>
             <span class="hint">状态流转与审计事件合并按时间倒序</span>
@@ -535,8 +567,8 @@
               <el-empty description="暂无日志" />
             </template>
           </el-table>
-        </el-tab-pane>
-      </el-tabs>
+        </template>
+      </ObjectDetailTabs>
     </el-card>
 
     <el-dialog
@@ -976,6 +1008,50 @@
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="compareVisible" title="版本比较" width="920px">
+      <div v-loading="compareLoading">
+        <div v-if="compare" class="compare-head">
+          <span>基准版本 <b>{{ compare.baseLabel }}</b></span>
+          <span class="compare-arrow">→</span>
+          <span>目标版本 <b>{{ compare.targetLabel }}</b></span>
+          <el-tag v-if="compare.changedCount > 0" type="warning" size="small">
+            {{ compare.changedCount }} / {{ compare.totalCount }} 个字段有差异
+          </el-tag>
+          <el-tag v-else type="success" size="small">两个版本业务字段一致</el-tag>
+        </div>
+        <el-table
+          :data="compare?.rows ?? []"
+          border
+          size="small"
+          row-key="field"
+          max-height="460"
+          :row-class-name="compareRowClass"
+          :span-method="compareSpanMethod"
+        >
+          <el-table-column prop="group" label="分组" width="100" />
+          <el-table-column prop="label" label="字段" width="140" />
+          <el-table-column label="基准值" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">{{ compareValue(row, row.baseValue) }}</template>
+          </el-table-column>
+          <el-table-column label="目标值" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">{{ compareValue(row, row.targetValue) }}</template>
+          </el-table-column>
+          <el-table-column label="结果" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.changed" size="small" type="warning">有差异</el-tag>
+              <span v-else class="hint">一致</span>
+            </template>
+          </el-table-column>
+          <template #empty>
+            <el-empty description="没有可比字段" />
+          </template>
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="compareVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1025,6 +1101,8 @@ import {
   type ItemLogRow,
   type ItemSaveReq,
   type ItemSummary,
+  type ItemVersionCompare,
+  type ItemVersionDiff,
   type ItemVersionRow,
   type ItemViewRow,
   type WhereUsedRow
@@ -1033,6 +1111,7 @@ import { DOC_STATE_LABEL } from '@/api/doc'
 import WorkflowPanel from '@/components/WorkflowPanel.vue'
 import VisualPreview from '@/components/VisualPreview.vue'
 import StatusDot from '@/components/StatusDot.vue'
+import ObjectDetailTabs from '@/components/ObjectDetailTabs.vue'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -1048,6 +1127,27 @@ const formRef = ref<FormInstance>()
 // 默认落在「属性」页签（旧系统对象查看器物件的首屏）；支持 ?tab=acl 直达
 const activeTab = ref(typeof route.query.tab === 'string' ? route.query.tab : 'props')
 
+/** 元数据取不到时的兜底页签（与 V53 的 meta_tab 配置一致）。 */
+const ITEM_TAB_FALLBACK = [
+  { code: 'props', name: '属性' },
+  { code: 'views', name: '视图' },
+  { code: 'docs', name: '设计文档' },
+  { code: 'visual', name: '可视化' },
+  { code: 'bom', name: 'BOM' },
+  { code: 'whereused', name: '被引用' },
+  { code: 'versions', name: '历史' },
+  { code: 'workflow', name: '流程' },
+  { code: 'acl', name: '权限' },
+  { code: 'logs', name: '日志' }
+]
+
+/** 页面独有页签：BOM 展开/汇总紧跟 BOM，基线跟随被引用。 */
+const itemExtraTabs = [
+  { code: 'bom-summary', name: 'BOM 展开', after: 'bom' },
+  { code: 'bom-rollup', name: 'BOM 汇总', after: 'bom-summary' },
+  { code: 'baselines', name: '基线', after: 'whereused' }
+]
+
 /** 属性 / 视图 / 设计文档 / 历史 / 权限 / 日志页签数据。 */
 const views = ref<ItemViewRow[]>([])
 const viewLoading = ref(false)
@@ -1057,6 +1157,11 @@ const docs = ref<ItemDocRow[]>([])
 const docLoading = ref(false)
 const versions = ref<ItemVersionRow[]>([])
 const versionLoading = ref(false)
+const versionCompareRows = ref<ItemVersionRow[]>([])
+const compareVisible = ref(false)
+const compareLoading = ref(false)
+const compare = ref<ItemVersionCompare | null>(null)
+const newViewCopyFrom = ref('')
 const logs = ref<ItemLogRow[]>([])
 const aclRows = ref<ItemAclRow[]>([])
 const subLoading = ref(false)
@@ -1544,9 +1649,11 @@ async function onCreateView(): Promise<void> {
   try {
     await itemApi.createView(itemId.value, {
       viewType: newViewType.value,
-      description: newViewDesc.value || undefined
+      description: newViewDesc.value || undefined,
+      copyFromViewId: newViewCopyFrom.value || undefined
     })
     newViewDesc.value = ''
+    newViewCopyFrom.value = ''
     ElMessage.success('视图已创建')
     await loadViews()
   } catch (error) {
@@ -1603,6 +1710,92 @@ async function loadVersions(): Promise<void> {
 
 function openVersion(id: string): void {
   router.push({ name: 'item-detail', params: { id }, query: { tab: 'versions' } })
+}
+
+// ------------------------------------------------------------ 版本比较（B4）
+
+function onVersionSelectionChange(rows: ItemVersionRow[]): void {
+  versionCompareRows.value = rows
+  if (rows.length > 2) {
+    ElMessage.warning('最多勾选两个版本')
+  }
+}
+
+/** 基准 = 较旧版本，目标 = 较新版本，差异方向符合"这版改了什么"的阅读习惯。 */
+async function openVersionCompare(): Promise<void> {
+  if (versionCompareRows.value.length !== 2) {
+    ElMessage.warning('请勾选两个版本')
+    return
+  }
+  const [base, target] = [...versionCompareRows.value].sort(
+    (a, b) => a.revision - b.revision || a.iteration - b.iteration
+  )
+  compare.value = null
+  compareVisible.value = true
+  compareLoading.value = true
+  try {
+    compare.value = await itemApi.compareVersions(itemId.value, base.id, target.id)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '版本比较失败')
+    compareVisible.value = false
+  } finally {
+    compareLoading.value = false
+  }
+}
+
+function compareRowClass({ row }: { row: ItemVersionDiff }): string {
+  return row.changed ? 'diff-row' : ''
+}
+
+/** 分组列按连续相同分组纵向合并，避免每行都重复「基本属性」。 */
+function compareSpanMethod({
+  row,
+  rowIndex,
+  columnIndex
+}: {
+  row: ItemVersionDiff
+  rowIndex: number
+  columnIndex: number
+}): [number, number] | undefined {
+  if (columnIndex !== 0) {
+    return undefined
+  }
+  const rows = compare.value?.rows ?? []
+  if (rowIndex > 0 && rows[rowIndex - 1]?.group === row.group) {
+    return [0, 0]
+  }
+  let span = 1
+  while (report(rows, rowIndex + span) === row.group) {
+    span++
+  }
+  return [span, 1]
+}
+
+function report(rows: ItemVersionDiff[], index: number): string | undefined {
+  return rows[index]?.group
+}
+
+/** 码值字段翻成中文再比较展示，避免出现「MAKE vs BUY」这种业务看不懂的 diff。 */
+function compareValue(row: ItemVersionDiff, value?: string | null): string {
+  if (value === null || value === undefined || value === '') {
+    return '—'
+  }
+  switch (row.field) {
+    case 'itemType':
+      return ITEM_TYPE_LABEL[value] ?? value
+    case 'sourceType':
+      return ITEM_SOURCE_LABEL[value] ?? value
+    case 'lifecycleState':
+      return stateLabel(value)
+    case 'phaseState':
+      return phaseLabel(value)
+    case 'usingState':
+      return usingLabel(value)
+    case 'workflowState':
+      return workflowLabel(value)
+    default:
+      return value
+  }
 }
 
 async function loadAcl(): Promise<void> {
@@ -2084,6 +2277,26 @@ onMounted(reloadAll)
 .hint {
   color: #909399;
   font-size: 12px;
+}
+
+.compare-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.compare-arrow {
+  color: #909399;
+}
+
+:deep(.diff-row) {
+  background: #fdf6ec;
+}
+
+:deep(.diff-row td) {
+  color: #b88230;
 }
 
 .bom-issues {

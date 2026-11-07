@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -119,6 +120,153 @@ public class ItemLifecycleService {
                         object.getLifecycleState(), object.getIsLatest(), object.getCreatedBy(),
                         createdByName(object.getCreatedBy()), object.getCreatedAt(), object.getReleasedAt()))
                 .toList();
+    }
+
+    /**
+     * 版本逐字段比较（旧系统「版本对比」）：限定同一零部件的两个版本。
+     *
+     * <p>只比较<b>业务字段</b>，不比较创建/修改时间、检出状态等随操作变化的字段，
+     * 否则任何两次比较都会飘出一堆"差异"、业务看不出改了什么。</p>
+     */
+    public ItemDtos.VersionCompare compare(Long id, Long baseId, Long targetId) {
+        PlmObject anchor = itemService.requireItem(id);
+        if (baseId == null || targetId == null) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "请选择要比较的两个版本");
+        }
+        if (baseId.equals(targetId)) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "两个版本不能相同");
+        }
+        PlmObject base = itemService.requireItem(baseId);
+        PlmObject target = itemService.requireItem(targetId);
+        Long masterId = anchor.getMasterId() == null ? anchor.getId() : anchor.getMasterId();
+        if (!masterId.equals(masterOf(base)) || !masterId.equals(masterOf(target))) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "只能比较同一零部件的不同版本");
+        }
+        Map<String, String> baseValues = diffValues(baseId);
+        Map<String, String> targetValues = diffValues(targetId);
+        List<ItemDtos.VersionDiff> rows = new java.util.ArrayList<>();
+        int changed = 0;
+        for (String[] def : DIFF_FIELDS) {
+            String baseValue = baseValues.get(def[1]);
+            String targetValue = targetValues.get(def[1]);
+            boolean isChanged = !java.util.Objects.equals(baseValue, targetValue);
+            if (isChanged) {
+                changed++;
+            }
+            rows.add(new ItemDtos.VersionDiff(def[0], def[1], def[2], baseValue, targetValue, isChanged));
+        }
+        return new ItemDtos.VersionCompare(baseId,
+                VersionFormatter.label(base.getRevision(), base.getIteration()),
+                targetId, VersionFormatter.label(target.getRevision(), target.getIteration()),
+                rows, changed, rows.size());
+    }
+
+    /** 比较字段清单：{分组, 字段码, 中文名}，顺序即前端展示顺序。 */
+    private static final List<String[]> DIFF_FIELDS = List.of(
+            new String[]{"基本属性", "code", "编码"},
+            new String[]{"基本属性", "name", "名称"},
+            new String[]{"基本属性", "itemType", "类型"},
+            new String[]{"基本属性", "sourceType", "供应方式"},
+            new String[]{"基本属性", "specification", "规格型号"},
+            new String[]{"基本属性", "material", "材料"},
+            new String[]{"基本属性", "unit", "计量单位"},
+            new String[]{"基本属性", "weight", "单件重量"},
+            new String[]{"基本属性", "stdCode", "标准号"},
+            new String[]{"基本属性", "remark", "备注"},
+            new String[]{"基本属性", "securityLevel", "密级"},
+            new String[]{"状态", "lifecycleState", "发布状态"},
+            new String[]{"状态", "phaseState", "生命周期阶段"},
+            new String[]{"状态", "usingState", "使用状态"},
+            new String[]{"状态", "workflowState", "流程状态"},
+            new String[]{"状态", "ownerName", "所有者"},
+            new String[]{"状态", "orgId", "所属组织"},
+            new String[]{"设计属性", "provider", "供应商"},
+            new String[]{"设计属性", "dwgNo", "图号"},
+            new String[]{"设计属性", "productCategory", "产品类别"},
+            new String[]{"设计属性", "productModel", "产品型号"},
+            new String[]{"设计属性", "productSpec", "产品规格"},
+            new String[]{"设计属性", "materialType", "毛坯种类"},
+            new String[]{"设计属性", "materialType2", "毛坯种类2"},
+            new String[]{"设计属性", "surfaceTreatment", "表面处理"},
+            new String[]{"设计属性", "isTooling", "是否工装"},
+            new String[]{"设计属性", "weightUnit", "重量单位"},
+            new String[]{"设计属性", "montage", "所属装配"},
+            new String[]{"设计属性", "colorItem", "是否颜色件"}
+    );
+
+    /**
+     * 取一个版本用于比较的扁平字段集。
+     * <p>布尔字段统一转「是/否」，其余保留原始码值或文本，空串归一为 null，
+     * 这样"没填"与"填了空"不会显示成差异。</p>
+     */
+    private Map<String, String> diffValues(Long objectId) {
+        return jdbcTemplate.query("""
+                        SELECT o.code, o.name, o.security_level, o.lifecycle_state, o.phase_state,
+                               o.workflow_state, o.org_id,
+                               u.display_name AS owner_name,
+                               m.item_type, m.specification, m.material, m.unit, m.weight,
+                               m.source_type, m.std_code, m.remark, m.using_state,
+                               d.provider, d.dwg_no, d.product_category, d.product_model,
+                               d.product_spec, d.material_type, d.material_type2,
+                               d.surface_treatment, d.is_tooling, d.weight_unit, d.montage,
+                               d.color_item
+                          FROM plm_object o
+                          LEFT JOIN sys_user u ON u.id = o.owner_id
+                          LEFT JOIN item_master m ON m.object_id = o.id
+                          LEFT JOIN item_design_attr d ON d.object_id = o.id
+                         WHERE o.id = ?
+                        """,
+                rs -> {
+                    Map<String, String> values = new java.util.LinkedHashMap<>();
+                    if (!rs.next()) {
+                        return values;
+                    }
+                    values.put("code", rs.getString("code"));
+                    values.put("name", rs.getString("name"));
+                    values.put("securityLevel", String.valueOf(rs.getInt("security_level")));
+                    values.put("lifecycleState", rs.getString("lifecycle_state"));
+                    values.put("phaseState", rs.getString("phase_state"));
+                    values.put("workflowState", rs.getString("workflow_state"));
+                    Long orgId = rs.getObject("org_id", Long.class);
+                    values.put("orgId", orgId == null ? null : String.valueOf(orgId));
+                    values.put("ownerName", rs.getString("owner_name"));
+                    values.put("itemType", rs.getString("item_type"));
+                    values.put("specification", rs.getString("specification"));
+                    values.put("material", rs.getString("material"));
+                    values.put("unit", rs.getString("unit"));
+                    java.math.BigDecimal weight = rs.getBigDecimal("weight");
+                    values.put("weight", weight == null ? null : weight.stripTrailingZeros().toPlainString());
+                    values.put("sourceType", rs.getString("source_type"));
+                    values.put("stdCode", rs.getString("std_code"));
+                    values.put("remark", rs.getString("remark"));
+                    values.put("usingState", rs.getString("using_state"));
+                    values.put("provider", rs.getString("provider"));
+                    values.put("dwgNo", rs.getString("dwg_no"));
+                    values.put("productCategory", rs.getString("product_category"));
+                    values.put("productModel", rs.getString("product_model"));
+                    values.put("productSpec", rs.getString("product_spec"));
+                    values.put("materialType", rs.getString("material_type"));
+                    values.put("materialType2", rs.getString("material_type2"));
+                    values.put("surfaceTreatment", rs.getString("surface_treatment"));
+                    values.put("isTooling", yesNo(rs.getObject("is_tooling")));
+                    values.put("weightUnit", rs.getString("weight_unit"));
+                    values.put("montage", rs.getString("montage"));
+                    values.put("colorItem", yesNo(rs.getObject("color_item")));
+                    values.replaceAll((key, value) -> value == null || value.isBlank() ? null : value);
+                    return values;
+                }, objectId);
+    }
+
+    private String yesNo(Object value) {
+        if (value == null) {
+            return null;
+        }
+        boolean flag = value instanceof Boolean bool ? bool : Boolean.parseBoolean(String.valueOf(value));
+        return flag ? "是" : "否";
+    }
+
+    private Long masterOf(PlmObject object) {
+        return object.getMasterId() == null ? object.getId() : object.getMasterId();
     }
 
     // ------------------------------------------------------------ 内部

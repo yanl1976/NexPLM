@@ -6,13 +6,22 @@
           <span class="title">零部件管理</span>
           <div class="toolbar">
             <el-button v-if="canWrite" type="primary" @click="openCreate">新建</el-button>
+            <el-button v-if="canWrite" @click="openBatchCreate">批量新建</el-button>
+            <el-button v-if="canWrite" :disabled="selection.length === 0" @click="openBatchUpdate">
+              批量改属性
+            </el-button>
+            <el-button v-if="canWrite" :disabled="selection.length === 0" @click="openTransferOwner">
+              转交所有权
+            </el-button>
             <el-button v-if="canWrite" :disabled="selection.length !== 1" @click="openEdit()">编辑</el-button>
             <el-button v-if="canWrite" :disabled="selection.length !== 1" @click="onCheckout">检出</el-button>
             <el-button v-if="canWrite" :disabled="selection.length !== 1" @click="onCheckin">检入</el-button>
             <el-button v-if="canWrite" :disabled="selection.length !== 1" @click="onCancelCheckout">撤销检出</el-button>
             <el-button v-if="canDelete" :disabled="selection.length === 0" @click="onBatchDelete">删除</el-button>
-            <el-tooltip content="版本比较将在对象查看器「历史」页签中进行" placement="bottom">
-              <el-button disabled>比较</el-button>
+            <el-tooltip content="在详情页「历史」页签选择两个版本逐字段比较" placement="bottom">
+              <span>
+                <el-button :disabled="selection.length !== 1" @click="onCompare">比较</el-button>
+              </span>
             </el-tooltip>
             <el-button :disabled="selection.length !== 1" @click="openTab('acl')">授权</el-button>
             <el-tooltip content="发起流程在对象查看器「流程」页签中进行" placement="bottom">
@@ -358,11 +367,195 @@
         <el-button type="primary" :disabled="!importFile" :loading="importing" @click="onImport">确认导入</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="batchCreateVisible" title="批量新建零部件" width="900px">
+      <el-alert type="info" :closable="false" show-icon class="dialog-alert">
+        名称与类型必填，编码留空自动取号；逐行独立处理，某行失败不影响其它行。
+      </el-alert>
+      <el-table :data="batchCreateRows" border size="small" max-height="400">
+        <el-table-column label="名称" min-width="180">
+          <template #default="{ row }">
+            <el-input v-model="row.name" placeholder="必填" />
+          </template>
+        </el-table-column>
+        <el-table-column label="类型" width="130">
+          <template #default="{ row }">
+            <el-select v-model="row.itemType">
+              <el-option
+                v-for="(label, value) in ITEM_TYPE_LABEL"
+                :key="value"
+                :label="label"
+                :value="value"
+              />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="规格型号" min-width="150">
+          <template #default="{ row }">
+            <el-input v-model="row.specification" />
+          </template>
+        </el-table-column>
+        <el-table-column label="材料" width="120">
+          <template #default="{ row }">
+            <el-input v-model="row.material" />
+          </template>
+        </el-table-column>
+        <el-table-column label="单位" width="90">
+          <template #default="{ row }">
+            <el-input v-model="row.unit" />
+          </template>
+        </el-table-column>
+        <el-table-column label="供应方式" width="110">
+          <template #default="{ row }">
+            <el-select v-model="row.sourceType">
+              <el-option
+                v-for="(label, value) in ITEM_SOURCE_LABEL"
+                :key="value"
+                :label="label"
+                :value="value"
+              />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="70" align="center">
+          <template #default="{ $index }">
+            <el-button link type="danger" @click="removeBatchCreateRow($index)">移除</el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="还没有行，点下方「添加一行」" />
+        </template>
+      </el-table>
+      <div class="dialog-toolbar">
+        <el-button @click="addBatchCreateRow">添加一行</el-button>
+        <span class="hint">共 {{ batchCreateRows.length }} 行，已填名称 {{ batchCreateFilled }} 行</span>
+      </div>
+      <div v-if="batchCreateMsg" class="dialog-result">{{ batchCreateMsg }}</div>
+      <template #footer>
+        <el-button @click="batchCreateVisible = false">关闭</el-button>
+        <el-button
+          type="primary"
+          :loading="batchCreating"
+          :disabled="batchCreateFilled === 0"
+          @click="onBatchCreate"
+        >
+          提交
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="batchUpdateVisible" title="批量改属性" width="720px">
+      <el-alert type="info" :closable="false" show-icon class="dialog-alert">
+        只填要改的字段，<b>留空表示保持原值</b>；将应用到已勾选的 {{ selection.length }} 个零部件。已发布对象需先修订，他人检出的为只读。
+      </el-alert>
+      <el-form label-width="96px">
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="名称">
+              <el-input v-model="batchPatch.name" placeholder="留空不修改" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="类型">
+              <el-select v-model="batchPatch.itemType" placeholder="留空不修改" clearable>
+                <el-option
+                  v-for="(label, value) in ITEM_TYPE_LABEL"
+                  :key="value"
+                  :label="label"
+                  :value="value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="规格型号">
+              <el-input v-model="batchPatch.specification" placeholder="留空不修改" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="材料">
+              <el-input v-model="batchPatch.material" placeholder="留空不修改" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="计量单位">
+              <el-input v-model="batchPatch.unit" placeholder="留空不修改" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="单件重量">
+              <el-input v-model="batchPatch.weight" placeholder="留空不修改" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="供应方式">
+              <el-select v-model="batchPatch.sourceType" placeholder="留空不修改" clearable>
+                <el-option
+                  v-for="(label, value) in ITEM_SOURCE_LABEL"
+                  :key="value"
+                  :label="label"
+                  :value="value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="标准号">
+              <el-input v-model="batchPatch.stdCode" placeholder="留空不修改" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item label="备注">
+              <el-input v-model="batchPatch.remark" type="textarea" :rows="2" placeholder="留空不修改" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </el-form>
+      <div v-if="batchUpdateMsg" class="dialog-result">{{ batchUpdateMsg }}</div>
+      <template #footer>
+        <el-button @click="batchUpdateVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="batchUpdating" @click="onBatchUpdate">应用</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="transferVisible" title="转交所有权" width="520px">
+      <el-alert type="warning" :closable="false" show-icon class="dialog-alert">
+        把已勾选 {{ selection.length }} 个零部件的属主改为接手人；仅同公司内可转交，发布状态与版本不变。
+      </el-alert>
+      <el-select
+        v-model="transferUserId"
+        filterable
+        remote
+        :remote-method="searchTransferUsers"
+        :loading="transferUserLoading"
+        placeholder="输入姓名或工号检索接手人"
+        style="width: 100%"
+      >
+        <el-option
+          v-for="user in transferUsers"
+          :key="user.id"
+          :label="`${user.displayName}（${user.username}）`"
+          :value="user.id"
+        />
+      </el-select>
+      <div v-if="transferMsg" class="dialog-result">{{ transferMsg }}</div>
+      <template #footer>
+        <el-button @click="transferVisible = false">关闭</el-button>
+        <el-button
+          type="primary"
+          :loading="transferring"
+          :disabled="!transferUserId"
+          @click="onTransferOwner"
+        >
+          确认转交
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadFile } from 'element-plus'
 import {
@@ -373,10 +566,12 @@ import {
   ITEM_USING_STATE_LABEL,
   ITEM_WORKFLOW_LABEL,
   itemApi,
+  type ItemBatchPatch,
   type ItemDesignAttr,
   type ItemSaveReq,
   type ItemSummary
 } from '@/api/item'
+import { workflowApi, type ActorUserRow } from '@/api/workflow'
 import { useUserStore } from '@/stores/user'
 import StatusDot from '@/components/StatusDot.vue'
 import ColumnSetting from '@/components/ColumnSetting.vue'
@@ -428,6 +623,50 @@ const importResult = ref<{ total: number; created: number; updated: number; skip
   null
 )
 const importing = ref(false)
+
+// ------------------------------------------------------------ 批量新建 / 批量改属性 / 转交所有权（B5）
+
+interface BatchCreateRow {
+  name: string
+  itemType: string
+  specification: string
+  material: string
+  unit: string
+  sourceType: string
+}
+
+const batchCreateVisible = ref(false)
+const batchCreating = ref(false)
+const batchCreateRows = ref<BatchCreateRow[]>([])
+const batchCreateMsg = ref('')
+const batchUpdateVisible = ref(false)
+const batchUpdating = ref(false)
+const batchUpdateMsg = ref('')
+const batchPatch = reactive({
+  name: '',
+  itemType: '',
+  specification: '',
+  material: '',
+  unit: '',
+  weight: '',
+  sourceType: '',
+  stdCode: '',
+  remark: ''
+})
+const transferVisible = ref(false)
+const transferring = ref(false)
+const transferUserId = ref('')
+const transferUsers = ref<ActorUserRow[]>([])
+const transferUserLoading = ref(false)
+const transferMsg = ref('')
+
+const batchCreateFilled = computed(
+  () => batchCreateRows.value.filter((row) => row.name.trim().length > 0).length
+)
+
+function emptyBatchRow(): BatchCreateRow {
+  return { name: '', itemType: 'PART', specification: '', material: '', unit: 'EA', sourceType: 'MAKE' }
+}
 
 const COLUMN_STORAGE_KEY = 'plm.item.columns'
 const WIDTH_STORAGE_KEY = 'plm.item.colWidths'
@@ -735,6 +974,179 @@ async function onBatchDelete(): Promise<void> {
   }
 }
 
+/** 版本比较入口：跳详情页「历史」页签，由那里勾选两个版本（列表只展示最新版，无法两两比较）。 */
+function onCompare(): void {
+  const target = selection.value[0]
+  if (!target) {
+    return
+  }
+  router.push({ name: 'item-detail', params: { id: target.id }, query: { tab: 'versions' } })
+}
+
+// ------------------------------------------------------------ 批量新建
+
+function openBatchCreate(): void {
+  batchCreateRows.value = [emptyBatchRow(), emptyBatchRow(), emptyBatchRow()]
+  batchCreateMsg.value = ''
+  batchCreateVisible.value = true
+}
+
+function addBatchCreateRow(): void {
+  batchCreateRows.value.push(emptyBatchRow())
+}
+
+function removeBatchCreateRow(index: number): void {
+  batchCreateRows.value.splice(index, 1)
+}
+
+async function onBatchCreate(): Promise<void> {
+  const items: ItemSaveReq[] = batchCreateRows.value
+    .filter((row) => row.name.trim().length > 0)
+    .map((row) => ({
+      name: row.name.trim(),
+      itemType: row.itemType,
+      specification: row.specification.trim() || undefined,
+      material: row.material.trim() || undefined,
+      unit: row.unit.trim() || undefined,
+      sourceType: row.sourceType
+    }))
+  if (!items.length) {
+    ElMessage.warning('请至少填写一行名称')
+    return
+  }
+  batchCreating.value = true
+  try {
+    const result = await itemApi.batchCreate(items)
+    batchCreateMsg.value = `提交 ${result.total} 行：成功 ${result.done}，跳过 ${result.skipped}${
+      result.messages.length ? '；' + result.messages.slice(0, 5).join('；') : ''
+    }`
+    if (result.done > 0) {
+      await load()
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量新建失败')
+  } finally {
+    batchCreating.value = false
+  }
+}
+
+// ------------------------------------------------------------ 批量改属性
+
+function openBatchUpdate(): void {
+  Object.assign(batchPatch, {
+    name: '',
+    itemType: '',
+    specification: '',
+    material: '',
+    unit: '',
+    weight: '',
+    sourceType: '',
+    stdCode: '',
+    remark: ''
+  })
+  batchUpdateMsg.value = ''
+  batchUpdateVisible.value = true
+}
+
+async function onBatchUpdate(): Promise<void> {
+  const patch: ItemBatchPatch = {}
+  if (batchPatch.name.trim()) {
+    patch.name = batchPatch.name.trim()
+  }
+  if (batchPatch.itemType) {
+    patch.itemType = batchPatch.itemType
+  }
+  if (batchPatch.specification.trim()) {
+    patch.specification = batchPatch.specification.trim()
+  }
+  if (batchPatch.material.trim()) {
+    patch.material = batchPatch.material.trim()
+  }
+  if (batchPatch.unit.trim()) {
+    patch.unit = batchPatch.unit.trim()
+  }
+  if (batchPatch.sourceType) {
+    patch.sourceType = batchPatch.sourceType
+  }
+  if (batchPatch.stdCode.trim()) {
+    patch.stdCode = batchPatch.stdCode.trim()
+  }
+  if (batchPatch.remark.trim()) {
+    patch.remark = batchPatch.remark.trim()
+  }
+  const weight = Number(batchPatch.weight)
+  if (batchPatch.weight.trim() && Number.isFinite(weight)) {
+    patch.weight = weight
+  }
+  if (!Object.keys(patch).length) {
+    ElMessage.warning('请至少填写一个要修改的字段')
+    return
+  }
+  batchUpdating.value = true
+  try {
+    const result = await itemApi.batchUpdate(
+      selection.value.map((row) => row.id),
+      patch
+    )
+    batchUpdateMsg.value = `应用 ${result.total} 个：成功 ${result.done}，跳过 ${result.skipped}${
+      result.messages.length ? '；' + result.messages.slice(0, 5).join('；') : ''
+    }`
+    if (result.done > 0) {
+      await load()
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量改属性失败')
+  } finally {
+    batchUpdating.value = false
+  }
+}
+
+// ------------------------------------------------------------ 转交所有权
+
+function openTransferOwner(): void {
+  transferUserId.value = ''
+  transferMsg.value = ''
+  transferVisible.value = true
+  transferUsers.value = []
+  if (selection.value.length) {
+    searchTransferUsers('')
+  }
+}
+
+async function searchTransferUsers(keyword: string): Promise<void> {
+  transferUserLoading.value = true
+  try {
+    transferUsers.value = await workflowApi.actorUsers(keyword, 20)
+  } catch {
+    transferUsers.value = []
+  } finally {
+    transferUserLoading.value = false
+  }
+}
+
+async function onTransferOwner(): Promise<void> {
+  if (!transferUserId.value) {
+    return
+  }
+  transferring.value = true
+  try {
+    const result = await itemApi.transferOwner(
+      selection.value.map((row) => row.id),
+      transferUserId.value
+    )
+    transferMsg.value = `转交 ${result.total} 个：成功 ${result.done}，跳过 ${result.skipped}${
+      result.messages.length ? '；' + result.messages.slice(0, 5).join('；') : ''
+    }`
+    if (result.done > 0) {
+      await load()
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '转交所有权失败')
+  } finally {
+    transferring.value = false
+  }
+}
+
 async function onCheckout(): Promise<void> {
   const target = selection.value[0]
   if (!target) {
@@ -929,6 +1341,27 @@ onMounted(load)
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.dialog-alert {
+  margin-bottom: 12px;
+}
+
+.dialog-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.dialog-result {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: #f4f4f5;
+  color: #606266;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .import-alert {

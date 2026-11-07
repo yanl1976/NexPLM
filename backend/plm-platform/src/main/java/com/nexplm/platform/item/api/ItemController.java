@@ -4,6 +4,7 @@ import com.nexplm.common.api.PageResult;
 import com.nexplm.common.api.Result;
 import com.nexplm.common.audit.Audit;
 import com.nexplm.platform.iam.api.SecurityDtos;
+import com.nexplm.platform.item.service.ItemBatchService;
 import com.nexplm.platform.item.service.ItemExcelService;
 import com.nexplm.platform.item.service.ItemLifecycleService;
 import com.nexplm.platform.item.service.ItemService;
@@ -54,13 +55,16 @@ public class ItemController {
     private final ItemLifecycleService lifecycleService;
     private final ItemViewService viewService;
     private final ItemExcelService excelService;
+    private final ItemBatchService batchService;
 
     public ItemController(ItemService itemService, ItemLifecycleService lifecycleService,
-                          ItemViewService viewService, ItemExcelService excelService) {
+                          ItemViewService viewService, ItemExcelService excelService,
+                          ItemBatchService batchService) {
         this.itemService = itemService;
         this.lifecycleService = lifecycleService;
         this.viewService = viewService;
         this.excelService = excelService;
+        this.batchService = batchService;
     }
 
     // ------------------------------------------------------------ 列表与详情
@@ -135,6 +139,30 @@ public class ItemController {
     public record BatchIdsReq(List<Long> ids) {
     }
 
+    @Operation(summary = "批量新建零部件（逐条独立，部分成功语义）")
+    @PostMapping("/batch-create")
+    @PreAuthorize("hasAuthority('pse.item.write')")
+    @Audit(module = "PSE", action = "ITEM_BATCH_CREATE", objectType = "PdmItem")
+    public Result<ItemDtos.BatchResult> batchCreate(@RequestBody ItemDtos.BatchCreateReq req) {
+        return Result.ok(batchService.batchCreate(req.items(), CurrentUser.userId()));
+    }
+
+    @Operation(summary = "批量改属性（补丁字段 null 表示不修改）")
+    @PutMapping("/batch-update")
+    @PreAuthorize("hasAuthority('pse.item.write')")
+    @Audit(module = "PSE", action = "ITEM_BATCH_UPDATE", objectType = "PdmItem")
+    public Result<ItemDtos.BatchResult> batchUpdate(@Valid @RequestBody ItemDtos.BatchUpdateReq req) {
+        return Result.ok(batchService.batchUpdate(req.ids(), req.patch(), CurrentUser.userId()));
+    }
+
+    @Operation(summary = "转交所有权（同公司内变更属主）")
+    @PostMapping("/transfer-owner")
+    @PreAuthorize("hasAuthority('pse.item.write')")
+    @Audit(module = "PSE", action = "ITEM_TRANSFER_OWNER", objectType = "PdmItem")
+    public Result<ItemDtos.BatchResult> transferOwner(@Valid @RequestBody ItemDtos.TransferOwnerReq req) {
+        return Result.ok(batchService.transferOwner(req.ids(), req.targetUserId(), CurrentUser.userId()));
+    }
+
     @Operation(summary = "迁移使用状态（Using 在用 / StopUsing 停用 / GiveUp 废弃）")
     @PutMapping("/{id}/using-state")
     @PreAuthorize("hasAuthority('pse.item.write')")
@@ -184,6 +212,16 @@ public class ItemController {
     @PreAuthorize("hasAuthority('pse.item.read')")
     public Result<List<ItemDtos.VersionRow>> versions(@PathVariable Long id) {
         return Result.ok(lifecycleService.versions(id));
+    }
+
+    @Operation(summary = "版本逐字段比较（限同一零部件的两个版本）")
+    @GetMapping("/{id}/versions/compare")
+    @PreAuthorize("hasAuthority('pse.item.read')")
+    public Result<ItemDtos.VersionCompare> compareVersions(
+            @PathVariable Long id,
+            @RequestParam(value = "baseId") Long baseId,
+            @RequestParam(value = "targetId") Long targetId) {
+        return Result.ok(lifecycleService.compare(id, baseId, targetId));
     }
 
     // ------------------------------------------------------------ 视图（旧系统 PSEITEMVIEW）
