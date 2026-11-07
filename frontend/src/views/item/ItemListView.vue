@@ -200,7 +200,7 @@
     </el-card>
 
     <!-- 新建 / 编辑：基本属性 + 设计属性（对齐旧系统 PSEBASEFORM） -->
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑零部件' : '新建零部件'" width="760px">
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑零部件' : '新建零部件'" width="900px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <div class="form-section">基本属性</div>
         <el-row :gutter="12">
@@ -324,6 +324,34 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <template v-if="customFields.length">
+          <div class="form-section">ERP 扩展属性</div>
+          <el-row :gutter="12">
+            <el-col v-for="field in customFields" :key="field.code" :span="12">
+              <el-form-item :label="field.name">
+                <el-select
+                  v-if="isBoolField(field)"
+                  v-model="extBoolForm[field.code]"
+                  style="width: 100%"
+                  :title="`ERP 列：${field.code}`"
+                >
+                  <el-option label="未设置" value="" />
+                  <el-option label="是" :value="true" />
+                  <el-option label="否" :value="false" />
+                </el-select>
+                <el-input
+                  v-else
+                  v-model="extTextForm[field.code]"
+                  :title="`ERP 列：${field.code}`"
+                  :placeholder="`ERP 列 ${field.code}`"
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <div class="form-hint">
+            {{ editingId ? '编辑时只提交改动过的字段，未改动保持原值' : '布尔的「未设置」不提交，由金蝶按默认带出' }}
+          </div>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -572,6 +600,14 @@ import {
   type ItemSummary
 } from '@/api/item'
 import { workflowApi, type ActorUserRow } from '@/api/workflow'
+import { type MetaFieldDef } from '@/api/system'
+import {
+  buildErpPatch,
+  buildErpValues,
+  isBoolField,
+  loadItemCustomFields,
+  pickExtValues
+} from '@/utils/itemErpFields'
 import { useUserStore } from '@/stores/user'
 import StatusDot from '@/components/StatusDot.vue'
 import ColumnSetting from '@/components/ColumnSetting.vue'
@@ -723,6 +759,28 @@ const form = reactive<ItemSaveReq & { designAttr: ItemDesignAttr }>({
 const rules: FormRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   itemType: [{ required: true, message: '请选择类型', trigger: 'change' }]
+}
+
+// ------------------------------------------------------------ ERP 客制字段（批次 G·方案 A / T-G-02）
+
+/** 客制字段集合（元数据 − 标准键 − 设计属性键），实现与详情页共用 utils/itemErpFields。 */
+const customFields = ref<MetaFieldDef[]>([])
+const extTextForm = reactive<Record<string, string>>({})
+/** 布尔三态：'' = 未设置（新建不提交 / 编辑提交空串清空）。 */
+const extBoolForm = reactive<Record<string, boolean | ''>>({})
+/** 编辑时的原始 ext_json 快照，用于"只提交改动过的键"。 */
+const extOriginal = ref<Record<string, unknown>>({})
+
+async function loadCustomFields(): Promise<void> {
+  customFields.value = await loadItemCustomFields()
+}
+
+function resetExtForms(source?: Record<string, unknown>): void {
+  const values = pickExtValues(customFields.value, source)
+  Object.keys(extTextForm).forEach((key) => delete extTextForm[key])
+  Object.keys(extBoolForm).forEach((key) => delete extBoolForm[key])
+  Object.assign(extTextForm, values.text)
+  Object.assign(extBoolForm, values.bool)
 }
 
 function loadColumns(): string[] {
@@ -884,6 +942,9 @@ function openCreate(): void {
   form.stdCode = ''
   form.remark = ''
   form.designAttr = emptyDesignAttr()
+  // 新建：客制字段清空（布尔一律「未设置」，不预置 false）
+  extOriginal.value = {}
+  resetExtForms()
   dialogVisible.value = true
 }
 
@@ -906,6 +967,8 @@ async function openEdit(row?: ItemSummary): Promise<void> {
     form.stdCode = detail.stdCode ?? ''
     form.remark = detail.remark ?? ''
     form.designAttr = { ...emptyDesignAttr(), ...(detail.designAttr ?? {}) }
+    extOriginal.value = { ...(detail.ext ?? {}) }
+    resetExtForms(detail.ext ?? {})
     dialogVisible.value = true
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载详情失败')
@@ -923,10 +986,14 @@ async function onSave(): Promise<void> {
   saving.value = true
   try {
     if (editingId.value) {
-      await itemApi.update(editingId.value, { ...form })
+      // 编辑：只提交改动过的客制字段，未改动由后端保留
+      const ext = buildErpPatch(customFields.value, extTextForm, extBoolForm, extOriginal.value)
+      await itemApi.update(editingId.value, { ...form, ext })
       ElMessage.success('已保存')
     } else {
-      await itemApi.create({ ...form })
+      // 新建：提交用户填写的全部值（布尔仅在显式选择时提交）
+      const ext = buildErpValues(customFields.value, extTextForm, extBoolForm)
+      await itemApi.create({ ...form, ext })
       ElMessage.success('已创建')
     }
     dialogVisible.value = false
@@ -1267,7 +1334,11 @@ function openTab(tab: string): void {
   router.push({ name: 'item-detail', params: { id: target.id }, query: { tab } })
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  // 客制字段集合一次取够（与详情页共用同一实现）
+  loadCustomFields()
+})
 </script>
 
 <style scoped>
@@ -1335,6 +1406,12 @@ onMounted(load)
   border-left: 3px solid var(--plm-primary, #1f5c8b);
   font-weight: 600;
   font-size: 13px;
+}
+
+.form-hint {
+  margin: -4px 0 8px 100px;
+  color: #909399;
+  font-size: 12px;
 }
 
 .import-row {
