@@ -167,7 +167,8 @@
               <span>集成中心</span>
             </template>
             <el-menu-item index="/itg">端点 / 映射 / 任务</el-menu-item>
-          </el-sub-menu>
+            <el-menu-item index="/itg/erp-mapping">ERP 字段映射</el-menu-item>
+            </el-sub-menu>
         </el-menu>
       </el-aside>
 

@@ -263,7 +263,120 @@ export const itgApi = {
     maxAttempt?: number
   }): Promise<JobSubmitResult> {
     return http.post<JobSubmitResult>('/itg/kingdee/push', req)
+  },
+
+  /* ---------------------------------------------------------- ERP 三段字段映射（批次 G） */
+
+  erpSegments(): Promise<ErpSegmentRow[]> {
+    return http.get<ErpSegmentRow[]>('/itg/erp-mapping/segments')
+  },
+  erpMapping(objectCode: string): Promise<ErpMappingDetail> {
+    return http.get<ErpMappingDetail>(`/itg/erp-mapping/${objectCode}`)
+  },
+  saveErpMapping(objectCode: string, req: ErpMappingSaveReq): Promise<ErpMappingDetail> {
+    return http.put<ErpMappingDetail>(`/itg/erp-mapping/${objectCode}`, req)
+  },
+  previewErpMapping(
+    objectCode: string,
+    req: { bizId: string; viewType?: string }
+  ): Promise<ErpPreviewResult> {
+    return http.post<ErpPreviewResult>(`/itg/erp-mapping/${objectCode}/preview`, req)
   }
+}
+
+/* ------------------------------------------------------------ 批次 G：ERP 三段字段映射 */
+
+export interface ErpSegmentRow {
+  objectCode: string
+  label: string
+  sourceSegment: string
+  ruleCount: number
+  mappedCount: number
+  gapCount: number
+  pendingCount: number
+  previewSupported: boolean
+  remark?: string | null
+}
+
+export interface ErpRuleRow {
+  sort: number
+  erpName?: string | null
+  caption?: string | null
+  pdmName?: string | null
+  pdmCaption?: string | null
+  source: string
+  sourcePath?: string | null
+  target: string
+  transform?: string | null
+  canNull: boolean
+  sendDbValue: boolean
+  required: boolean
+  status: string
+  note?: string | null
+}
+
+export interface ErpMappingDetail {
+  objectCode: string
+  label: string
+  sourceSegment: string
+  endpointCode?: string | null
+  payloadVersion?: string | null
+  remark?: string | null
+  rules: ErpRuleRow[]
+  mappedCount: number
+  gapCount: number
+  pendingCount: number
+  previewSupported: boolean
+}
+
+export interface ErpRuleSaveReq {
+  erpName?: string | null
+  caption?: string | null
+  pdmName?: string | null
+  pdmCaption?: string | null
+  source: string
+  sourcePath?: string | null
+  target: string
+  transform?: string | null
+  canNull: boolean
+  sendDbValue: boolean
+  status?: string | null
+  note?: string | null
+}
+
+export interface ErpMappingSaveReq {
+  rules: ErpRuleSaveReq[]
+  remark?: string | null
+}
+
+export interface ErpMissingRow {
+  target: string
+  source: string
+  reason: string
+}
+
+export interface ErpPreviewResult {
+  objectCode: string
+  bizKey: string
+  payload: unknown
+  missing: ErpMissingRow[]
+  filledCount: number
+  missingCount: number
+  entryKey: string
+  entryNote: string
+}
+
+/** 映射状态：缺数据源 / 待确认 / 已映射。 */
+export const ERP_STATUS_LABEL: Record<string, string> = {
+  OK: '已映射',
+  PENDING: '待确认',
+  GAP: '缺数据源'
+}
+
+export const ERP_STATUS_TONE: Record<string, 'ok' | 'warn' | 'danger'> = {
+  OK: 'ok',
+  PENDING: 'warn',
+  GAP: 'danger'
 }
 
 /** 金蝶下发支持的业务类型（与后端 KingdeePayloadService 一致）。 */

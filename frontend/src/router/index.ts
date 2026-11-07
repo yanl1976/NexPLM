@@ -333,6 +333,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '集成中心' }
       },
       {
+        path: 'itg/erp-mapping',
+        name: 'itg-erp-mapping',
+        component: () => import('@/views/integration/ErpMappingView.vue'),
+        meta: { title: 'ERP 字段映射' }
+      },
+      {
         path: 'system/org',
         name: 'system-org',
         component: () => import('@/views/system/OrgView.vue'),

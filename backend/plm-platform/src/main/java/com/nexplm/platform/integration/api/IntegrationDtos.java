@@ -128,4 +128,52 @@ public final class IntegrationDtos {
 
     public record KingdeePreviewResult(String bizType, String bizKey, JsonNode payload) {
     }
+
+    /* ---------------------------------------------------------------- ERP 三段字段映射（批次 G） */
+
+    /** 段概览：物料下发 / BOM 下发 / 请购单下发。 */
+    public record ErpSegmentRow(String objectCode, String label, String sourceSegment,
+                                int ruleCount, int mappedCount, int gapCount, int pendingCount,
+                                boolean previewSupported, String remark) {
+    }
+
+    /** 一列的映射行：ERP 字段名 ↔ 旧 PDM 列名 ↔ 新系统取值路径。 */
+    public record ErpRuleRow(int sort, String erpName, String caption, String pdmName,
+                             String pdmCaption, String source, String sourcePath, String target,
+                             String transform, boolean canNull, boolean sendDbValue,
+                             boolean required, String status, String note) {
+    }
+
+    public record ErpMappingDetail(String objectCode, String label, String sourceSegment,
+                                   String endpointCode, String payloadVersion, String remark,
+                                   List<ErpRuleRow> rules, int mappedCount, int gapCount,
+                                   int pendingCount, boolean previewSupported) {
+    }
+
+    /** 保存一列：{@code sourcePath} 为空表示新系统没有数据源（缺口）。 */
+    public record ErpRuleSaveReq(String erpName, String caption, String pdmName, String pdmCaption,
+                                 @NotBlank @Size(max = 100) String source,
+                                 @Size(max = 200) String sourcePath,
+                                 @NotBlank @Size(max = 300) String target,
+                                 @Size(max = 16) String transform,
+                                 Boolean canNull, Boolean sendDbValue,
+                                 @Size(max = 16) String status,
+                                 @Size(max = 500) String note) {
+    }
+
+    public record ErpMappingSaveReq(@NotEmpty @Valid List<ErpRuleSaveReq> rules,
+                                    @Size(max = 1000) String remark) {
+    }
+
+    public record ErpPreviewReq(@NotNull Long bizId, @Size(max = 16) String viewType) {
+    }
+
+    public record ErpMissingRow(String target, String source, String reason) {
+    }
+
+    /** 试算结果：组装出的金蝶报文 + 缺口清单 + 分录键名说明。 */
+    public record ErpPreviewResult(String objectCode, String bizKey, JsonNode payload,
+                                   List<ErpMissingRow> missing, int filledCount, int missingCount,
+                                   String entryKey, String entryNote) {
+    }
 }
