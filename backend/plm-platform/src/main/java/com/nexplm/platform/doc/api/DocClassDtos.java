@@ -1,7 +1,7 @@
 package com.nexplm.platform.doc.api;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -49,6 +49,9 @@ public final class DocClassDtos {
             Integer sort) {
     }
 
-    public record AttrSaveReq(@NotEmpty(message = "属性列表不能为空") List<AttrItem> items) {
+    /**
+     * 全量替换分类自身属性：空数组表示"清空该分类的全部属性"（语义上合法，故不禁止空列表）。
+     */
+    public record AttrSaveReq(@NotNull(message = "属性列表不能为空") List<AttrItem> items) {
     }
 }

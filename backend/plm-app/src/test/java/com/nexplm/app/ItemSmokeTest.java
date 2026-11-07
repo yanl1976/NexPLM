@@ -774,6 +774,94 @@ class ItemSmokeTest {
         assertThat(conflict.getResponse().getContentAsString()).contains("已存在");
     }
 
+    /**
+     * 批次 H·T-H-01：零部件分类（复用 doc_class，entity_code=PdmItem）。
+     * 覆盖：示例树可读 → 建分类/属性 → 归类（必填校验）→ 按分类检索（含/不含子分类）
+     * → 属性过滤 → 删除保护 → 取消归类后可删。
+     */
+    @Test
+    void itemClassifyTreeAssignAndSearch() throws Exception {
+        String admin = login("admin", "Admin@12345");
+
+        // 1. 示例分类树（V71 种子）：PdmItem 下应有 MECH，且与文档分类互不干扰
+        JsonNode tree = call(get("/api/v1/item-classes"), admin, null);
+        JsonNode mech = null;
+        for (JsonNode node : tree) {
+            if ("MECH".equals(node.path("code").asText())) {
+                mech = node;
+            }
+        }
+        assertThat(mech).as("PdmItem 示例分类 MECH 应已由 V71 建好").isNotNull();
+        long mechId = mech.path("id").asLong();
+
+        // 2. 建子分类 + 定义属性（material 必填、surface 可选）
+        String suffix = String.valueOf(System.nanoTime() % 100000);
+        JsonNode created = call(post("/api/v1/item-classes"), admin, json(Map.of(
+                "parentId", mechId, "code", "MECH-T" + suffix, "name", "测试分类" + suffix)));
+        long classId = created.path("id").asLong();
+        assertThat(created.path("path").asText()).startsWith("/MECH/");
+
+        call(put("/api/v1/item-classes/{id}/attributes", classId), admin, json(Map.of("items", List.of(
+                Map.of("code", "material", "name", "材料", "valueType", "STRING", "required", true),
+                Map.of("code", "surface", "name", "表面处理", "valueType", "STRING", "required", false)))));
+        JsonNode attrs = call(get("/api/v1/item-classes/{id}/attributes", classId), admin, null);
+        // 生效属性 = 自身 2 个 + 祖先可继承（MECH 未定义属性，故正好 2 个）
+        assertThat(attrs.findValuesAsText("code")).contains("material", "surface");
+
+        // 3. 归类：必填属性缺失应 400，补齐后成功
+        long itemId = createItem(admin, "分类测试零件" + suffix, "PART", "MAKE");
+        mockMvc.perform(put("/api/v1/items/{id}/classify", itemId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("classId", classId, "attrs", Map.of()))))
+                .andExpect(status().isBadRequest());
+        JsonNode assigned = call(put("/api/v1/items/{id}/classify", itemId), admin,
+                json(Map.of("classId", classId, "attrs", Map.of("material", "40Cr"))));
+        assertThat(assigned.path("classId").asLong()).isEqualTo(classId);
+        assertThat(assigned.path("attrs").path("material").asText()).isEqualTo("40Cr");
+
+        // 4. 回读
+        JsonNode info = call(get("/api/v1/items/{id}/classify", itemId), admin, null);
+        assertThat(info.path("classCode").asText()).isEqualTo("MECH-T" + suffix);
+        assertThat(info.path("attrs").path("material").asText()).isEqualTo("40Cr");
+
+        // 5. 按分类检索：含子分类能查到，不含子分类查不到
+        String code = call(get("/api/v1/items/{id}", itemId), admin, null).path("code").asText();
+        JsonNode withChildren = call(get("/api/v1/items?page=1&size=200&classId=" + mechId
+                + "&includeChildren=true"), admin, null);
+        assertThat(withChildren.path("items").findValuesAsText("code")).contains(code);
+        JsonNode withoutChildren = call(get("/api/v1/items?page=1&size=200&classId=" + mechId
+                + "&includeChildren=false"), admin, null);
+        assertThat(withoutChildren.path("items").findValuesAsText("code")).doesNotContain(code);
+
+        // 6. 属性过滤（ext_json.classAttrs）
+        JsonNode matched = call(get("/api/v1/items?page=1&size=200&classId=" + classId
+                + "&attr.material=40Cr"), admin, null);
+        assertThat(matched.path("items").findValuesAsText("code")).contains(code);
+        JsonNode unmatched = call(get("/api/v1/items?page=1&size=200&classId=" + classId
+                + "&attr.material=99Cr"), admin, null);
+        assertThat(unmatched.path("items").findValuesAsText("code")).doesNotContain(code);
+
+        // 7. 分类下仍有零件 → 删除保护
+        MvcResult conflict = mockMvc.perform(delete("/api/v1/item-classes/{id}", classId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isConflict())
+                .andReturn();
+        assertThat(conflict.getResponse().getContentAsString()).contains("零部件");
+
+        // 8. 取消归类后属性值一并清空，分类可删
+        Map<String, Object> cancelReq = new HashMap<>();
+        cancelReq.put("classId", null);
+        cancelReq.put("attrs", Map.of());
+        JsonNode cleared = call(put("/api/v1/items/{id}/classify", itemId), admin, json(cancelReq));
+        // 取消归类后 classId 为 null（全局 Jackson 配置为 non_null，字段可能整个不返回）
+        assertThat(cleared.path("classId").isNull() || cleared.path("classId").isMissingNode()).isTrue();
+        assertThat(cleared.path("attrs").isEmpty()).isTrue();
+        mockMvc.perform(delete("/api/v1/item-classes/{id}", classId)
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk());
+    }
+
     // ------------------------------------------------------------ 工具
 
     private JsonNode multipartCall(String path, long itemId, String token, String fileName,

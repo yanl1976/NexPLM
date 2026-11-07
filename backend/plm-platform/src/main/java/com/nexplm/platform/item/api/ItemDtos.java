@@ -76,6 +76,19 @@ public final class ItemDtos {
     public record UsingStateReq(@NotBlank(message = "使用状态不能为空") String usingState) {
     }
 
+    /**
+     * 零件分类信息（批次 H·T-H-01）：分类树复用 {@code doc_class}（entity_code=PdmItem），
+     * {@code attrDefs} 为生效属性（自身 + 祖先可继承），{@code attrs} 为已填值。
+     */
+    public record ItemClassifyInfo(Long classId, String classCode, String className, String classPath,
+                                   java.util.Map<String, String> attrs,
+                                   java.util.List<com.nexplm.platform.doc.api.DocClassDtos.AttrDef> attrDefs) {
+    }
+
+    /** 归类请求：{@code classId=null} 表示取消归类；{@code attrs} 按属性编码填值。 */
+    public record ClassAssignReq(Long classId, java.util.Map<String, String> attrs) {
+    }
+
     /** 零件视图行（旧系统 PSEITEMVIEW）。 */
     public record ItemViewRow(Long id, String viewType, String viewTypeLabel, String description,
                               Boolean isDefault, String lifecycleState, String workflowState,

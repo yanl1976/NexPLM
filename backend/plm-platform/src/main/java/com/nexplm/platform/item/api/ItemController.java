@@ -87,10 +87,20 @@ public class ItemController {
             @RequestParam(value = "releasedFrom", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate releasedFrom,
             @RequestParam(value = "releasedTo", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate releasedTo,
             @RequestParam(value = "material", required = false) String material,
-            @RequestParam(value = "specification", required = false) String specification) {
+            @RequestParam(value = "specification", required = false) String specification,
+            @RequestParam(value = "classId", required = false) Long classId,
+            @RequestParam(value = "includeChildren", required = false) Boolean includeChildren,
+            @RequestParam java.util.Map<String, String> params) {
+        // 分类属性过滤走 attr.<属性编码>=值（避免为每个属性开一个参数）
+        java.util.Map<String, String> attrFilters = new java.util.LinkedHashMap<>();
+        params.forEach((key, value) -> {
+            if (key != null && key.startsWith("attr.") && key.length() > 5) {
+                attrFilters.put(key.substring(5), value);
+            }
+        });
         return Result.ok(itemService.page(page, size, keyword, itemType, sourceType, usingState,
                 phaseState, workflowState, createdBy, createdFrom, createdTo,
-                releasedFrom, releasedTo, material, specification));
+                releasedFrom, releasedTo, material, specification, classId, includeChildren, attrFilters));
     }
 
     @Operation(summary = "零部件详情（含设计属性与检出信息）")
@@ -98,6 +108,21 @@ public class ItemController {
     @PreAuthorize("hasAuthority('pse.item.read')")
     public Result<ItemDtos.ItemDetail> detail(@PathVariable Long id) {
         return Result.ok(itemService.detail(id));
+    }
+
+    @Operation(summary = "读取零部件分类与分类属性值（分类树见 /item-classes）")
+    @GetMapping("/{id}/classify")
+    @PreAuthorize("hasAuthority('pse.item.read')")
+    public Result<ItemDtos.ItemClassifyInfo> classify(@PathVariable Long id) {
+        return Result.ok(itemService.classifyInfo(id));
+    }
+
+    @Operation(summary = "零部件归类/取消归类（classId 为空表示取消；属性按分类生效属性校验）")
+    @PutMapping("/{id}/classify")
+    @PreAuthorize("hasAuthority('pse.item.write')")
+    public Result<ItemDtos.ItemClassifyInfo> assignClass(@PathVariable Long id,
+                                                        @RequestBody ItemDtos.ClassAssignReq req) {
+        return Result.ok(itemService.assignClass(id, req, CurrentUser.userId()));
     }
 
     // ------------------------------------------------------------ 增删改

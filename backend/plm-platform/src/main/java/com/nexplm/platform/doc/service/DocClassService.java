@@ -27,19 +27,27 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * 文档分类服务：分类树维护、分类属性（含继承）定义、文档分类属性校验。
+ * 分类服务：分类树维护、分类属性（含继承）定义、对象分类属性校验。
+ * <p><b>本类同时服务图文档（{@code PdmDoc}）与零部件（{@code PdmItem}）</b>：
+ * {@code doc_class}/{@code doc_class_attr} 两张表由本类独占写入（单一口径），
+ * 不同对象类型靠 {@code entity_code} 隔离，编码可以在不同类型下重复。</p>
  * <p>规则：</p>
  * <ul>
  *   <li>分类编码在同一对象类型内唯一，形如 {@code MECH-ASSY}；</li>
  *   <li>{@code path} 为「/父编码/子编码」，调整编码或父级时整棵子树的 path 前缀同步替换；</li>
  *   <li>属性继承：子分类读取自身全部属性 + 祖先 {@code inheritable=true} 的属性，同编码以最近者为准；</li>
- *   <li>文档保存时按「生效属性」校验必填与值类型，属性值只保留已定义属性。</li>
+ *   <li>对象保存时按「生效属性」校验必填与值类型，属性值只保留已定义属性。</li>
  * </ul>
+ * <p>类名沿用历史的 {@code DocClassService}（表名也叫 doc_class），实体含义已泛化为「对象分类」，
+ * 迁移见 {@code docs/adr/0001}。</p>
  */
 @Service
 public class DocClassService {
 
     public static final String ENTITY_CODE = "PdmDoc";
+
+    /** 零部件分类的对象类型（与 PdmItem 元数据实体编码一致）。 */
+    public static final String ENTITY_ITEM = "PdmItem";
 
     private static final Pattern CODE_PATTERN = Pattern.compile("^[A-Za-z][A-Za-z0-9_-]{0,63}$");
     private static final Set<String> VALUE_TYPES = Set.of("STRING", "NUMBER", "DATE", "ENUM", "BOOL");
@@ -67,7 +75,7 @@ public class DocClassService {
                 .eq(DocClass::getEntityCode, entity)
                 .orderByAsc(DocClass::getSort)
                 .orderByAsc(DocClass::getCode));
-        Map<Long, Long> counts = docCounts();
+        Map<Long, Long> counts = objectCounts(entity);
         Map<Long, DocClassDtos.ClassNode> nodes = new LinkedHashMap<>();
         for (DocClass item : all) {
             nodes.put(item.getId(), new DocClassDtos.ClassNode(item.getId(), item.getParentId(),
@@ -98,16 +106,32 @@ public class DocClassService {
         return clazz;
     }
 
-    /** 按编码查分类（批量导入等按编码引用的场景）。 */
+    /** 按编码查分类（批量导入等按编码引用的场景），默认文档类型。 */
     public java.util.Optional<DocClass> findByCode(String code) {
+        return findByCode(ENTITY_CODE, code);
+    }
+
+    /** 按「对象类型 + 编码」查分类。 */
+    public java.util.Optional<DocClass> findByCode(String entityCode, String code) {
         if (code == null || code.isBlank()) {
             return java.util.Optional.empty();
         }
         return classMapper.selectList(new LambdaQueryWrapper<DocClass>()
-                        .eq(DocClass::getEntityCode, ENTITY_CODE)
+                        .eq(DocClass::getEntityCode, normalizeEntity(entityCode))
                         .eq(DocClass::getCode, code.trim())
                         .last("limit 1"))
                 .stream().findFirst();
+    }
+
+    /** 取分类并校验其属于指定对象类型（防止把文档分类挂到零件上）。 */
+    public DocClass requireClass(Long id, String entityCode) {
+        DocClass clazz = requireClass(id);
+        String expected = normalizeEntity(entityCode);
+        if (!expected.equals(clazz.getEntityCode())) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "分类「" + clazz.getName() + "」不属于对象类型 " + expected + "，不能使用");
+        }
+        return clazz;
     }
 
     /** 子树分类 ID（含自身），用于「按分类检索文档」时包含子分类。 */
@@ -122,14 +146,21 @@ public class DocClassService {
 
     @Transactional
     public DocClassDtos.ClassNode create(DocClassDtos.ClassSaveReq req, Long userId) {
+        return create(ENTITY_CODE, req, userId);
+    }
+
+    /** 在指定对象类型下新建分类（父级必须同属该类型）。 */
+    @Transactional
+    public DocClassDtos.ClassNode create(String entityCode, DocClassDtos.ClassSaveReq req, Long userId) {
+        String entity = normalizeEntity(entityCode);
         String code = requireCode(req.code());
-        DocClass parent = req.parentId() == null ? null : requireClass(req.parentId());
-        ensureCodeUnique(ENTITY_CODE, code, null);
+        DocClass parent = req.parentId() == null ? null : requireClass(req.parentId(), entity);
+        ensureCodeUnique(entity, code, null);
         OffsetDateTime now = OffsetDateTime.now();
         DocClass clazz = new DocClass();
         clazz.setId(IdWorker.getId());
         clazz.setParentId(parent == null ? null : parent.getId());
-        clazz.setEntityCode(ENTITY_CODE);
+        clazz.setEntityCode(entity);
         clazz.setCode(code);
         clazz.setName(req.name().trim());
         clazz.setPath(parent == null ? "/" + code : parent.getPath() + "/" + code);
@@ -159,7 +190,8 @@ public class DocClassService {
         if (parentId != null && parentId.equals(id)) {
             throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "分类不能作为自己的父级");
         }
-        DocClass parent = parentId == null ? null : requireClass(parentId);
+        // 父级必须同属一个对象类型，避免把零部件分类挂到文档分类下（反之亦然）
+        DocClass parent = parentId == null ? null : requireClass(parentId, existing.getEntityCode());
         if (parent != null && parent.getPath().startsWith(existing.getPath() + "/")) {
             throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "不能把分类移动到自己的子分类下");
         }
@@ -200,10 +232,14 @@ public class DocClassService {
         if (children != null && children > 0) {
             throw BizException.of(ErrorCode.COMMON_CONFLICT, "该分类下仍有子分类，请先删除子分类");
         }
-        Long used = jdbcTemplate.query("SELECT COUNT(1) FROM doc_master WHERE class_id = ?",
+        // 分类下仍有对象时拒绝删除（表名来自白名单常量，不拼接外部输入）
+        boolean itemClass = ENTITY_ITEM.equals(existing.getEntityCode());
+        String table = itemClass ? "item_master" : "doc_master";
+        String noun = itemClass ? "零部件" : "文档";
+        Long used = jdbcTemplate.query("SELECT COUNT(1) FROM " + table + " WHERE class_id = ?",
                 rs -> rs.next() ? rs.getLong(1) : 0L, id);
         if (used != null && used > 0) {
-            throw BizException.of(ErrorCode.COMMON_CONFLICT, "该分类下仍有 " + used + " 个文档，不能删除");
+            throw BizException.of(ErrorCode.COMMON_CONFLICT, "该分类下仍有 " + used + " 个" + noun + "，不能删除");
         }
         for (DocClassAttr attr : attrMapper.selectList(new LambdaQueryWrapper<DocClassAttr>()
                 .eq(DocClassAttr::getClassId, existing.getId()))) {
@@ -298,9 +334,16 @@ public class DocClassService {
     }
 
     /**
-     * 校验并归一化文档的分类属性值：按生效属性做必填与值类型校验，未定义属性丢弃。
+     * 校验并归一化文档的分类属性值（保留旧方法名，供文档模块调用）。
      */
     public Map<String, String> normalizeDocAttrs(Long classId, Map<String, String> values) {
+        return normalizeAttrs(classId, values);
+    }
+
+    /**
+     * 校验并归一化对象的分类属性值：按生效属性做必填与值类型校验，未定义属性丢弃。
+     */
+    public Map<String, String> normalizeAttrs(Long classId, Map<String, String> values) {
         if (classId == null) {
             return Map.of();
         }
@@ -374,12 +417,12 @@ public class DocClassService {
         }
     }
 
-    private Map<Long, Long> docCounts() {
+    /** 各分类下的对象数：文档看 doc_master，零部件看 item_master。 */
+    private Map<Long, Long> objectCounts(String entityCode) {
         Map<Long, Long> counts = new HashMap<>();
-        jdbcTemplate.query("""
-                        SELECT class_id, COUNT(1) AS doc_count FROM doc_master
-                         WHERE class_id IS NOT NULL GROUP BY class_id
-                        """,
+        String table = ENTITY_ITEM.equals(entityCode) ? "item_master" : "doc_master";
+        jdbcTemplate.query("SELECT class_id, COUNT(1) AS doc_count FROM " + table
+                        + " WHERE class_id IS NOT NULL GROUP BY class_id",
                 rs -> {
                     counts.put(rs.getLong("class_id"), rs.getLong("doc_count"));
                 });

@@ -8,7 +8,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexplm.common.api.PageResult;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
+import com.nexplm.platform.doc.api.DocClassDtos;
+import com.nexplm.platform.doc.domain.DocClass;
 import com.nexplm.platform.doc.service.CheckoutService;
+import com.nexplm.platform.doc.service.DocClassService;
 import com.nexplm.platform.item.api.ItemDtos;
 import com.nexplm.platform.item.domain.ItemMaster;
 import com.nexplm.platform.item.mapper.ItemMasterMapper;
@@ -59,6 +62,9 @@ public class ItemService {
     private static final Set<String> DESIGN_ATTR_KEYS = Set.of("provider", "dwgNo", "productCategory",
             "productModel", "productSpec", "materialType", "materialType2", "surfaceTreatment",
             "isTooling", "weightUnit", "montage", "colorItem");
+    /** 分类属性编码白名单形态（用于 ext_json.classAttrs 的键校验，防止拼接注入）。 */
+    private static final java.util.regex.Pattern ATTR_CODE_PATTERN =
+            java.util.regex.Pattern.compile("^[A-Za-z][A-Za-z0-9_-]{0,63}$");
 
     private final PlmObjectMapper objectMapper;
     private final ItemMasterMapper itemMapper;
@@ -69,10 +75,13 @@ public class ItemService {
     private final JdbcTemplate jdbcTemplate;
     private final CodeRuleService codeRuleService;
     private final ObjectMapper jsonMapper;
+    /** 分类表（doc_class/doc_class_attr）的唯一写入口，零件分类复用文档分类能力（ADR-0001）。 */
+    private final DocClassService classService;
 
     public ItemService(PlmObjectMapper objectMapper, ItemMasterMapper itemMapper, MetaService metaService,
                        LifecycleService lifecycleService, ScopeApplier scopeApplier,
-                       CheckoutService checkoutService, JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper, CodeRuleService codeRuleService) {
+                       CheckoutService checkoutService, JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper,
+                       CodeRuleService codeRuleService, DocClassService classService) {
         this.objectMapper = objectMapper;
         this.itemMapper = itemMapper;
         this.metaService = metaService;
@@ -83,6 +92,7 @@ public class ItemService {
         this.jdbcTemplate = jdbcTemplate;
         this.codeRuleService = codeRuleService;
         this.jsonMapper = jsonMapper;
+        this.classService = classService;
     }
 
     // ------------------------------------------------------------ 列表
@@ -96,6 +106,23 @@ public class ItemService {
                                                  LocalDate createdFrom, LocalDate createdTo,
                                                  LocalDate releasedFrom, LocalDate releasedTo,
                                                  String material, String specification) {
+        return page(page, size, keyword, itemType, sourceType, usingState, phaseState, workflowState,
+                createdBy, createdFrom, createdTo, releasedFrom, releasedTo, material, specification,
+                null, null, Map.of());
+    }
+
+    /**
+     * 列表查询（含分类维度）：{@code classId} 非空时按分类过滤，{@code includeChildren=true} 时含子分类；
+     * {@code attrFilters} 为「分类属性编码 → 值」，走 {@code ext_json.classAttrs} 精确匹配。
+     */
+    public PageResult<ItemDtos.ItemSummary> page(int page, int size, String keyword,
+                                                 String itemType, String sourceType, String usingState,
+                                                 String phaseState, String workflowState, Long createdBy,
+                                                 LocalDate createdFrom, LocalDate createdTo,
+                                                 LocalDate releasedFrom, LocalDate releasedTo,
+                                                 String material, String specification,
+                                                 Long classId, Boolean includeChildren,
+                                                 Map<String, String> attrFilters) {
         int pageNo = Math.max(1, page);
         int pageSize = Math.min(Math.max(1, size), 200);
         LambdaQueryWrapper<PlmObject> wrapper = new LambdaQueryWrapper<PlmObject>()
@@ -127,6 +154,33 @@ public class ItemService {
         if (specification != null && !specification.isBlank()) {
             wrapper.apply("id IN (SELECT object_id FROM item_master WHERE specification ILIKE {0})",
                     "%" + specification.trim() + "%");
+        }
+        // 分类过滤（含子分类）：分类落在 item_master.class_id，子查询避免 JOIN 干扰分页语义
+        if (classId != null) {
+            List<Long> classIds = Boolean.TRUE.equals(includeChildren)
+                    ? classService.subtreeIds(classId)
+                    : List.of(classService.requireClass(classId, DocClassService.ENTITY_ITEM).getId());
+            if (classIds.isEmpty()) {
+                wrapper.apply("1 = 0");
+            } else {
+                StringBuilder in = new StringBuilder();
+                for (int i = 0; i < classIds.size(); i++) {
+                    in.append(i == 0 ? "" : ",").append('{').append(i).append('}');
+                }
+                wrapper.apply("id IN (SELECT object_id FROM item_master WHERE class_id IN (" + in + "))",
+                        classIds.toArray());
+            }
+        }
+        // 分类属性过滤：属性值在 ext_json.classAttrs 下，键做白名单校验后用绑定参数取值
+        if (attrFilters != null && !attrFilters.isEmpty()) {
+            attrFilters.forEach((code, value) -> {
+                if (code == null || value == null || value.isBlank()
+                        || !ATTR_CODE_PATTERN.matcher(code).matches()) {
+                    return;
+                }
+                wrapper.apply("jsonb_extract_path_text(ext_json, 'classAttrs', {0}) = {1}",
+                        code, value.trim());
+            });
         }
         if (phaseState != null && !phaseState.isBlank()) {
             wrapper.eq(PlmObject::getPhaseState, phaseState.trim());
@@ -226,6 +280,79 @@ public class ItemService {
         Long current = com.nexplm.platform.security.CurrentUser.userId();
         return new ItemDtos.CheckoutInfo(lock.userId(), names.get(lock.userId()),
                 lock.checkedOutAt(), lock.expireAt(), current != null && current.equals(lock.userId()));
+    }
+
+    // ------------------------------------------------------------ 分类（批次 H·T-H-01）
+
+    /** 读取零件分类：分类基本信息 + 生效属性定义（含继承）+ 已填属性值。 */
+    public ItemDtos.ItemClassifyInfo classifyInfo(Long id) {
+        PlmObject object = requireItem(id);
+        Long classId = jdbcTemplate.query("SELECT class_id FROM item_master WHERE object_id = ?",
+                rs -> rs.next() ? rs.getObject(1, Long.class) : null, id);
+        if (classId == null) {
+            return new ItemDtos.ItemClassifyInfo(null, null, null, null, Map.of(), List.of());
+        }
+        DocClass clazz = classService.requireClass(classId);
+        return new ItemDtos.ItemClassifyInfo(classId, clazz.getCode(), clazz.getName(), clazz.getPath(),
+                classAttrs(object), classService.attrs(classId));
+    }
+
+    /**
+     * 归类 / 取消归类（{@code classId=null} 表示取消）。
+     * <p>属性值按分类"生效属性"做必填与类型校验后写 {@code ext_json.classAttrs}；
+     * 与批次 G 的 ERP 客制字段同处 ext_json 但键不重叠，写入时以既有内容为底，互不覆盖。</p>
+     */
+    @Transactional
+    public ItemDtos.ItemClassifyInfo assignClass(Long id, ItemDtos.ClassAssignReq req, Long userId) {
+        PlmObject object = requireItem(id);
+        ensureEditable(object, userId);
+        Long classId = req == null ? null : req.classId();
+        if (classId != null) {
+            classService.requireClass(classId, DocClassService.ENTITY_ITEM);
+        }
+        Map<String, String> attrs = classService.normalizeAttrs(classId, req == null ? Map.of() : req.attrs());
+        jdbcTemplate.update("UPDATE item_master SET class_id = ?, updated_at = now() WHERE object_id = ?",
+                classId, id);
+
+        Map<String, Object> ext = new LinkedHashMap<>(readExt(object.getExtJson()));
+        if (classId == null) {
+            ext.remove("classAttrs");
+        } else {
+            ext.put("classAttrs", attrs);
+        }
+        PlmObject update = new PlmObject();
+        update.setId(id);
+        update.setVersion(object.getVersion());
+        update.setExtJson(writeExt(ext));
+        update.setUpdatedBy(userId);
+        update.setUpdatedAt(OffsetDateTime.now());
+        if (objectMapper.updateById(update) == 0) {
+            throw BizException.of(ErrorCode.OBJ_VERSION_CONFLICT);
+        }
+        return classifyInfo(id);
+    }
+
+    /** 取 ext_json.classAttrs 的已填值（字符串化，便于前端表单直接绑定）。 */
+    private Map<String, String> classAttrs(PlmObject object) {
+        Object raw = readExt(object.getExtJson()).get("classAttrs");
+        if (!(raw instanceof Map<?, ?> map)) {
+            return Map.of();
+        }
+        Map<String, String> values = new LinkedHashMap<>();
+        map.forEach((key, value) -> {
+            if (key != null && value != null) {
+                values.put(String.valueOf(key), String.valueOf(value));
+            }
+        });
+        return values;
+    }
+
+    private String writeExt(Map<String, Object> ext) {
+        try {
+            return jsonMapper.writeValueAsString(ext);
+        } catch (Exception ex) {
+            throw BizException.of(ErrorCode.COMMON_INTERNAL, "序列化零部件扩展字段失败");
+        }
     }
 
     // ------------------------------------------------------------ 增删改
