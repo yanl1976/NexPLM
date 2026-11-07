@@ -52,6 +52,13 @@ public class ItemService {
     /** 旧系统：已发布/已废弃只能走修订，不能直接改。 */
     private static final Set<String> LOCKED_STATES = Set.of("Released", "Obsolete");
     private static final List<String> USING_STATES = List.of("Using", "StopUsing", "GiveUp");
+    /** ext_json 里的标准键：由专用字段维护，不允许通过 {@code ext} 覆盖（否则绕过校验）。 */
+    private static final Set<String> STANDARD_EXT_KEYS = Set.of("itemType", "sourceType", "unit",
+            "specification", "material", "weight", "stdCode", "remark");
+    /** 设计属性落 item_design_attr，不落 ext_json。 */
+    private static final Set<String> DESIGN_ATTR_KEYS = Set.of("provider", "dwgNo", "productCategory",
+            "productModel", "productSpec", "materialType", "materialType2", "surfaceTreatment",
+            "isTooling", "weightUnit", "montage", "colorItem");
 
     private final PlmObjectMapper objectMapper;
     private final ItemMasterMapper itemMapper;
@@ -186,7 +193,7 @@ public class ItemService {
                 object.getSecurityLevel(), object.getCreatedBy(), names.get(object.getCreatedBy()),
                 object.getUpdatedBy(), names.get(object.getUpdatedBy()), object.getReleasedAt(),
                 object.getCreatedAt(), object.getUpdatedAt(),
-                designAttr(id), checkoutInfo(id));
+                designAttr(id), checkoutInfo(id), ext);
     }
 
     /** 设计属性（旧系统 PSEBASEFORM）；未填过时返回空对象而不是 null，前端表单绑定更稳。 */
@@ -247,7 +254,7 @@ public class ItemService {
         object.setRevision(1);
         object.setIteration(1);
         object.setIsLatest(true);
-        object.setExtJson(buildExt(itemType, req, unit, sourceType));
+        object.setExtJson(buildExt(itemType, req, unit, sourceType, Map.of()));
         object.setVersion(0);
         object.setDeleted(false);
         object.setCreatedBy(userId);
@@ -292,7 +299,7 @@ public class ItemService {
         // 请求未指定组织时保留原归属，避免前端不传字段把已有 org_id 冲成 NULL
         update.setOrgId(req.orgId() == null ? object.getOrgId() : req.orgId());
         update.setSecurityLevel(req.securityLevel() == null ? 0 : req.securityLevel());
-        update.setExtJson(buildExt(itemType, req, unit, sourceType));
+        update.setExtJson(buildExt(itemType, req, unit, sourceType, readExt(object.getExtJson())));
         update.setUpdatedBy(userId);
         update.setUpdatedAt(OffsetDateTime.now());
         if (objectMapper.updateById(update) == 0) {
@@ -599,8 +606,16 @@ public class ItemService {
         };
     }
 
-    private String buildExt(String itemType, ItemDtos.ItemSaveReq req, String unit, String sourceType) {
-        Map<String, Object> ext = new LinkedHashMap<>();
+    /**
+     * 组装 ext_json：既有客制字段 → 标准字段 → 请求里的客制字段（批次 G·方案 A）。
+     *
+     * <p>顺序有讲究：标准字段必须覆盖历史同名值；客制字段最后写，但只允许
+     * 元数据里登记过、且不属于标准键/设计属性的字段（见 {@link #customExt}），
+     * 否则前端随手传个 {@code specification} 就能绕过专用字段的校验。</p>
+     */
+    private String buildExt(String itemType, ItemDtos.ItemSaveReq req, String unit, String sourceType,
+                            Map<String, Object> origin) {
+        Map<String, Object> ext = new LinkedHashMap<>(origin);
         ext.put("itemType", itemType);
         ext.put("sourceType", sourceType);
         ext.put("unit", unit);
@@ -619,11 +634,51 @@ public class ItemService {
         if (req.remark() != null && !req.remark().isBlank()) {
             ext.put("remark", req.remark().trim());
         }
+        for (Map.Entry<String, Object> entry : customExt(req.ext()).entrySet()) {
+            // 传空值 = 清空该客制字段（清空与"不提交"必须能区分，否则永远删不掉）
+            if (entry.getValue() == null) {
+                ext.remove(entry.getKey());
+            } else {
+                ext.put(entry.getKey(), entry.getValue());
+            }
+        }
         try {
             return jsonMapper.writeValueAsString(ext);
         } catch (Exception ex) {
             throw BizException.of(ErrorCode.COMMON_INTERNAL, "序列化零部件扩展字段失败");
         }
+    }
+
+    /**
+     * 客制字段白名单校验：只接受 PdmItem 元数据里已登记的字段码。
+     * <p>空串/空值统一转成 {@code null}，由调用方解释为"清空"。</p>
+     */
+    private Map<String, Object> customExt(Map<String, Object> requested) {
+        if (requested == null || requested.isEmpty()) {
+            return Map.of();
+        }
+        Set<String> allowed = new java.util.HashSet<>();
+        for (com.nexplm.platform.metadata.api.MetaDtos.FieldDef field
+                : metaService.getEntity(OBJECT_TYPE).fields()) {
+            if (!STANDARD_EXT_KEYS.contains(field.code()) && !DESIGN_ATTR_KEYS.contains(field.code())) {
+                allowed.add(field.code());
+            }
+        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : requested.entrySet()) {
+            String code = entry.getKey();
+            if (code == null || !allowed.contains(code)) {
+                throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                        "未知的客制字段：" + code + "（需先在元数据里为 PdmItem 定义）");
+            }
+            Object value = entry.getValue();
+            if (value == null || (value instanceof String text && text.isBlank())) {
+                values.put(code, null);
+            } else {
+                values.put(code, value instanceof String text ? text.trim() : value);
+            }
+        }
+        return values;
     }
 
     private Map<String, Object> readExt(String extJson) {

@@ -35,8 +35,9 @@ public final class ItemDtos {
                              Integer securityLevel, Long createdBy, String createdByName,
                              Long updatedBy, String updatedByName, OffsetDateTime releasedAt,
                              OffsetDateTime createdAt, OffsetDateTime updatedAt,
-                             ItemDesignAttr designAttr, CheckoutInfo checkout) {
-    }
+                             ItemDesignAttr designAttr, CheckoutInfo checkout,
+                             java.util.Map<String, Object> ext) {
+                             }
 
     /** 设计属性（旧系统 PSEBASEFORM）：独立表，随零件 1:1。 */
     public record ItemDesignAttr(String provider, String dwgNo, String productCategory, String productModel,
@@ -63,7 +64,12 @@ public final class ItemDtos {
             @Size(max = 500) String remark,
             Long orgId,
             Integer securityLevel,
-            ItemDesignAttr designAttr) {
+            ItemDesignAttr designAttr,
+            /**
+             * 客制字段（批次 G·方案 A）：键必须是 PdmItem 已发布的元数据字段码，
+             * 值写 {@code plm_object.ext_json}。null = 不改动已有客制字段。
+             */
+            java.util.Map<String, Object> ext) {
     }
 
     /** 使用状态迁移（旧系统 STATEID：Using / StopUsing / GiveUp）。 */

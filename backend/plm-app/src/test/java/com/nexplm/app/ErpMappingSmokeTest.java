@@ -68,22 +68,23 @@ class ErpMappingSmokeTest {
     void segmentTemplatesPreviewAndGapAccounting() throws Exception {
         String admin = login("admin", "Admin@12345");
 
-        // ---- 1. 三段概览：列数与缺口数来自 ERPConfig.xml 的真实解析
+        // ---- 1. 三段概览：方案 A 落库后物料只剩「金蝶内码」一个缺口，BOM 缺口清零
         JsonNode segments = call(get("/api/v1/itg/erp-mapping/segments"), admin);
         assertThat(segments).hasSize(3);
         JsonNode material = findSegment(segments, "Material");
         assertThat(material.path("ruleCount").asInt()).isEqualTo(32);
-        assertThat(material.path("mappedCount").asInt()).isEqualTo(17);
-        assertThat(material.path("gapCount").asInt()).isEqualTo(14);
+        assertThat(material.path("mappedCount").asInt()).isEqualTo(30);
+        assertThat(material.path("gapCount").asInt()).isEqualTo(1);
         assertThat(material.path("pendingCount").asInt()).isEqualTo(1);
         assertThat(material.path("previewSupported").asBoolean()).isTrue();
         JsonNode bom = findSegment(segments, "Bom");
         assertThat(bom.path("ruleCount").asInt()).isEqualTo(9);
+        assertThat(bom.path("gapCount").asInt()).isZero();
         JsonNode requisition = findSegment(segments, "Requisition");
         assertThat(requisition.path("ruleCount").asInt()).isEqualTo(24);
         assertThat(requisition.path("previewSupported").asBoolean()).isFalse();
 
-        // ---- 2. 物料段明细：旧 PDM 列名保真、缺口行显式带原因
+        // ---- 2. 物料段明细：旧 PDM 列名保真、唯一的缺口是「金蝶内码」
         JsonNode materialDetail = call(get("/api/v1/itg/erp-mapping/Material"), admin);
         assertThat(materialDetail.path("rules")).hasSize(32);
         JsonNode first = materialDetail.path("rules").get(0);
@@ -92,13 +93,36 @@ class ErpMappingSmokeTest {
         assertThat(first.path("target").asText()).isEqualTo("Model.FMATERIALID");
         assertThat(first.path("status").asText()).isEqualTo("GAP");
         assertThat(first.path("note").asText()).contains("ERP 分配");
+        // 方案 A：客制列已指向 ext_json 下的元数据字段
+        assertThat(findRule(materialDetail.path("rules"), "ZYCS").path("sourcePath").asText())
+                .isEqualTo("ext_json.F_ZXCV_ZYCS");
+        assertThat(findRule(materialDetail.path("rules"), "YUNXUSHENGCHAN")
+                .path("sourcePath").asText()).isEqualTo("ext_json.FIsProduce");
 
-        // ---- 3. 物料试算：嵌套路径 + 有值字段 + 缺口清单
+        // ---- 3. 物料试算：嵌套路径 + 客制字段（写进 ext_json 后能带进报文）+ 缺口清单
+        Map<String, Object> extValues = new java.util.LinkedHashMap<>();
+        extValues.put("F_ZXCV_ZYCS", "380V/50Hz");
+        extValues.put("FIsProduce", true);
+        extValues.put("FErpClsID", "外购");
+        extValues.put("F_zxcv_JSCS", "  ");
         JsonNode item = call(post("/api/v1/items"), admin, json(Map.of(
                 "name", "ERP 试算件", "itemType", "PART", "specification", "E-01",
-                "material", "40Cr", "unit", "PCS")));
+                "material", "40Cr", "unit", "PCS", "ext", extValues)));
         long itemId = item.path("id").asLong();
         String itemCode = item.path("code").asText();
+        // 客制字段回读：可写也可读（空白值不落库）
+        JsonNode itemDetail = call(get("/api/v1/items/{id}", itemId), admin);
+        assertThat(itemDetail.path("ext").path("F_ZXCV_ZYCS").asText()).isEqualTo("380V/50Hz");
+        assertThat(itemDetail.path("ext").path("FIsProduce").asBoolean()).isTrue();
+        assertThat(itemDetail.path("ext").has("F_zxcv_JSCS")).isFalse();
+        // 未登记的字段必须拒绝，避免 ext_json 变成垃圾桶
+        mockMvc.perform(post("/api/v1/items")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("name", "非法客制字段件", "itemType", "PART",
+                                "ext", Map.of("NOT_A_FIELD", "x")))))
+                .andExpect(status().isBadRequest());
+
         JsonNode preview = call(post("/api/v1/itg/erp-mapping/Material/preview"), admin,
                 json(Map.of("bizId", String.valueOf(itemId))));
         assertThat(preview.path("bizKey").asText()).startsWith(itemCode);
@@ -106,17 +130,27 @@ class ErpMappingSmokeTest {
         assertThat(model.path("FNumber").asText()).isEqualTo(itemCode);
         assertThat(model.path("FName").asText()).isEqualTo("ERP 试算件");
         assertThat(model.path("FSpecification").asText()).isEqualTo("E-01");
+        // 客制字段：摊平在源报文顶层，映射按 ext_json.F_XXX 取到
+        assertThat(model.path("F_ZXCV_ZYCS").asText()).isEqualTo("380V/50Hz");
+        assertThat(model.path("SubHeadEntity").path("FIsProduce").asBoolean()).isTrue();
+        assertThat(model.path("SubHeadEntity").path("FErpClsID").asText()).isEqualTo("外购");
         // 11 个单位列共用 UNIT，全部指向同一份嵌套对象
         assertThat(model.path("SubHeadEntity").path("FBaseUnitId").path("FNumber").asText())
                 .isEqualTo("PCS");
         assertThat(preview.path("entryKey").asText()).isEqualTo("entries");
-        assertThat(preview.path("missingCount").asInt()).isGreaterThan(0);
+        // 配置层只剩「金蝶内码」没有来源；运行期还有若干客制字段未填值，属"源数据为空"
         assertThat(preview.path("filledCount").asInt() + preview.path("missingCount").asInt())
                 .isEqualTo(32);
-        assertThat(findMissing(preview.path("missing"), "Model.SubHeadEntity.FErpClsID").path("source").asText())
-                .isEqualTo("ORIGIN");
+        assertThat(findMissing(preview.path("missing"), "Model.FMATERIALID").path("source").asText())
+                .isEqualTo("FMATERIALID");
+        // 已填的客制字段不应该再出现在缺口清单里
+        for (JsonNode missingRow : preview.path("missing")) {
+            assertThat(missingRow.path("target").asText())
+                    .isNotIn("Model.F_ZXCV_ZYCS", "Model.SubHeadEntity.FIsProduce",
+                            "Model.SubHeadEntity.FErpClsID");
+        }
 
-        // ---- 4. BOM 试算：分录数组 + 源数组路径
+        // ---- 4. BOM 试算：分录数组 + 父项单位/修改人/子项类型都从既有表列取
         JsonNode parent = call(post("/api/v1/items"), admin, json(Map.of(
                 "name", "ERP 试算总成", "itemType", "PRODUCT", "unit", "EA")));
         JsonNode child = call(post("/api/v1/items"), admin, json(Map.of(
@@ -133,17 +167,20 @@ class ErpMappingSmokeTest {
         JsonNode bomModel = bomPreview.path("payload").path("Model");
         assertThat(bomModel.path("FMATERIALID").path("FNumber").asText())
                 .isEqualTo(parent.path("code").asText());
+        assertThat(bomModel.path("FUNITID").path("FNumber").asText()).isEqualTo("EA");
+        assertThat(bomModel.path("F_zxcv_cjr").asText()).isEqualTo("admin");
         JsonNode entries = bomPreview.path("payload").path("entries");
         assertThat(entries).hasSize(1);
         assertThat(entries.get(0).path("FMATERIALIDCHILD").path("FNumber").asText())
                 .isEqualTo(child.path("code").asText());
+        assertThat(entries.get(0).path("FMATERIALTYPE").asText()).isEqualTo("PART");
         assertThat(entries.get(0).path("FNUMERATOR").asDouble()).isEqualTo(2.5);
         assertThat(entries.get(0).path("FMEMO").asText()).isEqualTo("试算行");
-        // 父项单位在新系统载荷里没有来源 → 必须是缺口而不是静默丢掉
-        assertThat(findMissing(bomPreview.path("missing"), "Model.FUNITID.FNumber").path("source").asText())
-                .isEqualTo("UNIT");
+        // 父件没填客制项目代号 → 该列进缺口清单（仍是"取不到值"，不是"没配取值路径"）
+        assertThat(findMissing(bomPreview.path("missing"), "Model.F_PJQF_XMDA.FNumber")
+                .path("source").asText()).isEqualTo("XMDH");
 
-        // ---- 5. 保存：把一列缺口补上取值路径，缺口数应当 -1
+        // ---- 5. 保存：把最后一个缺口（金蝶内码）也补上路径，缺口归零
         List<Map<String, Object>> rules = new ArrayList<>();
         for (JsonNode rule : materialDetail.path("rules")) {
             Map<String, Object> row = new java.util.LinkedHashMap<>();
@@ -153,8 +190,8 @@ class ErpMappingSmokeTest {
             row.put("pdmCaption", rule.path("pdmCaption").asText(null));
             row.put("source", rule.path("source").asText());
             String sourcePath = rule.path("sourcePath").asText(null);
-            if ("ORIGIN".equals(rule.path("pdmName").asText()) && sourcePath == null) {
-                sourcePath = "itemType";
+            if ("FMATERIALID".equals(rule.path("pdmName").asText()) && sourcePath == null) {
+                sourcePath = "code";
             }
             row.put("sourcePath", sourcePath);
             row.put("target", rule.path("target").asText());
@@ -167,8 +204,8 @@ class ErpMappingSmokeTest {
         }
         JsonNode saved = call(put("/api/v1/itg/erp-mapping/Material"), admin,
                 json(Map.of("rules", rules, "remark", "测试保存")));
-        assertThat(saved.path("gapCount").asInt()).isEqualTo(13);
-        assertThat(saved.path("mappedCount").asInt()).isEqualTo(18);
+        assertThat(saved.path("gapCount").asInt()).isZero();
+        assertThat(saved.path("mappedCount").asInt()).isEqualTo(31);
         assertThat(saved.path("remark").asText()).isEqualTo("测试保存");
 
         // ---- 6. 请购单：本系统无实体，试算明确拒绝（不伪造报文）
@@ -193,6 +230,15 @@ class ErpMappingSmokeTest {
             }
         }
         throw new IllegalStateException("缺少映射段：" + objectCode);
+    }
+
+    private JsonNode findRule(JsonNode rules, String pdmName) {
+        for (JsonNode rule : rules) {
+            if (pdmName.equals(rule.path("pdmName").asText())) {
+                return rule;
+            }
+        }
+        throw new IllegalStateException("映射规则里没有旧列名：" + pdmName);
     }
 
     private JsonNode findMissing(JsonNode missingRows, String target) {

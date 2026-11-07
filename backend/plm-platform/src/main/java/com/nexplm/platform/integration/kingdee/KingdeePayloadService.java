@@ -1,10 +1,13 @@
 package com.nexplm.platform.integration.kingdee;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -30,6 +33,8 @@ import java.util.Set;
  */
 @Service
 public class KingdeePayloadService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(KingdeePayloadService.class);
 
     /** 组装结果：源报文 + 幂等键（同一个本地版本只推一次）。 */
     public record SourcePayload(String bizType, String bizKey, ObjectNode payload) {
@@ -90,8 +95,32 @@ public class KingdeePayloadService {
         payload.put("sourceType", str(row.get("source_type")));
         payload.put("stdCode", str(row.get("std_code")));
         payload.put("remark", str(row.get("remark")));
+        copyCustomFields(str(row.get("ext_json")), payload);
         int revision = intOf(row.get("revision"));
         return new SourcePayload("Material", str(row.get("code")) + "@R" + revision, payload);
+    }
+
+    /**
+     * 把 {@code plm_object.ext_json} 里的客制字段摊平进源报文（批次 G·方案 A）。
+     *
+     * <p>摊平而不是嵌套成 {@code ext:{...}}：ERP 映射的 {@code sourcePath} 写
+     * {@code ext_json.F_XXX} 时由 {@code MappingEngine} 去掉前缀直接取同名键，
+     * 报文里少一层嵌套，联调时肉眼比对也更快。</p>
+     */
+    private void copyCustomFields(String extJson, ObjectNode payload) {
+        if (extJson == null || extJson.isBlank()) {
+            return;
+        }
+        try {
+            JsonNode ext = objectMapper.readTree(extJson);
+            if (ext == null || !ext.isObject()) {
+                return;
+            }
+            ext.fields().forEachRemaining(field -> payload.set(field.getKey(), field.getValue()));
+        } catch (Exception ex) {
+            // ext_json 脏数据不该让整条下发失败：漏掉客制字段，缺口清单里会体现
+            LOGGER.warn("ext_json 解析失败，客制字段未带入报文", ex);
+        }
     }
 
     /* ---------------------------------------------------------------- BOM */
@@ -99,9 +128,14 @@ public class KingdeePayloadService {
     private SourcePayload bom(Long companyId, Long bizId, String viewType) {
         String view = viewType == null || viewType.isBlank() ? "DESIGN"
                 : viewType.trim().toUpperCase(Locale.ROOT);
+        // 父项单位 / 修改人编码 / 父件客制字段：ERP 映射要用，但它们在既有表列里，不占 meta_field
         List<Map<String, Object>> parents = jdbcTemplate.queryForList("""
-                SELECT id, code, name, revision FROM plm_object
-                 WHERE id = ? AND company_id = ? AND deleted = false
+                SELECT o.id, o.code, o.name, o.revision, o.ext_json,
+                       m.unit AS parent_unit, u.username AS updated_by_code
+                  FROM plm_object o
+                  LEFT JOIN item_master m ON m.object_id = o.id
+                  LEFT JOIN sys_user u ON u.id = o.updated_by
+                 WHERE o.id = ? AND o.company_id = ? AND o.deleted = false
                 """, bizId, companyId);
         if (parents.isEmpty()) {
             throw BizException.of(ErrorCode.ITG_MAPPING_INVALID, "BOM 根件不存在：" + bizId);
@@ -109,9 +143,11 @@ public class KingdeePayloadService {
         Map<String, Object> parent = parents.get(0);
         List<Map<String, Object>> lines = jdbcTemplate.queryForList("""
                 SELECT l.line_no, l.qty, l.unit, l.loss_rate, l.ref_designator, l.remark,
-                       c.code AS child_code, c.name AS child_name, c.revision AS child_revision
+                       c.code AS child_code, c.name AS child_name, c.revision AS child_revision,
+                       cm.item_type AS child_type
                   FROM bom_line l
                   JOIN plm_object c ON c.id = l.child_object_id
+                  LEFT JOIN item_master cm ON cm.object_id = l.child_object_id
                  WHERE l.parent_object_id = ? AND l.view_type = ? AND l.deleted = false
                  ORDER BY l.line_no
                 """, bizId, view);
@@ -123,7 +159,10 @@ public class KingdeePayloadService {
         payload.put("parentCode", str(parent.get("code")));
         payload.put("parentName", str(parent.get("name")));
         payload.put("parentRevision", intOf(parent.get("revision")));
+        payload.put("parentUnit", str(parent.get("parent_unit")));
+        payload.put("updatedByCode", str(parent.get("updated_by_code")));
         payload.put("viewType", view);
+        copyCustomFields(str(parent.get("ext_json")), payload);
         ArrayNode array = payload.putArray("lines");
         for (Map<String, Object> line : lines) {
             ObjectNode node = array.addObject();
@@ -131,6 +170,7 @@ public class KingdeePayloadService {
             node.put("childCode", str(line.get("child_code")));
             node.put("childName", str(line.get("child_name")));
             node.put("childRevision", intOf(line.get("child_revision")));
+            node.put("childType", str(line.get("child_type")));
             node.put("qty", decimal(line.get("qty")));
             node.put("unit", str(line.get("unit")));
             node.put("lossRate", decimal(line.get("loss_rate")));

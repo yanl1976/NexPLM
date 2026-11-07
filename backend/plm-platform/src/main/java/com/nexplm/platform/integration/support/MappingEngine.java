@@ -185,6 +185,11 @@ public final class MappingEngine {
     private static JsonNode resolve(Rule rule, JsonNode source, Map<String, Object> context,
                                     JsonNode element) {
         String path = rule.effectiveSource();
+        // 客制字段口径写 ext_json.F_XXX，而源报文里已摊平（见 KingdeePayloadService#copyCustomFields），
+        // 这里去掉前缀直接按同名键读，避免报文多一层嵌套
+        if (path.startsWith("ext_json.")) {
+            path = path.substring("ext_json.".length());
+        }
         JsonNode placeholder = placeholder(path, context);
         if (placeholder != null) {
             return placeholder;

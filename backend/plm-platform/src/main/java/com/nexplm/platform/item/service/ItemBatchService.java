@@ -172,7 +172,9 @@ public class ItemBatchService {
                 pick(patch.remark(), current.remark()),
                 current.orgId(),
                 patch.securityLevel() != null ? patch.securityLevel() : current.securityLevel(),
-                mergeDesignAttr(current.designAttr(), patch.designAttr()));
+                mergeDesignAttr(current.designAttr(), patch.designAttr()),
+                // 批量改属性不碰客制字段：传 null 让服务端保留 ext_json 里既有值
+                null);
     }
 
     /** 设计属性补丁：整块为 null 视为不改；块内字段 null 同样保留原值。 */

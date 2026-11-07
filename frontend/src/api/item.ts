@@ -122,6 +122,8 @@ export interface ItemDetail extends ItemSummary {
   createdAt: string
   designAttr?: ItemDesignAttr | null
   checkout?: ItemCheckout | null
+  /** ext_json 原文（含标准键与 ERP 客制字段，如 F_ZXCV_ZYCS / FIsProduce）。 */
+  ext?: Record<string, unknown> | null
 }
 
 export interface ItemSaveReq {
@@ -138,6 +140,11 @@ export interface ItemSaveReq {
   orgId?: string | null
   securityLevel?: number
   designAttr?: ItemDesignAttr | null
+  /**
+   * 客制字段（批次 G·方案 A）：键必须是 PdmItem 元数据里已定义的字段码，
+   * 值落 ext_json；不传=保留既有值，传空串=清空。
+   */
+  ext?: Record<string, unknown> | null
 }
 
 /** 列表查询条件（对齐旧系统 PSEITEM 的 8 项 + 材料/规格）。 */

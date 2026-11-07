@@ -319,7 +319,9 @@ public class ItemExcelService {
                             || "BUY".equalsIgnoreCase(sourceType) ? "BUY" : "MAKE"),
                     null, remark, null, null,
                     new ItemDtos.ItemDesignAttr(provider, dwgNo, productCategory, productModel, productSpec,
-                            materialType, null, surfaceTreatment, tooling, weightUnit, montage, colorItem));
+                            materialType, null, surfaceTreatment, tooling, weightUnit, montage, colorItem),
+                    // Excel 导入不含客制字段（模板列固定），保留既有 ext_json
+                    null);
         }
 
         private static boolean yes(String value) {
