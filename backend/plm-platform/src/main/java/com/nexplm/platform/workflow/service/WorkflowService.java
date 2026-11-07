@@ -18,6 +18,9 @@ import org.flowable.bpmn.model.FlowElement;
 import org.flowable.bpmn.model.UserTask;
 import org.flowable.engine.HistoryService;
 import org.flowable.engine.RepositoryService;
+import org.flowable.variable.api.history.HistoricVariableInstance;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.repository.ProcessDefinition;
@@ -62,6 +65,7 @@ import java.util.Objects;
 @Service
 public class WorkflowService {
 
+    private static final Logger log = LoggerFactory.getLogger(WorkflowService.class);
     private static final int MAX_PAGE_SIZE = 200;
 
     /**
@@ -1017,7 +1021,44 @@ public class WorkflowService {
             return;
         }
         pluginRegistry.fire(new WfPluginContext(info.objectType(), info.objectId(), processInstanceId,
-                info.processKey(), action, operatorId, taskKey, Map.of()));
+                info.processKey(), action, operatorId, taskKey, loadVariables(processInstanceId)));
+    }
+
+    /**
+     * 读流程变量喂给插件：运行中取运行时变量，已结束/已删除取历史变量。
+     *
+     * <p>此前这里恒传 {@code Map.of()}，需要流程变量的插件（自定义通知文案、ERP 下发取变量等）
+     * 拿不到任何数据（遗留 B9）。变量很少（发起时的 approver/approvers/initiator 等），
+     * 每次事件读一次即可，不做缓存（缓存会与流程流转不同步）。</p>
+     */
+    private Map<String, Object> loadVariables(String processInstanceId) {
+        try {
+            if (runtimeService.createProcessInstanceQuery()
+                    .processInstanceId(processInstanceId).count() > 0) {
+                Map<String, Object> live = new LinkedHashMap<>();
+                runtimeService.getVariables(processInstanceId).forEach((name, value) -> {
+                    if (name != null && value != null) {
+                        live.put(name, value);
+                    }
+                });
+                return live;
+            }
+        } catch (Exception ex) {
+            log.debug("读取运行时流程变量失败 processInstanceId={}", processInstanceId, ex);
+        }
+        try {
+            Map<String, Object> history = new LinkedHashMap<>();
+            for (HistoricVariableInstance variable : historyService.createHistoricVariableInstanceQuery()
+                    .processInstanceId(processInstanceId).list()) {
+                if (variable.getVariableName() != null && variable.getValue() != null) {
+                    history.put(variable.getVariableName(), variable.getValue());
+                }
+            }
+            return history;
+        } catch (Exception ex) {
+            log.debug("读取历史流程变量失败 processInstanceId={}", processInstanceId, ex);
+            return Map.of();
+        }
     }
 
     /** 已结束实例的终态：被删除的记为 TERMINATED，正常走到终点的记为 COMPLETED。 */

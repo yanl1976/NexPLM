@@ -3,11 +3,15 @@ package com.nexplm.app;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexplm.platform.workflow.service.plugin.WfBusinessPlugin;
+import com.nexplm.platform.workflow.service.plugin.WfPluginContext;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -18,6 +22,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import java.io.IOException;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -557,6 +563,42 @@ class WorkflowSmokeTest {
     }
 
     @Test
+    void pluginContextCarriesProcessVariables() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long adminId = currentUserId(admin);
+        long itemId = createItem(admin, "插件变量零件");
+        CapturingPlugin.EVENTS.clear();
+
+        Map<String, Object> req = new HashMap<>();
+        req.put("objectType", "PdmItem");
+        req.put("objectId", itemId);
+        req.put("approverId", adminId);
+        req.put("approverIds", List.of(adminId));
+        req.put("remark", "变量透传验证");
+        req.put("variables", Map.of("bizTag", "T-9001"));
+        String pid = call(post("/api/v1/workflow/instances"), admin, json(req))
+                .path("processInstanceId").asText();
+
+        // 1. 发起事件：运行时变量可读，且含引擎补的 approver/approvers/initiator
+        WfPluginContext started = CapturingPlugin.EVENTS.stream()
+                .filter(e -> pid.equals(e.processInstanceId())
+                        && WfPluginContext.ACTION_STARTED.equals(e.action()))
+                .findFirst().orElseThrow(() -> new AssertionError("未收到 STARTED 插件事件"));
+        assertThat(started.variables()).containsEntry("bizTag", "T-9001");
+        assertThat(started.variables()).containsKeys("approver", "approvers", "initiator");
+
+        // 2. 走完全流程后归档事件：实例已结束，变量应来自历史（原来这里恒为空 Map）
+        completeTaskOf(admin, pid, "admin");
+        completeTaskOf(admin, pid, "admin");
+        WfPluginContext completed = CapturingPlugin.EVENTS.stream()
+                .filter(e -> pid.equals(e.processInstanceId())
+                        && WfPluginContext.ACTION_COMPLETED.equals(e.action()))
+                .findFirst().orElseThrow(() -> new AssertionError("未收到 COMPLETED 插件事件"));
+        assertThat(completed.variables()).containsEntry("bizTag", "T-9001");
+        assertThat(completed.variables()).containsKey("initiator");
+    }
+
+    @Test
     void signaturesAreRecordedOnApprovalAndReject() throws Exception {
         String admin = login("admin", "Admin@12345");
         long adminId = currentUserId(admin);
@@ -779,5 +821,30 @@ class WorkflowSmokeTest {
 
     private String json(Object value) throws Exception {
         return objectMapper.writeValueAsString(value);
+    }
+
+    // ------------------------------------------------------------ 测试插件
+
+    @TestConfiguration
+    static class PluginCaptureConfig {
+        @Bean
+        CapturingPlugin capturingPlugin() {
+            return new CapturingPlugin();
+        }
+    }
+
+    /** 记录型插件：只把上下文存下来供断言，不做任何业务动作（顺序无关、无副作用）。 */
+    static class CapturingPlugin implements WfBusinessPlugin {
+        static final List<WfPluginContext> EVENTS = Collections.synchronizedList(new ArrayList<>());
+
+        @Override
+        public String name() {
+            return "capturing-plugin";
+        }
+
+        @Override
+        public void onProcessEvent(WfPluginContext context) {
+            EVENTS.add(context);
+        }
     }
 }
