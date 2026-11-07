@@ -173,30 +173,46 @@ public class MyWorkService {
 
     // ------------------------------------------------------------ 站内消息
 
-    public List<MyDtos.MessageRow> inbox(Long companyId, boolean unreadOnly, int limit) {
+    /**
+     * 站内收件箱（批次 E-2）：按<b>收件人</b>过滤，已读状态取收件箱行，不再读消息行。
+     *
+     * <p>修的是旧缺陷：原先只按 company_id 过滤 + 消息行级 read_at，等于全公司共用一个收件箱。</p>
+     */
+    public List<MyDtos.MessageRow> inbox(Long companyId, Long userId, boolean unreadOnly, int limit) {
         int size = Math.max(1, Math.min(limit, 200));
         String sql = """
-                SELECT id, event_type, title, content, status, created_at, read_at
-                  FROM sys_notify_message
-                 WHERE company_id = ?
-                """ + (unreadOnly ? " AND read_at IS NULL" : "")
-                + " ORDER BY created_at DESC LIMIT ?";
+                SELECT m.id, m.event_type, m.title, m.content, m.status, m.created_at, b.read_at
+                  FROM sys_notify_inbox b
+                  JOIN sys_notify_message m ON m.id = b.message_id
+                 WHERE b.company_id = ? AND b.user_id = ? AND b.deleted = false
+                """ + (unreadOnly ? " AND b.read_at IS NULL" : "")
+                + " ORDER BY m.created_at DESC LIMIT ?";
         return jdbcTemplate.query(sql, (rs, i) -> new MyDtos.MessageRow(
                 rs.getLong("id"), rs.getString("event_type"), rs.getString("title"),
                 rs.getString("content"), rs.getString("status"), time(rs, "created_at"),
-                time(rs, "read_at")), companyId, size);
+                time(rs, "read_at")), companyId, userId, size);
     }
 
-    public void markRead(Long id, Long companyId) {
-        jdbcTemplate.update(
-                "UPDATE sys_notify_message SET read_at = COALESCE(read_at, now()) WHERE id = ? AND company_id = ?",
-                id, companyId);
+    public void markRead(Long id, Long companyId, Long userId) {
+        jdbcTemplate.update("""
+                UPDATE sys_notify_inbox SET read_at = COALESCE(read_at, now())
+                 WHERE message_id = ? AND company_id = ? AND user_id = ?
+                """, id, companyId, userId);
     }
 
-    public int unreadCount(Long companyId) {
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(1) FROM sys_notify_message WHERE company_id = ? AND read_at IS NULL",
-                Integer.class, companyId);
+    /** 全部已读：只影响本人收件箱。 */
+    public int markAllRead(Long companyId, Long userId) {
+        return jdbcTemplate.update("""
+                UPDATE sys_notify_inbox SET read_at = now()
+                 WHERE company_id = ? AND user_id = ? AND read_at IS NULL AND deleted = false
+                """, companyId, userId);
+    }
+
+    public int unreadCount(Long companyId, Long userId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(1) FROM sys_notify_inbox
+                 WHERE company_id = ? AND user_id = ? AND read_at IS NULL AND deleted = false
+                """, Integer.class, companyId, userId);
         return count == null ? 0 : count;
     }
 

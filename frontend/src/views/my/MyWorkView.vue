@@ -135,6 +135,17 @@ async function markRead(row: MessageRow) {
   await load('messages')
 }
 
+/** 全部已读：只影响本人收件箱（批次 E-2 起已读按收件人记录）。 */
+async function markAllRead() {
+  try {
+    const result = await myApi.markAllRead()
+    ElMessage.success(`已标记 ${result.updated} 条为已读`)
+    await load('messages')
+  } catch (error) {
+    ElMessage.error((error as Error).message || '操作失败')
+  }
+}
+
 onMounted(async () => {
   try {
     const dict = await myApi.objectTypes()
@@ -284,6 +295,7 @@ function fmt(value: string | null) {
             <el-switch v-model="unreadOnly" active-text="仅未读" @change="load('messages')" />
             <el-tag type="danger" effect="plain">未读 {{ unread }}</el-tag>
             <el-button :icon="View" @click="load('messages')">刷新</el-button>
+            <el-button :disabled="!unread" @click="markAllRead">全部已读</el-button>
           </div>
           <el-table v-loading="loading" :data="messages" size="small" border empty-text="暂无消息">
             <el-table-column label="状态" width="80">

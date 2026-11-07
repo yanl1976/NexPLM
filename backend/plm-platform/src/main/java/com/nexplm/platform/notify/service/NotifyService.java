@@ -15,10 +15,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,6 +52,12 @@ public class NotifyService {
     public static final String EVENT_WF_TASK_COMPLETED = "wf.task.completed";
     /** 流程审批通过并归档（工作流实例走完全部分支）。 */
     public static final String EVENT_WF_PROCESS_COMPLETED = "wf.process.completed";
+    /** 供应商数据发放（批次 E）。 */
+    public static final String EVENT_SUPPLIER_ISSUANCE_SENT = "supplier.issuance.sent";
+    /** 供应商登记回执（批次 E）。 */
+    public static final String EVENT_SUPPLIER_RECEIPT_RECEIVED = "supplier.receipt.received";
+    /** 供应商协同回复（批次 E）。 */
+    public static final String EVENT_SUPPLIER_REPLY_CREATED = "supplier.reply.created";
 
     public static final Map<String, String> EVENT_LABELS;
 
@@ -60,8 +68,14 @@ public class NotifyService {
         labels.put(EVENT_TASK_COMPLETED, "任务完成");
         labels.put(EVENT_WF_TASK_COMPLETED, "流程节点办理");
         labels.put(EVENT_WF_PROCESS_COMPLETED, "流程审批通过");
+        labels.put(EVENT_SUPPLIER_ISSUANCE_SENT, "供应商数据发放");
+        labels.put(EVENT_SUPPLIER_RECEIPT_RECEIVED, "供应商回执");
+        labels.put(EVENT_SUPPLIER_REPLY_CREATED, "供应商协同回复");
         EVENT_LABELS = Collections.unmodifiableMap(labels);
     }
+
+    /** 站内通道编码（每公司一条，懒创建）。 */
+    public static final String INTERNAL_CODE = "INTERNAL";
 
     private static final List<String> EVENT_TYPES = List.copyOf(EVENT_LABELS.keySet());
     private static final int MAX_RESPONSE = 2000;
@@ -221,6 +235,82 @@ public class NotifyService {
             }
         }
         return created;
+    }
+
+    /**
+     * 站内投递（批次 E）：与外部通道解耦——即使一个外部通道都没配，也要进站内收件箱
+     * （对齐旧系统 {@code Communication.setting} 的 {@code DefaultAlertType=InternalMail}）。
+     *
+     * <p>幂等口径：同一 {@code eventKey} 只落一条消息（复用 INTERNAL 通道的
+     * {@code uk(channel_id, event_key)}），同一收件人只落一条收件箱行。</p>
+     *
+     * @return 本次实际新增的收件箱条数（重复触发返回 0）
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int dispatchToUsers(String eventType, String eventKey, String title, String content,
+                               Long companyId, Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return 0;
+        }
+        long channelId = ensureInternalChannel(companyId);
+        Long messageId = insertMessage(channelId, companyId, eventType, eventKey, title, content, 1);
+        if (messageId != null) {
+            // 站内没有"外部发送"动作：直接置 SENT，否则会留在 PENDING 被重试线程反复捞
+            jdbcTemplate.update("""
+                    UPDATE sys_notify_message
+                       SET status = 'SENT', attempt = 1, started_at = now(),
+                           finished_at = now(), updated_at = now()
+                     WHERE id = ?
+                    """, messageId);
+        } else {
+            List<Long> exists = jdbcTemplate.queryForList(
+                    "SELECT id FROM sys_notify_message WHERE channel_id = ? AND event_key = ?",
+                    Long.class, channelId, eventKey);
+            if (exists.isEmpty()) {
+                return 0;
+            }
+            messageId = exists.get(0);
+        }
+        int created = 0;
+        for (Long userId : userIds) {
+            if (userId == null) {
+                continue;
+            }
+            created += jdbcTemplate.update("""
+                    INSERT INTO sys_notify_inbox (id, company_id, message_id, user_id)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT (message_id, user_id) DO NOTHING
+                    """, IdWorker.getId(), companyId, messageId, userId);
+        }
+        return created;
+    }
+
+    /** 站内通道懒创建：每公司一条（INTERNAL 的 events 为空，不会被外部通道分发误选）。 */
+    private long ensureInternalChannel(Long companyId) {
+        List<Long> ids = findInternalChannel(companyId);
+        if (!ids.isEmpty()) {
+            return ids.get(0);
+        }
+        long id = IdWorker.getId();
+        try {
+            jdbcTemplate.update("""
+                            INSERT INTO sys_notify_channel (id, company_id, code, name, type, enabled,
+                                                            events, config, max_attempts)
+                            VALUES (?, ?, ?, '站内消息', 'INTERNAL', true,
+                                    CAST('[]' AS jsonb), CAST('{}' AS jsonb), 1)
+                            """, id, companyId, INTERNAL_CODE);
+            return id;
+        } catch (DuplicateKeyException ex) {
+            List<Long> again = findInternalChannel(companyId);
+            return again.isEmpty() ? id : again.get(0);
+        }
+    }
+
+    private List<Long> findInternalChannel(Long companyId) {
+        return jdbcTemplate.queryForList("""
+                SELECT id FROM sys_notify_channel
+                 WHERE company_id = ? AND code = ? AND deleted = false
+                """, Long.class, companyId, INTERNAL_CODE);
     }
 
     /** 手动测试发送：走真实通道，失败原因直接回给调用方。 */

@@ -81,6 +81,8 @@ export const myApi = {
     http.get<MessageRow[]>('/my/messages', { unreadOnly, limit }),
   unreadCount: () => http.get<{ unread: number }>('/my/messages/unread-count'),
   markRead: (id: string) => http.post<void>(`/my/messages/${id}/read`, {}),
+  /** 全部已读：只影响本人收件箱（批次 E-2 收件人化后才有意义）。 */
+  markAllRead: () => http.post<{ updated: number }>('/my/messages/read-all', {}),
 
   search: (params: { keyword?: string; objectType?: string; limit?: number }) =>
     http.get<SearchRow[]>('/my/search', params),

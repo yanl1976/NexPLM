@@ -92,20 +92,29 @@ public class MyWorkController {
     public Result<List<MyDtos.MessageRow>> messages(
             @RequestParam(value = "unreadOnly", defaultValue = "false") boolean unreadOnly,
             @RequestParam(value = "limit", defaultValue = "50") int limit) {
-        return Result.ok(myWorkService.inbox(CurrentUser.companyId(), unreadOnly, limit));
+        return Result.ok(myWorkService.inbox(CurrentUser.companyId(), CurrentUser.userId(),
+                unreadOnly, limit));
     }
 
     @Operation(summary = "未读消息数")
     @GetMapping("/messages/unread-count")
     public Result<Map<String, Integer>> unreadCount() {
-        return Result.ok(Map.of("unread", myWorkService.unreadCount(CurrentUser.companyId())));
+        return Result.ok(Map.of("unread",
+                myWorkService.unreadCount(CurrentUser.companyId(), CurrentUser.userId())));
     }
 
     @Operation(summary = "标记消息已读")
     @PostMapping("/messages/{id}/read")
     public Result<Void> markRead(@PathVariable Long id) {
-        myWorkService.markRead(id, CurrentUser.companyId());
+        myWorkService.markRead(id, CurrentUser.companyId(), CurrentUser.userId());
         return Result.ok();
+    }
+
+    @Operation(summary = "全部标记已读（仅本人收件箱）")
+    @PostMapping("/messages/read-all")
+    public Result<Map<String, Integer>> markAllRead() {
+        int updated = myWorkService.markAllRead(CurrentUser.companyId(), CurrentUser.userId());
+        return Result.ok(Map.of("updated", updated));
     }
 
     @Operation(summary = "高级查询（跨图文档/零部件/变更单）")
