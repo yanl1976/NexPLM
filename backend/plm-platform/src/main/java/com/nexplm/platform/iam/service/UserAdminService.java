@@ -30,6 +30,9 @@ import java.util.stream.Collectors;
 @Service
 public class UserAdminService {
 
+    /** 三员角色编码（V2 种子内置）：三者互斥，同一账号最多持有一个。 */
+    private static final List<String> THREE_ROLE_CODES = List.of("SYS_ADMIN", "SEC_ADMIN", "AUDITOR");
+
     private final SysUserMapper userMapper;
     private final SysRoleMapper roleMapper;
     private final PasswordEncoder passwordEncoder;
@@ -178,9 +181,38 @@ public class UserAdminService {
     }
 
     private void replaceRoles(Long userId, List<Long> roleIds) {
+        assertThreeRoleExclusive(roleIds);
         roleMapper.deleteUserRoles(userId);
         if (roleIds != null && !roleIds.isEmpty()) {
             roleMapper.insertUserRoles(userId, roleIds);
+        }
+    }
+
+    /**
+     * 三员互斥（批次 F-4）：系统管理员 / 安全保密管理员 / 安全审计员三者只能选其一。
+     *
+     * <p>依据 docs/06 EXP-20261107-16 第 6、7 条：旧系统用 {@code USERINFO.USERROLETYPE}
+     * 把三员账号与普通账号区分开（组织树只查 {@code NormalUserType}），并用
+     * {@code ThreeRole.setting:4} 禁止三员模块走普通功能授权。新系统的三角色在 V2 种子里
+     * 已经存在（SYS_ADMIN/SEC_ADMIN/AUDITOR），但没有任何互斥约束——一个账号可以同时是
+     * 系统管理员与审计员，等于自己操作自己审计，"三权分立"名存实亡。</p>
+     *
+     * <p>这里只做"同一账号不得同时持有多个三员角色"这一条硬约束，不复制旧系统那套
+     * 独立账号表 + 登录时段限制 + 密码策略（见 docs/06 遗留）。</p>
+     */
+    private void assertThreeRoleExclusive(List<Long> roleIds) {
+        if (roleIds == null || roleIds.isEmpty()) {
+            return;
+        }
+        String placeholders = roleIds.stream().map(id -> "?").collect(Collectors.joining(","));
+        List<String> codes = jdbcTemplate.queryForList(
+                "SELECT code FROM sys_role WHERE id IN (" + placeholders + ")",
+                String.class, roleIds.toArray());
+        List<String> hit = codes.stream().filter(THREE_ROLE_CODES::contains).toList();
+        if (hit.size() > 1) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "三员角色互斥：系统管理员 / 安全保密管理员 / 安全审计员只能分配其一，"
+                            + "当前同时选择了 " + hit.size() + " 个（" + String.join("、", hit) + "）");
         }
     }
 

@@ -1,4 +1,4 @@
-import { http } from './http'
+import { http, request } from './http'
 
 export interface OrgNode {
   id: string
@@ -199,4 +199,175 @@ export const metaApi = {
   getEnum: (code: string) => http.get<MetaEnumDetail>(`/meta/enums/${code}`),
   saveEnumItems: (code: string, items: MetaEnumItem[]) =>
     http.put<void>(`/meta/enums/${code}/items`, { items })
+}
+
+// ---------- 批次 F-1 在线用户 ----------
+export interface SessionRow {
+  id: string
+  userId: string
+  username: string
+  displayName: string | null
+  deviceType: string
+  ip: string | null
+  ua: string | null
+  loginAt: string
+  lastActiveAt: string
+  /** 在线秒数（后端 long，保持数字） */
+  onlineSeconds: number
+  active: boolean
+}
+
+export const sessionApi = {
+  page: (params: {
+    keyword?: string
+    deviceType?: string
+    onlyActive?: boolean
+    page: number
+    size: number
+  }) => http.get<{ items: SessionRow[]; total: number; page: number; size: number }>('/sys/sessions', params),
+  kick: (id: string) => http.post<void>(`/sys/sessions/${id}/kick`),
+  /** 后端 kick-all 的 deviceType 是 @RequestParam，必须走查询串而不是请求体。 */
+  kickAll: (deviceType?: string) =>
+    request<{ kicked: number }>('/sys/sessions/kick-all', { method: 'POST', query: { deviceType } })
+}
+
+// ---------- 批次 F-3 系统运行日志 ----------
+export interface LoginLogRow {
+  id: string
+  username: string
+  userId: string | null
+  displayName: string | null
+  result: string
+  failReason: string | null
+  ip: string | null
+  ua: string | null
+  createdAt: string
+}
+
+export interface AuditLogRow {
+  id: string
+  traceId: string | null
+  userId: string | null
+  displayName: string | null
+  module: string
+  action: string
+  objectType: string | null
+  objectId: string | null
+  result: string
+  detail: string | null
+  ip: string | null
+  ua: string | null
+  createdAt: string
+}
+
+export interface LogSummary {
+  loginSuccess: number
+  loginFailed: number
+  auditCount: number
+  chainEnabled: boolean
+  chainChecked: number
+  chainBroken: number
+  chainMessage: string
+}
+
+export const logApi = {
+  summary: () => http.get<LogSummary>('/sys/logs/summary'),
+  login: (params: {
+    username?: string
+    result?: string
+    from?: string
+    to?: string
+    page: number
+    size: number
+  }) => http.get<{ items: LoginLogRow[]; total: number; page: number; size: number }>('/sys/logs/login', params),
+  audit: (params: {
+    module?: string
+    action?: string
+    result?: string
+    keyword?: string
+    userId?: string
+    from?: string
+    to?: string
+    page: number
+    size: number
+  }) => http.get<{ items: AuditLogRow[]; total: number; page: number; size: number }>('/sys/logs/audit', params)
+}
+
+// ---------- 批次 F-2 系统广播 ----------
+export interface BroadcastRow {
+  id: string
+  title: string
+  content: string
+  level: string
+  publishState: string
+  publishAt: string | null
+  expireAt: string | null
+  popup: boolean
+  createdBy: string | null
+  createdAt: string
+  updatedAt: string
+  readCount: number
+}
+
+export interface BroadcastPending {
+  id: string
+  title: string
+  content: string
+  level: string
+  publishAt: string | null
+}
+
+export interface BroadcastSaveReq {
+  title: string
+  content: string
+  level: string
+  publishAt: string | null
+  expireAt: string | null
+  popup: boolean
+}
+
+export const broadcastApi = {
+  page: (params: { keyword?: string; state?: string; page: number; size: number }) =>
+    http.get<{ items: BroadcastRow[]; total: number; page: number; size: number }>('/sys/broadcasts', params),
+  create: (body: BroadcastSaveReq) => http.post<string>('/sys/broadcasts', body),
+  update: (id: string, body: BroadcastSaveReq) => http.put<void>(`/sys/broadcasts/${id}`, body),
+  publish: (id: string) => http.post<void>(`/sys/broadcasts/${id}/publish`),
+  revoke: (id: string) => http.post<void>(`/sys/broadcasts/${id}/revoke`),
+  remove: (id: string) => http.delete<void>(`/sys/broadcasts/${id}`),
+  /** 收件人侧：登录后待弹窗的未读广播（只要登录即可，不需要管理权限） */
+  pending: () => http.get<BroadcastPending[]>('/sys/broadcasts/pending'),
+  markRead: (id: string) => http.post<void>(`/sys/broadcasts/${id}/read`)
+}
+
+// ---------- 批次 F-4 三员管理 ----------
+export interface ThreeRoleMember {
+  userId: string
+  username: string
+  displayName: string
+  status: string
+  lastLoginAt: string | null
+}
+
+export interface ThreeRoleGroup {
+  roleCode: string
+  roleName: string
+  members: ThreeRoleMember[]
+}
+
+export interface ThreeRoleViolation {
+  userId: string
+  username: string
+  displayName: string
+  roleCodes: string
+  roleCount: number
+}
+
+export interface ThreeRoleOverview {
+  roles: ThreeRoleGroup[]
+  violations: ThreeRoleViolation[]
+  note: string
+}
+
+export const threeRoleApi = {
+  overview: () => http.get<ThreeRoleOverview>('/sys/three-roles')
 }

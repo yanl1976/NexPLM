@@ -81,6 +81,10 @@
             <el-menu-item index="/system/lifecycle">生命周期</el-menu-item>
             <el-menu-item index="/system/coding">编码管理</el-menu-item>
             <el-menu-item v-if="canReadNotify" index="/system/notify">通知通道</el-menu-item>
+            <el-menu-item v-if="canReadSession" index="/system/session">在线用户</el-menu-item>
+            <el-menu-item v-if="canReadBroadcast" index="/system/broadcast">系统广播</el-menu-item>
+            <el-menu-item v-if="canReadLog" index="/system/log">运行日志</el-menu-item>
+            <el-menu-item v-if="canReadThreeRole" index="/system/three-role">三员管理</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="/doc-center">
             <template #title>
@@ -171,6 +175,26 @@
         <router-view />
       </el-main>
     </el-container>
+
+    <!-- 批次 F-2：登录后未读广播逐个弹窗（关闭即标记该人已读，同一条只弹一次） -->
+    <el-dialog
+      v-model="broadcastVisible"
+      :title="currentBroadcast?.title ?? '系统广播'"
+      width="520px"
+      class="broadcast-dialog"
+      @closed="onBroadcastClosed"
+    >
+      <div v-if="currentBroadcast" class="broadcast">
+        <el-tag size="small" :type="broadcastLevelTag(currentBroadcast.level)" class="broadcast-level">
+          {{ BROADCAST_LEVEL_LABEL[currentBroadcast.level] ?? currentBroadcast.level }}
+        </el-tag>
+        <span class="broadcast-time">{{ formatBroadcastTime(currentBroadcast.publishAt) }}</span>
+        <div class="broadcast-content">{{ currentBroadcast.content }}</div>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="broadcastVisible = false">我已知晓</el-button>
+      </template>
+    </el-dialog>
   </el-container>
 </template>
 
@@ -201,6 +225,13 @@ import {
 import { useUserStore } from '@/stores/user'
 import { workflowApi } from '@/api/workflow'
 import { taskApi } from '@/api/project'
+import { broadcastApi, type BroadcastPending } from '@/api/system'
+
+const BROADCAST_LEVEL_LABEL: Record<string, string> = {
+  NORMAL: '普通',
+  IMPORTANT: '重要',
+  URGENT: '紧急'
+}
 
 const COLLAPSE_KEY = 'nexplm.sider.collapsed'
 
@@ -217,6 +248,10 @@ const overdueCount = ref(0)
 
 const canManageWorkflow = computed(() => userStore.can('wf.process.manage'))
 const canReadNotify = computed(() => userStore.can('sys.notify.read'))
+const canReadSession = computed(() => userStore.can('sys.session.read'))
+const canReadBroadcast = computed(() => userStore.can('sys.broadcast.read'))
+const canReadLog = computed(() => userStore.can('sys.log.read'))
+const canReadThreeRole = computed(() => userStore.can('sys.three-role.read'))
 const canReadDashboard = computed(() => userStore.can('ana.dashboard.read'))
 const canReadBoard = computed(() => userStore.can('ana.board.read'))
 const canReadReport = computed(() => userStore.can('ana.report.read'))
@@ -295,7 +330,60 @@ onMounted(async () => {
   } catch {
     overdueCount.value = 0
   }
+  await loadBroadcasts()
 })
+
+// ---------------- 批次 F-2 登录广播 ----------------
+const pendingBroadcasts = ref<BroadcastPending[]>([])
+const currentBroadcast = ref<BroadcastPending | null>(null)
+const broadcastVisible = ref(false)
+
+/** 拉取未读广播；失败静默（广播不该阻断登录后的任何操作）。 */
+async function loadBroadcasts(): Promise<void> {
+  try {
+    pendingBroadcasts.value = await broadcastApi.pending()
+    showNextBroadcast()
+  } catch {
+    pendingBroadcasts.value = []
+  }
+}
+
+function showNextBroadcast(): void {
+  currentBroadcast.value = pendingBroadcasts.value.shift() ?? null
+  broadcastVisible.value = currentBroadcast.value !== null
+}
+
+/** dialog 关闭后标记已读，并继续弹下一条（多条未读时排队，不叠窗）。 */
+async function onBroadcastClosed(): Promise<void> {
+  const item = currentBroadcast.value
+  if (item) {
+    try {
+      await broadcastApi.markRead(item.id)
+    } catch {
+      // 标记失败不影响已展示的内容；下次登录可能重复弹一次，可接受
+    }
+  }
+  showNextBroadcast()
+}
+
+function broadcastLevelTag(level: string): 'info' | 'warning' | 'danger' {
+  if (level === 'URGENT') {
+    return 'danger'
+  }
+  return level === 'IMPORTANT' ? 'warning' : 'info'
+}
+
+function formatBroadcastTime(value: string | null): string {
+  if (!value) {
+    return ''
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 </script>
 
 <style scoped>
@@ -475,5 +563,22 @@ onMounted(async () => {
   .main {
     padding: 8px;
   }
+}
+
+/* ---------------- 登录广播弹窗 ---------------- */
+.broadcast-level {
+  margin-right: 8px;
+}
+
+.broadcast-time {
+  font-size: 12px;
+  color: var(--plm-text-secondary);
+}
+
+.broadcast-content {
+  margin-top: 10px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>

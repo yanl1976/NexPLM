@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -42,26 +43,50 @@ public class JwtService {
         this.refreshTtl = refreshTtl;
     }
 
-    public String issueAccessToken(Long userId, String username, Long companyId) {
-        return issue(userId, username, companyId, TYPE_ACCESS, accessTtl);
+    public String issueAccessToken(Long userId, String username, Long companyId, Long sessionId) {
+        return issue(userId, username, companyId, TYPE_ACCESS, accessTtl, sessionId);
     }
 
-    public String issueRefreshToken(Long userId, String username, Long companyId) {
-        return issue(userId, username, companyId, TYPE_REFRESH, refreshTtl);
+    public String issueRefreshToken(Long userId, String username, Long companyId, Long sessionId) {
+        return issue(userId, username, companyId, TYPE_REFRESH, refreshTtl, sessionId);
+    }
+
+    /**
+     * 会话 id（批次 F-1）：登录时落 {@code sys_user_session} 并把 id 写进令牌，
+     * 认证过滤器据此校验「这条会话是否已被强制下线」。SSO 等无会话场景为 null。
+     */
+    public Long sessionId(Claims claims) {
+        Object raw = claims.get("sid");
+        if (raw instanceof Number number) {
+            return number.longValue();
+        }
+        if (raw instanceof String text && !text.isBlank()) {
+            try {
+                return Long.valueOf(text);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     public long accessTokenTtlSeconds() {
         return accessTtl.toSeconds();
     }
 
-    private String issue(Long userId, String username, Long companyId, String type, Duration ttl) {
+    private String issue(Long userId, String username, Long companyId, String type, Duration ttl,
+                         Long sessionId) {
         Instant now = Instant.now();
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("username", username);
+        claims.put("companyId", companyId == null ? 0L : companyId);
+        claims.put("typ", type);
+        if (sessionId != null) {
+            claims.put("sid", sessionId);
+        }
         return Jwts.builder()
                 .subject(String.valueOf(userId))
-                .claims(Map.of(
-                        "username", username,
-                        "companyId", companyId == null ? 0L : companyId,
-                        "typ", type))
+                .claims(claims)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(ttl)))
                 .signWith(key)

@@ -19,6 +19,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.nexplm.platform.iam.service.UserSessionService;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -38,13 +40,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final SysUserMapper userMapper;
     private final ObjectMapper objectMapper;
     private final DataScopeResolver dataScopeResolver;
+    private final UserSessionService sessionService;
 
     public JwtAuthenticationFilter(JwtService jwtService, SysUserMapper userMapper, ObjectMapper objectMapper,
-                                   DataScopeResolver dataScopeResolver) {
+                                   DataScopeResolver dataScopeResolver,
+                                   UserSessionService sessionService) {
         this.jwtService = jwtService;
         this.userMapper = userMapper;
         this.objectMapper = objectMapper;
         this.dataScopeResolver = dataScopeResolver;
+        this.sessionService = sessionService;
     }
 
     @Override
@@ -59,6 +64,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             Claims claims = jwtService.parseAndRequireType(token, JwtService.TYPE_ACCESS);
             Long userId = jwtService.userId(claims);
+            // 会话校验（批次 F-1）：被强制下线/已登出的会话，其令牌立即失效
+            Long sessionId = jwtService.sessionId(claims);
+            if (sessionId != null) {
+                if (!sessionService.isActive(sessionId)) {
+                    throw BizException.of(com.nexplm.common.exception.ErrorCode.AUTH_SESSION_REVOKED);
+                }
+                sessionService.touch(sessionId);
+            }
             SysUser user = userMapper.selectById(userId);
             if (user == null || !"ACTIVE".equals(user.getStatus())) {
                 throw BizException.of(com.nexplm.common.exception.ErrorCode.AUTH_ACCOUNT_DISABLED);

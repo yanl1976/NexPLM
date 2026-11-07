@@ -9,6 +9,7 @@ import com.nexplm.platform.iam.mapper.SysUserMapper;
 import com.nexplm.platform.security.JwtService;
 import com.nexplm.platform.security.UserPrincipal;
 import io.jsonwebtoken.Claims;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,41 +26,87 @@ public class AuthService {
     private final SysUserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final UserSessionService sessionService;
+    private final JdbcTemplate jdbcTemplate;
 
-    public AuthService(SysUserMapper userMapper, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    public AuthService(SysUserMapper userMapper, PasswordEncoder passwordEncoder,
+                       JwtService jwtService, UserSessionService sessionService,
+                       JdbcTemplate jdbcTemplate) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.sessionService = sessionService;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
-    @Transactional
-    public AuthDtos.TokenResp login(String username, String rawPassword) {
+    /**
+     * 登录：建会话（批次 F-1）+ 写登录日志（批次 F-3 的前置——原先 {@code sys_login_log}
+     * 表存在但没有任何写入点，登录日志页会永远空）。
+     *
+     * <p><b>刻意不加 {@code @Transactional}</b>：失败登录也要留下 FAILED 日志，
+     * 若整个方法在一个事务里，抛异常会把刚写的日志回滚掉（本用例首次即踩到）。</p>
+     */
+    public AuthDtos.TokenResp login(String username, String rawPassword, String deviceType,
+                                    String ip, String ua) {
         SysUser user = userMapper.selectOne(new LambdaQueryWrapper<SysUser>()
                 .eq(SysUser::getUsername, username)
                 .last("limit 1"));
         if (user == null || !passwordEncoder.matches(rawPassword, user.getPasswordHash())) {
+            writeLoginLog(username, user == null ? null : user.getId(), "FAILED", "用户名或密码错误", ip, ua);
             throw BizException.of(ErrorCode.AUTH_BAD_CREDENTIALS);
         }
         if (!"ACTIVE".equals(user.getStatus())) {
+            writeLoginLog(username, user.getId(), "FAILED", "账号已停用", ip, ua);
             throw BizException.of(ErrorCode.AUTH_ACCOUNT_DISABLED);
         }
         if (user.getLockUntil() != null && user.getLockUntil().isAfter(OffsetDateTime.now())) {
+            writeLoginLog(username, user.getId(), "FAILED", "账号已锁定", ip, ua);
             throw BizException.of(ErrorCode.AUTH_ACCOUNT_LOCKED);
         }
         SysUser update = new SysUser();
         update.setId(user.getId());
         update.setLastLoginAt(OffsetDateTime.now());
         userMapper.updateById(update);
-        return issueToken(user);
+        writeLoginLog(username, user.getId(), "SUCCESS", null, ip, ua);
+        long sessionId = sessionService.start(user.getId(), user.getUsername(), user.getCompanyId(),
+                deviceType, ip, ua);
+        return issueToken(user, sessionId);
     }
 
+    /** 刷新：会话已被踢则拒绝，不再给新令牌（否则强制下线等于没做）。 */
     public AuthDtos.TokenResp refresh(String refreshToken) {
         Claims claims = jwtService.parseAndRequireType(refreshToken, JwtService.TYPE_REFRESH);
+        Long sessionId = jwtService.sessionId(claims);
+        if (sessionId != null && !sessionService.isActive(sessionId)) {
+            throw BizException.of(ErrorCode.AUTH_SESSION_REVOKED);
+        }
         SysUser user = userMapper.selectById(jwtService.userId(claims));
         if (user == null || !"ACTIVE".equals(user.getStatus())) {
             throw BizException.of(ErrorCode.AUTH_REFRESH_INVALID);
         }
-        return issueToken(user);
+        return issueToken(user, sessionId);
+    }
+
+    /** 主动登出：会话置失效，当前令牌立刻不可用。 */
+    public void logout(Long sessionId) {
+        if (sessionId != null) {
+            sessionService.logout(sessionId);
+        }
+    }
+
+    private void writeLoginLog(String username, Long userId, String result, String failReason,
+                               String ip, String ua) {
+        try {
+            jdbcTemplate.update("""
+                            INSERT INTO sys_login_log (username, user_id, result, fail_reason, ip, ua)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                    username, userId, result, failReason,
+                    ip == null ? null : (ip.length() > 64 ? ip.substring(0, 64) : ip),
+                    ua == null ? null : (ua.length() > 500 ? ua.substring(0, 500) : ua));
+        } catch (RuntimeException ignored) {
+            // 登录日志失败不能阻断登录（审计可补，登录不可断）
+        }
     }
 
     public AuthDtos.UserBrief currentUser(UserPrincipal principal) {
@@ -72,10 +119,17 @@ public class AuthService {
                 user.getCompanyId(), principal.roles(), permissions, Boolean.TRUE.equals(user.getMustChangePwd()));
     }
 
-    /** 为已确认身份的账号签发本站令牌（本地登录、刷新、SSO 共用同一出口）。 */
+    /** SSO 等无会话场景：令牌不带 sid（不纳入强制下线管理）。 */
     public AuthDtos.TokenResp issueToken(SysUser user) {
-        String access = jwtService.issueAccessToken(user.getId(), user.getUsername(), user.getCompanyId());
-        String refresh = jwtService.issueRefreshToken(user.getId(), user.getUsername(), user.getCompanyId());
+        return issueToken(user, null);
+    }
+
+    /** 为已确认身份的账号签发本站令牌（本地登录、刷新、SSO 共用同一出口）。 */
+    public AuthDtos.TokenResp issueToken(SysUser user, Long sessionId) {
+        String access = jwtService.issueAccessToken(user.getId(), user.getUsername(),
+                user.getCompanyId(), sessionId);
+        String refresh = jwtService.issueRefreshToken(user.getId(), user.getUsername(),
+                user.getCompanyId(), sessionId);
         List<String> roles = userMapper.selectRoleCodes(user.getId());
         List<String> permissions = userMapper.selectPermissionCodes(user.getId());
         AuthDtos.UserBrief brief = new AuthDtos.UserBrief(user.getId(), user.getUsername(), user.getDisplayName(),

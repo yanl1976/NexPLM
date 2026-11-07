@@ -23,6 +23,11 @@ import java.util.stream.Collectors;
 @Service
 public class RoleService {
 
+    /** 三员配置维护权限：只允许留在 SYS_ADMIN。 */
+    private static final String THREE_ROLE_WRITE_PERM = "sys.three-role.write";
+    /** 审计日志查看权限：只允许 SYS_ADMIN / AUDITOR（对齐旧系统 OperateLogSearch 的不可授权性）。 */
+    private static final String SYS_LOG_READ_PERM = "sys.log.read";
+
     private final SysRoleMapper roleMapper;
     private final SysPermissionMapper permissionMapper;
     private final JdbcTemplate jdbcTemplate;
@@ -100,8 +105,9 @@ public class RoleService {
 
     @Transactional
     public void grant(Long roleId, List<String> permissionCodes) {
-        require(roleId);
+        SysRole role = require(roleId);
         List<String> codes = permissionCodes == null ? List.of() : permissionCodes.stream().distinct().toList();
+        assertNotSelfEscalation(role, codes);
         if (!codes.isEmpty()) {
             Set<String> existing = permissionMapper.selectList(null).stream()
                     .map(SysPermission::getCode).collect(Collectors.toSet());
@@ -113,6 +119,26 @@ public class RoleService {
         roleMapper.deletePermissions(roleId);
         if (!codes.isEmpty()) {
             roleMapper.insertPermissions(roleId, codes);
+        }
+    }
+
+    /**
+     * 三员/审计类权限不得通过普通功能授权扩散（批次 F-4）。
+     *
+     * <p>旧系统 {@code ThreeRole.setting:4} 把 {@code ModulePermission}、{@code ActionRule}、
+     * {@code OperateLogSearch} 列进 {@code ModulePermissionDisableNav}——即"这些模块不能走普通
+     * 功能授权"，目的是防止管理员把"改权限"和"看审计日志"的能力随手发给业务角色（自己给自己扩权、
+     * 或者让人既能作案又能抹痕）。新系统用同一思路：这两个权限码只允许留在指定角色上。</p>
+     */
+    private void assertNotSelfEscalation(SysRole role, List<String> codes) {
+        String roleCode = role.getCode() == null ? "" : role.getCode();
+        if (codes.contains(THREE_ROLE_WRITE_PERM) && !"SYS_ADMIN".equals(roleCode)) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "权限点 " + THREE_ROLE_WRITE_PERM + " 只能保留在系统管理员角色上（三员模块不可普通授权）");
+        }
+        if (codes.contains(SYS_LOG_READ_PERM) && !List.of("SYS_ADMIN", "AUDITOR").contains(roleCode)) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "权限点 " + SYS_LOG_READ_PERM + " 只能授予系统管理员或安全审计员（审计日志不可普通授权）");
         }
     }
 

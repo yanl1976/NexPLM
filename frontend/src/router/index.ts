@@ -385,6 +385,34 @@ const routes: RouteRecordRaw[] = [
         name: 'system-notify',
         component: () => import('@/views/system/NotifyView.vue'),
         meta: { title: '通知通道' }
+      },
+      {
+        // 批次 F-1：会话表 + 强制下线
+        path: 'system/session',
+        name: 'system-session',
+        component: () => import('@/views/system/SessionView.vue'),
+        meta: { title: '在线用户' }
+      },
+      {
+        // 批次 F-2：系统广播（登录后弹窗）
+        path: 'system/broadcast',
+        name: 'system-broadcast',
+        component: () => import('@/views/system/BroadcastView.vue'),
+        meta: { title: '系统广播' }
+      },
+      {
+        // 批次 F-3：登录日志 + 操作审计日志
+        path: 'system/log',
+        name: 'system-log',
+        component: () => import('@/views/system/LogView.vue'),
+        meta: { title: '运行日志' }
+      },
+      {
+        // 批次 F-4：三员分布与互斥违规
+        path: 'system/three-role',
+        name: 'system-three-role',
+        component: () => import('@/views/system/ThreeRoleView.vue'),
+        meta: { title: '三员管理' }
       }
     ]
   },

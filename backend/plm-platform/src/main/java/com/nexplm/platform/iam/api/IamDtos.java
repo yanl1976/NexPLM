@@ -79,4 +79,21 @@ public final class IamDtos {
 
     public record RolePermissionReq(List<String> permissionCodes) {
     }
+
+    // ---------- 三员（批次 F-4） ----------
+    public record ThreeRoleMember(Long userId, String username, String displayName, String status,
+                                  OffsetDateTime lastLoginAt) {
+    }
+
+    public record ThreeRoleGroup(String roleCode, String roleName, List<ThreeRoleMember> members) {
+    }
+
+    /** 互斥违规：同一账号同时持有多个三员角色（启用校验前的历史数据）。 */
+    public record ThreeRoleViolation(Long userId, String username, String displayName,
+                                     String roleCodes, int roleCount) {
+    }
+
+    public record ThreeRoleOverview(List<ThreeRoleGroup> roles, List<ThreeRoleViolation> violations,
+                                    String note) {
+    }
 }
