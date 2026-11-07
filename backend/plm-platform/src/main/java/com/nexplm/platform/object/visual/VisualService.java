@@ -38,13 +38,23 @@ public class VisualService {
     private static final Set<String> SVIEW_SOURCE = Set.of("par", "asm", "iam", "ipt", "prt",
             "sldprt", "sldasm", "catproduct", "catpart", "casm", "cprt", "stp", "step");
 
-    /** 需要 FileToPDF 转换的二维图纸 / Office / 文本（旧系统 BrowseType 中 ViewTool=ImageView 的 Ext）。 */
+    /**
+     * 浏览器端可直接渲染的 Word（.docx）：前端用 docx-preview 解析到 DOM，不必走转换代理。
+     * 注意 .doc（97-2003 二进制格式）前端库不支持，仍归入 {@link #TO_PDF}。
+     */
+    private static final Set<String> DOCX = Set.of("docx");
+
+    /** 浏览器端可直接渲染的电子表格：前端用 SheetJS 解析成多个 sheet 以表格展示。 */
+    private static final Set<String> SHEET = Set.of("xlsx", "xlsm", "xls");
+
+    /** 需要 FileToPDF 转换的二维图纸与旧版 Office（旧系统 BrowseType 中 ViewTool=ImageView 的 Ext）。 */
     private static final Set<String> TO_PDF = Set.of("dwg", "drw", "idw", "cdrw", "slddrw", "catdrawing",
-            "dft", "exb", "elk", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "txt", "xps", "report");
+            "dft", "exb", "elk", "doc", "ppt", "pptx", "xps", "report");
 
     private static final Set<String> IMAGE = Set.of("jpg", "jpeg", "png", "gif", "bmp", "ico", "webp", "tif", "tiff");
 
-    private static final Set<String> PLAIN_TEXT = Set.of("md", "csv", "log", "json", "xml", "yml", "yaml");
+    /** 纯文本：浏览器按文本渲染（前端做 GBK/UTF-8 编码自适应，避免国内 csv/txt 乱码）。 */
+    private static final Set<String> PLAIN_TEXT = Set.of("txt", "md", "csv", "log", "json", "xml", "yml", "yaml");
 
     private static final String COMMAND_TO_SVL = "FileToSvl";
     private static final String COMMAND_TO_PDF = "FileToPDF";
@@ -110,13 +120,21 @@ public class VisualService {
             return info(object, objectType, VisualDtos.Engine.IMAGE, false, null,
                     "图片（." + ext + "）", primary, files);
         }
-        if (TO_PDF.contains(ext)) {
-            return info(object, objectType, VisualDtos.Engine.PDF, true, COMMAND_TO_PDF,
-                    "主文件为 ." + ext + "，需转换代理生成 PDF 后在线查看", primary, files);
+        if (DOCX.contains(ext)) {
+            return info(object, objectType, VisualDtos.Engine.DOCX, false, null,
+                    "Word 文档（." + ext + "），浏览器内直接渲染", primary, files);
+        }
+        if (SHEET.contains(ext)) {
+            return info(object, objectType, VisualDtos.Engine.SHEET, false, null,
+                    "电子表格（." + ext + "），浏览器内直接渲染", primary, files);
         }
         if (PLAIN_TEXT.contains(ext)) {
             return info(object, objectType, VisualDtos.Engine.TEXT, false, null,
                     "纯文本（." + ext + "）", primary, files);
+        }
+        if (TO_PDF.contains(ext)) {
+            return info(object, objectType, VisualDtos.Engine.PDF, true, COMMAND_TO_PDF,
+                    "主文件为 ." + ext + "，需转换代理生成 PDF 后在线查看", primary, files);
         }
         return info(object, objectType, VisualDtos.Engine.NONE, false, null,
                 "暂不支持在线查看 ." + ext + "（可下载后本地打开）", primary, files);

@@ -1,7 +1,13 @@
 import { http } from './http'
 
-/** 可视化引擎：SVIEW=旧系统 SView 插件（三维轻量化），PDF/IMAGE/TEXT 由浏览器直接渲染。 */
-export type VisualEngine = 'SVIEW' | 'PDF' | 'IMAGE' | 'TEXT' | 'NONE'
+/**
+ * 可视化引擎。
+ * - SVIEW：旧系统 SView 插件（三维轻量化）
+ * - PDF / IMAGE / TEXT：浏览器直接渲染
+ * - DOCX / SHEET：前端本地解析（docx-preview / SheetJS），不需要转换代理
+ * - NONE：暂不支持在线查看
+ */
+export type VisualEngine = 'SVIEW' | 'PDF' | 'IMAGE' | 'TEXT' | 'DOCX' | 'SHEET' | 'NONE'
 
 export interface VisualFile {
   fileId: string

@@ -14,6 +14,16 @@
       />
       <iframe v-else-if="info.engine === 'PDF' && blobUrl" :src="blobUrl" class="pdf-frame" title="PDF 预览" />
       <img v-else-if="info.engine === 'IMAGE' && blobUrl" :src="blobUrl" class="image" alt="图片预览" />
+      <docx-preview
+        v-else-if="info.engine === 'DOCX' && !info.needsConvert && info.file"
+        :file-id="info.file.fileId"
+        :file-name="info.file.fileName"
+      />
+      <sheet-preview
+        v-else-if="info.engine === 'SHEET' && !info.needsConvert && info.file"
+        :file-id="info.file.fileId"
+        :file-name="info.file.fileName"
+      />
       <pre v-else-if="info.engine === 'TEXT' && text !== ''" class="text-preview">{{ text }}</pre>
       <el-empty v-else :description="info.hint">
         <div v-if="info.needsConvert" class="convert-tip">
@@ -38,11 +48,14 @@
  * 在线可视化页签：先问后端该用哪种查看器，再按引擎渲染。
  * - SVIEW：三维轻量化（迁移自旧系统的 SView HTML5 插件）
  * - PDF / IMAGE / TEXT：浏览器直接渲染（原文件已是可看格式）
- * - needsConvert：原始 CAD/Office 需转换代理产出 .svlx / .pdf，给出提示与下载入口
+ * - DOCX / SHEET：前端本地解析（docx-preview / SheetJS），不需要转换代理
+ * - needsConvert：原始 CAD / 旧版 Office 需转换代理产出 .svlx / .pdf，给出提示与下载入口
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { downloadFile, saveBlob } from '../api/http'
 import { visualApi, type VisualInfo } from '../api/visual'
+import DocxPreview from './DocxPreview.vue'
+import SheetPreview from './SheetPreview.vue'
 import SViewViewer from './SViewViewer.vue'
 
 const props = defineProps<{
@@ -67,6 +80,10 @@ const engineLabel = computed(() => {
       return '图片'
     case 'TEXT':
       return '文本'
+    case 'DOCX':
+      return info.value.needsConvert ? 'Word（待转换）' : 'Word'
+    case 'SHEET':
+      return info.value.needsConvert ? '表格（待转换）' : '表格'
     default:
       return '不可预览'
   }
@@ -91,10 +108,36 @@ function cleanup(): void {
   text.value = ''
 }
 
+/**
+ * 文本解码：国内 txt/csv 有大量 GBK/GB18030 存量文件，blob.text() 只按 UTF-8 解会变问号。
+ * 先认 BOM，再用 UTF-8 试解；出现替换字符（U+FFFD）说明不是 UTF-8，回退 GB18030。
+ */
+async function readText(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return new TextDecoder('utf-8').decode(bytes.subarray(3))
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return new TextDecoder('utf-16le').decode(bytes.subarray(2))
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return new TextDecoder('utf-16be').decode(bytes.subarray(2))
+  }
+  const utf8 = new TextDecoder('utf-8').decode(bytes)
+  if (utf8.includes('\uFFFD')) {
+    try {
+      return new TextDecoder('gb18030').decode(bytes)
+    } catch {
+      return utf8
+    }
+  }
+  return utf8
+}
+
 async function loadBlob(fileId: string, engine: VisualInfo['engine']): Promise<void> {
   const { blob } = await downloadFile(`/files/${fileId}/content`)
   if (engine === 'TEXT') {
-    text.value = await blob.text()
+    text.value = await readText(blob)
     return
   }
   localUrl = URL.createObjectURL(blob)

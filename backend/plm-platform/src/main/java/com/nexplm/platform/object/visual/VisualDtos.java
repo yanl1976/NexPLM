@@ -8,12 +8,25 @@ public final class VisualDtos {
     private VisualDtos() {
     }
 
-    /** 可视化引擎：三维走 SView（旧系统插件迁移），二维/Office 走 PDF，位图走 IMAGE，纯文本走 TEXT。 */
+    /**
+     * 可视化引擎：
+     * <ul>
+     *   <li>{@link #SVIEW} 三维轻量化（旧系统 SView 插件迁移）；</li>
+     *   <li>{@link #PDF} 已是 PDF，或需转换代理产出 PDF 后再看；</li>
+     *   <li>{@link #IMAGE} 位图；</li>
+     *   <li>{@link #TEXT} 纯文本（含 txt/csv/md/json 等）；</li>
+     *   <li>{@link #DOCX} Word 文档，前端用 docx-preview 直接在浏览器渲染（无需转换代理）；</li>
+     *   <li>{@link #SHEET} 电子表格，前端用 SheetJS 解析后以表格渲染（无需转换代理）；</li>
+     *   <li>{@link #NONE} 暂不支持在线查看。</li>
+     * </ul>
+     */
     public static final class Engine {
         public static final String SVIEW = "SVIEW";
         public static final String PDF = "PDF";
         public static final String IMAGE = "IMAGE";
         public static final String TEXT = "TEXT";
+        public static final String DOCX = "DOCX";
+        public static final String SHEET = "SHEET";
         public static final String NONE = "NONE";
 
         private Engine() {
