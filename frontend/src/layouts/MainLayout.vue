@@ -44,6 +44,17 @@
             <el-icon><HomeFilled /></el-icon>
             <template #title>概览</template>
           </el-menu-item>
+          <el-sub-menu index="/my">
+            <template #title>
+              <el-icon><Star /></el-icon>
+              <span>个人工作区</span>
+            </template>
+            <el-menu-item index="/my/checkouts">我的检出</el-menu-item>
+            <el-menu-item index="/my/favorites">收藏夹</el-menu-item>
+            <el-menu-item index="/my/recent">最近访问</el-menu-item>
+            <el-menu-item index="/my/search">高级查询</el-menu-item>
+            <el-menu-item index="/my/messages">站内消息</el-menu-item>
+          </el-sub-menu>
           <el-menu-item v-if="canReadDashboard" index="/report/dashboard">
             <el-icon><DataAnalysis /></el-icon>
             <template #title>统计看板</template>
@@ -160,8 +171,10 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
+  Bell,
   Calendar,
   Checked,
+  Clock,
   Connection,
   DataAnalysis,
   Document,
@@ -172,8 +185,10 @@ import {
   OfficeBuilding,
   Operation,
   Refresh,
+  Search,
   Setting,
-  Share
+  Share,
+  Star
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { workflowApi } from '@/api/workflow'

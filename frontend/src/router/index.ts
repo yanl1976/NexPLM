@@ -45,6 +45,42 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '概览' }
       },
       {
+        // 个人工作区：五个入口共用一个视图，靠 tab 属性区分（对齐旧系统 000/001 的五个菜单项）
+        path: 'my/checkouts',
+        name: 'my-checkouts',
+        component: () => import('@/views/my/MyWorkView.vue'),
+        props: { tab: 'checkouts' },
+        meta: { title: '我的检出' }
+      },
+      {
+        path: 'my/favorites',
+        name: 'my-favorites',
+        component: () => import('@/views/my/MyWorkView.vue'),
+        props: { tab: 'favorites' },
+        meta: { title: '收藏夹' }
+      },
+      {
+        path: 'my/recent',
+        name: 'my-recent',
+        component: () => import('@/views/my/MyWorkView.vue'),
+        props: { tab: 'recent' },
+        meta: { title: '最近访问' }
+      },
+      {
+        path: 'my/search',
+        name: 'my-search',
+        component: () => import('@/views/my/MyWorkView.vue'),
+        props: { tab: 'search' },
+        meta: { title: '高级查询' }
+      },
+      {
+        path: 'my/messages',
+        name: 'my-messages',
+        component: () => import('@/views/my/MyWorkView.vue'),
+        props: { tab: 'messages' },
+        meta: { title: '站内消息' }
+      },
+      {
         path: 'report/dashboard',
         name: 'report-dashboard',
         component: () => import('@/views/report/DashboardView.vue'),
