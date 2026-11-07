@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="page" v-loading="loading">
     <el-card shadow="never">
       <template #header>
