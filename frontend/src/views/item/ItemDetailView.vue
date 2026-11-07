@@ -117,6 +117,19 @@
                 </el-descriptions-item>
               </el-descriptions>
 
+              <template v-if="customFields.length">
+                <div class="prop-title">ERP 扩展属性</div>
+                <el-descriptions :column="3" border size="small">
+                  <el-descriptions-item v-for="field in customFields" :key="field.code">
+                    <template #label>
+                      <span :title="`ERP 列：${field.code}`">{{ field.name }}</span>
+                    </template>
+                    {{ extValueText(field) }}
+                  </el-descriptions-item>
+                </el-descriptions>
+                <div class="prop-hint">以上字段直接对应金蝶 ERP 物料列（编码见悬停提示），随物料下发报文提交</div>
+              </template>
+
               <div v-if="detail.checkout" class="checkout-line">
                 检出信息：{{ detail.checkout.userName || detail.checkout.userId }} 于
                 {{ formatTime(detail.checkout.checkedOutAt) }} 检出
@@ -905,7 +918,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="dialogVisible" title="编辑零部件" width="640px">
+    <el-dialog v-model="dialogVisible" title="编辑零部件" width="760px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" />
@@ -1002,6 +1015,31 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <template v-if="customFields.length">
+          <div class="form-section">ERP 扩展属性</div>
+          <el-row :gutter="12">
+            <el-col v-for="field in customFields" :key="field.code" :span="12">
+              <el-form-item :label="field.name">
+                <el-select
+                  v-if="isBoolField(field)"
+                  v-model="extBoolForm[field.code]"
+                  style="width: 100%"
+                  :title="`ERP 列：${field.code}`"
+                >
+                  <el-option label="未设置" value="" />
+                  <el-option label="是" :value="true" />
+                  <el-option label="否" :value="false" />
+                </el-select>
+                <el-input
+                  v-else
+                  v-model="extTextForm[field.code]"
+                  :title="`ERP 列：${field.code}`"
+                  :placeholder="`ERP 列 ${field.code}`"
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -1108,6 +1146,7 @@ import {
   type WhereUsedRow
 } from '@/api/item'
 import { DOC_STATE_LABEL } from '@/api/doc'
+import { metaApi, type MetaFieldDef } from '@/api/system'
 import WorkflowPanel from '@/components/WorkflowPanel.vue'
 import VisualPreview from '@/components/VisualPreview.vue'
 import StatusDot from '@/components/StatusDot.vue'
@@ -1147,6 +1186,71 @@ const itemExtraTabs = [
   { code: 'bom-rollup', name: 'BOM 汇总', after: 'bom-summary' },
   { code: 'baselines', name: '基线', after: 'whereused' }
 ]
+
+/**
+ * PdmItem 元数据里由专用字段维护的键（批次 G·方案 A）：
+ * 与后端 ItemService 的 STANDARD_EXT_KEYS / DESIGN_ATTR_KEYS 保持一致，
+ * 排除后剩下的就是落 ext_json 的 ERP 客制字段。
+ */
+const STANDARD_EXT_KEYS = new Set([
+  'itemType',
+  'sourceType',
+  'unit',
+  'specification',
+  'material',
+  'weight',
+  'stdCode',
+  'remark'
+])
+const DESIGN_ATTR_KEYS = new Set([
+  'provider',
+  'dwgNo',
+  'productCategory',
+  'productModel',
+  'productSpec',
+  'materialType',
+  'materialType2',
+  'surfaceTreatment',
+  'isTooling',
+  'weightUnit',
+  'montage',
+  'colorItem'
+])
+
+/** 元数据接口不可用时的兜底（与 Flyway V70 注册的 12 个 ERP 客制字段一致）。 */
+const ITEM_CUSTOM_FIELD_FALLBACK: MetaFieldDef[] = [
+  { code: 'FErpClsID', name: '物料属性', valueType: 'DefaultObjectValue', dataType: 'VARCHAR', sort: 210 },
+  { code: 'FCategoryID', name: '存货类别', valueType: 'DefaultObjectValue', dataType: 'VARCHAR', sort: 220 },
+  { code: 'FPlanningStrategy', name: '计划策略', valueType: 'DefaultObjectValue', dataType: 'VARCHAR', sort: 230 },
+  { code: 'FIsProduce', name: '允许生产', valueType: 'BoolValue', dataType: 'BOOLEAN', sort: 240 },
+  { code: 'FIsPurchase', name: '允许采购', valueType: 'BoolValue', dataType: 'BOOLEAN', sort: 250 },
+  { code: 'FIsInventory', name: '允许库存', valueType: 'BoolValue', dataType: 'BOOLEAN', sort: 260 },
+  { code: 'FIsSubContract', name: '允许委外', valueType: 'BoolValue', dataType: 'BOOLEAN', sort: 270 },
+  { code: 'FIsSale', name: '允许销售', valueType: 'BoolValue', dataType: 'BOOLEAN', sort: 280 },
+  { code: 'F_ZXCV_ZYCS', name: '主要参数', valueType: 'DefaultObjectValue', dataType: 'VARCHAR', sort: 290 },
+  { code: 'F_zxcv_SCCS', name: '生产厂名', valueType: 'DefaultObjectValue', dataType: 'VARCHAR', sort: 300 },
+  { code: 'F_PJQF_XMDA', name: '项目代号', valueType: 'DefaultObjectValue', dataType: 'VARCHAR', sort: 310 },
+  { code: 'F_zxcv_JSCS', name: '技术参数', valueType: 'DefaultObjectValue', dataType: 'VARCHAR', sort: 320 }
+]
+
+/** PdmItem 元数据字段（用于渲染 ERP 扩展属性；取不到时回退到兜底清单）。 */
+const metaFields = ref<MetaFieldDef[]>([])
+
+/** ERP 客制字段：元数据减去标准键与设计属性键，按 sort 排序。 */
+const customFields = computed<MetaFieldDef[]>(() => {
+  const source = metaFields.value.length ? metaFields.value : ITEM_CUSTOM_FIELD_FALLBACK
+  return source
+    .filter((field) => !STANDARD_EXT_KEYS.has(field.code) && !DESIGN_ATTR_KEYS.has(field.code))
+    .slice()
+    .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))
+})
+
+/** 文本类客制字段的编辑态值。 */
+const extTextForm = reactive<Record<string, string>>({})
+/** 布尔类客制字段的编辑态值：'' = 未设置（不写 ext_json），true/false = 明确取值。 */
+const extBoolForm = reactive<Record<string, boolean | ''>>({})
+/** 打开编辑时的 ext_json 快照：保存时只提交改动过的键，未改动的交给后端保留。 */
+const extOriginal = ref<Record<string, unknown>>({})
 
 /** 属性 / 视图 / 设计文档 / 历史 / 权限 / 日志页签数据。 */
 const views = ref<ItemViewRow[]>([])
@@ -1381,6 +1485,48 @@ async function load(): Promise<void> {
   }
 }
 
+/** 拉 PdmItem 元数据以渲染 ERP 扩展属性；失败时静默回退到兜底清单。 */
+async function loadMetaFields(): Promise<void> {
+  try {
+    metaFields.value = (await metaApi.getEntity('PdmItem')).fields ?? []
+  } catch {
+    metaFields.value = []
+  }
+}
+
+function isBoolField(field: MetaFieldDef): boolean {
+  return field.valueType === 'BoolValue' || field.dataType === 'BOOLEAN'
+}
+
+/** 属性页签里的只读展示：未填显示 -，布尔值转是/否。 */
+function extValueText(field: MetaFieldDef): string {
+  const raw = detail.value?.ext?.[field.code]
+  if (raw === null || raw === undefined || raw === '') {
+    return '-'
+  }
+  if (raw === true || raw === 'true' || raw === 1 || raw === '1') {
+    return '是'
+  }
+  if (raw === false || raw === 'false' || raw === 0 || raw === '0') {
+    return '否'
+  }
+  return String(raw)
+}
+
+/** 清空并重填 reactive 记录，避免上一张单子的残留键串到本次编辑。 */
+function replaceTextRecord(target: Record<string, string>, source: Record<string, string>): void {
+  Object.keys(target).forEach((key) => delete target[key])
+  Object.assign(target, source)
+}
+
+function replaceBoolRecord(
+  target: Record<string, boolean | ''>,
+  source: Record<string, boolean | ''>
+): void {
+  Object.keys(target).forEach((key) => delete target[key])
+  Object.assign(target, source)
+}
+
 function openEdit(): void {
   if (!detail.value) {
     return
@@ -1395,7 +1541,65 @@ function openEdit(): void {
   form.stdCode = detail.value.stdCode ?? ''
   form.remark = detail.value.remark ?? ''
   form.designAttr = { ...emptyDesignAttr(), ...(detail.value.designAttr ?? {}) }
+
+  const ext = detail.value.ext ?? {}
+  extOriginal.value = { ...ext }
+  const textValues: Record<string, string> = {}
+  const boolValues: Record<string, boolean | ''> = {}
+  customFields.value.forEach((field) => {
+    const raw = ext[field.code]
+    if (isBoolField(field)) {
+      if (raw === null || raw === undefined || raw === '') {
+        boolValues[field.code] = ''
+      } else if (raw === true || raw === 'true' || raw === 1 || raw === '1') {
+        boolValues[field.code] = true
+      } else {
+        boolValues[field.code] = false
+      }
+    } else {
+      textValues[field.code] = raw === null || raw === undefined ? '' : String(raw)
+    }
+  })
+  replaceTextRecord(extTextForm, textValues)
+  replaceBoolRecord(extBoolForm, boolValues)
+
   dialogVisible.value = true
+}
+
+/**
+ * 组装 ext 补丁：只提交相对打开时发生变化的客制字段。
+ * 未改动的键不提交 = 后端保留既有值；文本清空提交空串 = 清空该键。
+ */
+function buildExtPatch(): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  customFields.value.forEach((field) => {
+    const origin = extOriginal.value[field.code]
+    if (isBoolField(field)) {
+      const next = extBoolForm[field.code] ?? ''
+      if (next === '') {
+        if (origin !== null && origin !== undefined && origin !== '') {
+          patch[field.code] = ''
+        }
+        return
+      }
+      const originBool =
+        origin === true || origin === 'true' || origin === 1 || origin === '1'
+          ? true
+          : origin === false || origin === 'false' || origin === 0 || origin === '0'
+            ? false
+            : null
+      if (originBool !== next) {
+        patch[field.code] = next
+      }
+    } else {
+      const next = (extTextForm[field.code] ?? '').trim()
+      const originText = origin === null || origin === undefined ? '' : String(origin).trim()
+      if (next !== originText) {
+        patch[field.code] = next
+      }
+    }
+  })
+  return patch
 }
 
 async function onSave(): Promise<void> {
@@ -1408,7 +1612,7 @@ async function onSave(): Promise<void> {
   }
   saving.value = true
   try {
-    detail.value = await itemApi.update(itemId.value, { ...form })
+    detail.value = await itemApi.update(itemId.value, { ...form, ext: buildExtPatch() })
     ElMessage.success('已保存')
     dialogVisible.value = false
   } catch (error) {
@@ -2236,7 +2440,11 @@ watch(itemId, () => {
   reloadAll()
 })
 
-onMounted(reloadAll)
+onMounted(() => {
+  // 元数据字段集合一次取够，切换版本（路由 id 变化）无需重取
+  loadMetaFields()
+  reloadAll()
+})
 </script>
 
 <style scoped>
@@ -2379,6 +2587,12 @@ onMounted(reloadAll)
 
 .prop-title:first-child {
   margin-top: 0;
+}
+
+.prop-hint {
+  margin-top: 6px;
+  color: #909399;
+  font-size: 12px;
 }
 
 .checkout-line {
