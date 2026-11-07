@@ -44,6 +44,38 @@ cd frontend && npm install && npm run dev
 - 前端默认端口 `5173`，已配置 `/api` 代理到后端
 - 默认管理员：`admin / Admin@12345`（首次登录强制改密）
 
+### 本机（Windows，无 Docker）实际启动方式
+
+本机没有 Docker，数据库是 zonky 缓存的 PostgreSQL 二进制 `initdb` 到 `PLM_Clone/_pgdata`、端口 5432（详见
+[`docs/03` 第 24 条](docs/03-分阶段实施计划.md) 与 [`docs/06` EXP-20261107-09](docs/06-探查记录.md)）。
+**业务数据在 `postgres` 库、凭据 `postgres/postgres`**，与 `application.yml` 默认的 `nexplm/nexplm` 不同，
+所以必须显式注入 `NEXPLM_DB_*`，否则后端会卡在 `HikariPool-1 - Starting...` 无限重试。
+
+```powershell
+# 0. 确认 PG 在跑（未跑则先 pg_ctl -D PLM_Clone/_pgdata -p 5432 start）
+Get-NetTCPConnection -LocalPort 5432 -State Listen
+
+# 1. 后端（工作目录必须是 backend：NEXPLM_FILE_ROOT=./data/files 是相对路径）
+cd backend
+$env:NEXPLM_DB_URL='jdbc:postgresql://localhost:5432/postgres'
+$env:NEXPLM_DB_USER='postgres'
+$env:NEXPLM_DB_PASSWORD='postgres'
+java -jar plm-app\target\nexplm.jar     # 日志：logs\stdout.log、logs\stderr.log
+
+# 2. 前端（另开终端）
+cd frontend
+npm install; npm run dev                # 日志：dev.log，端口 5173
+
+# 3. 冒烟
+curl http://localhost:8080/actuator/health   # {"status":"UP"}
+```
+
+- **改了后端代码**（尤其 `plm-platform`）不能只 `compile`：必须停进程 →
+  `mvn -pl plm-app -am package -DskipTests` → 重启 jar（fat jar 打包时文件被占用会 rename 失败）。
+- **只改前端**无需重新打包后端，Vite 热更新即可。
+- 停服务：`Get-CimInstance Win32_Process -Filter "Name='java.exe' or Name='node.exe'"` 找到 PID 后
+  `Stop-Process -Id <pid> -Force`。
+
 ## 状态
 
 | 阶段 | 状态 | 说明 |
