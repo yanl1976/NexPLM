@@ -9,6 +9,8 @@ export const toolingApi = {
   create: (body: Row) => http.post<string>('/capp/toolings', body),
   update: (id: string, body: Row) => http.put<void>(`/capp/toolings/${id}`, body),
   remove: (id: string) => http.delete<void>(`/capp/toolings/${id}`),
+  /** 影响分析：这件工装被哪些工艺路线的哪道工序引用（被引用时禁止删除）。 */
+  usages: (id: string) => http.get<Row[]>(`/capp/toolings/${id}/usages`),
 
   applies: (status?: string) => http.get<Row[]>('/capp/tooling-applies', { status }),
   createApply: (body: Row) => http.post<string>('/capp/tooling-applies', body),

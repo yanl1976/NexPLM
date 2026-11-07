@@ -37,9 +37,10 @@ public final class CappDtos {
                                  @Size(max = 500) String remark) {
     }
 
-    /** 工序行（含工步）。 */
+    /** 工序行（含工步；{@code toolingId} 是挂在这道工序上的工装）。 */
     public record StepRow(Long id, int seqNo, String name, String opType, String workCenter,
                           Long resourceId, String resourceCode, String resourceName,
+                          Long toolingId, String toolingCode, String toolingName,
                           BigDecimal setupMinutes, BigDecimal runMinutes, String remark,
                           List<SubstepRow> substeps) {
     }
@@ -50,6 +51,7 @@ public final class CappDtos {
                               @Size(max = 32) String opType,
                               @Size(max = 100) String workCenter,
                               Long resourceId,
+                              Long toolingId,
                               BigDecimal setupMinutes,
                               BigDecimal runMinutes,
                               @Size(max = 500) String remark,
@@ -59,6 +61,7 @@ public final class CappDtos {
     /** 工艺过程树节点：一道工序 + 其下的工步。 */
     public record ProcessTreeNode(int stepSeqNo, String stepName, String opType, String workCenter,
                                   Long resourceId, String resourceCode, String resourceName,
+                                  Long toolingId, String toolingCode, String toolingName,
                                   BigDecimal setupMinutes, BigDecimal runMinutes,
                                   int substepCount, BigDecimal substepMinutes,
                                   List<SubstepRow> substeps) {

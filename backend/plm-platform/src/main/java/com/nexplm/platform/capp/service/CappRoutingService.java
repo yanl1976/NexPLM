@@ -382,7 +382,8 @@ public class CappRoutingService {
         int seqNo = 10;
         for (CappDtos.StepRow step : steps) {
             insertStep(id, companyId, seqNo, step.name(), normalizeOpType(step.opType()),
-                    step.workCenter(), step.resourceId(), step.setupMinutes(), step.runMinutes(), step.remark());
+                    step.workCenter(), step.resourceId(), step.toolingId(), step.setupMinutes(),
+                    step.runMinutes(), step.remark());
             writeSubstepsFromRows(id, companyId, seqNo, step.substeps());
             seqNo += 10;
         }
@@ -425,7 +426,8 @@ public class CappRoutingService {
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
                     return new CappDtos.ProcessTreeNode(step.seqNo(), step.name(), step.opType(),
                             step.workCenter(), step.resourceId(), step.resourceCode(),
-                            step.resourceName(), step.setupMinutes(), step.runMinutes(),
+                            step.resourceName(), step.toolingId(), step.toolingCode(), step.toolingName(),
+                            step.setupMinutes(), step.runMinutes(),
                             substeps.size(), substepMinutes, substeps);
                 })
                 .toList();
@@ -459,9 +461,12 @@ public class CappRoutingService {
             if (step.resourceId() != null) {
                 requireResource(step.resourceId(), companyId);
             }
+            if (step.toolingId() != null) {
+                requireTooling(step.toolingId(), companyId);
+            }
             insertStep(routingId, companyId, step.seqNo(), step.name().trim(),
                     normalizeOpType(step.opType()), blankToNull(step.workCenter()), step.resourceId(),
-                    step.setupMinutes(), step.runMinutes(), blankToNull(step.remark()));
+                    step.toolingId(), step.setupMinutes(), step.runMinutes(), blankToNull(step.remark()));
             writeSubsteps(routingId, companyId, step.seqNo(), step.substeps());
         }
     }
@@ -506,20 +511,22 @@ public class CappRoutingService {
 
     /** 插入一道工序：主键逐行生成（批量 INSERT…SELECT 会让所有行共用一个 id）。 */
     private void insertStep(long routingId, Long companyId, int seqNo, String name, String opType,
-                            String workCenter, Long resourceId, BigDecimal setupMinutes,
+                            String workCenter, Long resourceId, Long toolingId, BigDecimal setupMinutes,
                             BigDecimal runMinutes, String remark) {
         jdbcTemplate.update("""
                         INSERT INTO capp_routing_step (id, company_id, routing_id, seq_no, name, op_type,
-                                                       work_center, resource_id, setup_minutes, run_minutes, remark)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                       work_center, resource_id, tooling_id,
+                                                       setup_minutes, run_minutes, remark)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 IdWorker.getId(), companyId, routingId, seqNo, name, opType, workCenter, resourceId,
-                nullToZero(setupMinutes), nullToZero(runMinutes), remark);
+                toolingId, nullToZero(setupMinutes), nullToZero(runMinutes), remark);
     }
 
     private void insertStep(long routingId, Long companyId, CappDtos.StepRow step) {
         insertStep(routingId, companyId, step.seqNo(), step.name(), normalizeOpType(step.opType()),
-                step.workCenter(), step.resourceId(), step.setupMinutes(), step.runMinutes(), step.remark());
+                step.workCenter(), step.resourceId(), step.toolingId(), step.setupMinutes(),
+                step.runMinutes(), step.remark());
     }
 
     private List<CappDtos.StepRow> stepsOf(Long routingId) {
@@ -527,9 +534,11 @@ public class CappRoutingService {
         return jdbcTemplate.query("""
                         SELECT s.id, s.seq_no, s.name, s.op_type, s.work_center, s.resource_id,
                                r.code AS resource_code, r.name AS resource_name,
+                               s.tooling_id, tl.code AS tooling_code, tl.name AS tooling_name,
                                s.setup_minutes, s.run_minutes, s.remark
                           FROM capp_routing_step s
                           LEFT JOIN capp_resource r ON r.id = s.resource_id AND r.deleted = false
+                          LEFT JOIN capp_tooling tl ON tl.id = s.tooling_id AND tl.deleted = false
                          WHERE s.routing_id = ?
                          ORDER BY s.seq_no
                         """,
@@ -539,6 +548,8 @@ public class CappRoutingService {
                             rs.getString("name"), rs.getString("op_type"), rs.getString("work_center"),
                             (Long) rs.getObject("resource_id"), rs.getString("resource_code"),
                             rs.getString("resource_name"),
+                            (Long) rs.getObject("tooling_id"), rs.getString("tooling_code"),
+                            rs.getString("tooling_name"),
                             rs.getBigDecimal("setup_minutes"), rs.getBigDecimal("run_minutes"),
                             rs.getString("remark"), substeps.getOrDefault(seqNo, List.of()));
                 },
@@ -641,6 +652,21 @@ public class CappRoutingService {
                 """, Integer.class, resourceId, companyId);
         if (count == null || count == 0) {
             throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "工艺资源不存在：" + resourceId);
+        }
+    }
+
+    /** 工序只允许挂在本公司未删除、未报废的工装上（报废件上工序没有意义）。 */
+    private void requireTooling(Long toolingId, Long companyId) {
+        List<String> status = jdbcTemplate.query("""
+                        SELECT status FROM capp_tooling
+                         WHERE id = ? AND company_id = ? AND deleted = false
+                        """,
+                (rs, rowNum) -> rs.getString("status"), toolingId, companyId);
+        if (status.isEmpty()) {
+            throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "工装不存在：" + toolingId);
+        }
+        if ("SCRAP".equals(status.get(0))) {
+            throw BizException.of(ErrorCode.CAPP_STEP_INVALID, "已报废工装不能挂到工序上：" + toolingId);
         }
     }
 

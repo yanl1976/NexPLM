@@ -52,6 +52,10 @@ export interface ProcessTreeNode {
   resourceId?: string | null
   resourceCode?: string | null
   resourceName?: string | null
+  /** 工序挂的工装（批次 C-4）。 */
+  toolingId?: string | null
+  toolingCode?: string | null
+  toolingName?: string | null
   setupMinutes?: number | null
   runMinutes?: number | null
   substepCount: number
@@ -70,6 +74,10 @@ export interface RoutingStep {
   resourceId?: string | null
   resourceCode?: string | null
   resourceName?: string | null
+  /** 这道工序用的工装（批次 C-4，被引用的工装禁止删除）。 */
+  toolingId?: string | null
+  toolingCode?: string | null
+  toolingName?: string | null
   setupMinutes?: number | null
   runMinutes?: number | null
   remark?: string | null

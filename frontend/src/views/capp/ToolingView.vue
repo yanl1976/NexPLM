@@ -240,6 +240,26 @@ async function giveBack(row: Row) {
   await load()
 }
 
+/** 影响分析：这件工装被哪些路线的哪道工序引用（被引用时后端禁止删除）。 */
+const usageVisible = ref(false)
+const usageLoading = ref(false)
+const usageRows = ref<Row[]>([])
+const usageTooling = ref<Row | null>(null)
+
+async function openUsages(row: Row) {
+  usageTooling.value = row
+  usageRows.value = []
+  usageVisible.value = true
+  usageLoading.value = true
+  try {
+    usageRows.value = await toolingApi.usages(String(row.id))
+  } catch (error) {
+    ElMessage.error((error as Error).message || '加载引用失败')
+  } finally {
+    usageLoading.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -287,6 +307,13 @@ onMounted(load)
             </el-table-column>
             <el-table-column prop="location" label="存放位置" width="130" />
             <el-table-column prop="owner_name" label="责任人" width="110" />
+            <el-table-column label="被引用" width="100" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openUsages(row)">
+                  {{ row.usage_count ?? 0 }} 道工序
+                </el-button>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="210" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" :disabled="row.status !== 'IDLE'" @click="openBorrow(row)">借出</el-button>
@@ -439,6 +466,29 @@ onMounted(load)
         <el-button type="primary" @click="saveBorrow">借出</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="usageVisible" title="工装引用（影响分析）" width="760px">
+      <div class="usage-head">
+        <span>{{ usageTooling?.code }} {{ usageTooling?.name }}</span>
+        <span class="hint">被以下工序引用时，这件工装不允许删除</span>
+      </div>
+      <el-table v-loading="usageLoading" :data="usageRows" size="small" border empty-text="还没有工序引用这件工装">
+        <el-table-column prop="routing_code" label="路线编码" width="140" />
+        <el-table-column prop="routing_name" label="路线名称" min-width="160" show-overflow-tooltip />
+        <el-table-column label="类型" width="90">
+          <template #default="{ row }">{{ row.typical ? '典型工艺' : '零件路线' }}</template>
+        </el-table-column>
+        <el-table-column prop="object_code" label="零件" width="140" />
+        <el-table-column prop="step_no" label="工序号" width="80" align="center" />
+        <el-table-column prop="step_name" label="工序名称" min-width="120" show-overflow-tooltip />
+        <el-table-column label="路线状态" width="100">
+          <template #default="{ row }">{{ row.routing_status }}</template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="usageVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -468,5 +518,19 @@ onMounted(load)
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.usage-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.usage-head .hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--plm-text-secondary);
 }
 </style>

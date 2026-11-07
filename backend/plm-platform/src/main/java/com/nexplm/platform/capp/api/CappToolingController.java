@@ -66,6 +66,12 @@ public class CappToolingController {
         return Result.ok();
     }
 
+    @Operation(summary = "工装影响分析（被哪些路线的哪道工序引用）")
+    @GetMapping("/toolings/{id}/usages")
+    public Result<List<Map<String, Object>>> usages(@PathVariable Long id) {
+        return Result.ok(service.usages(id, CurrentUser.companyId()));
+    }
+
     @Operation(summary = "工装申请单列表")
     @GetMapping("/tooling-applies")
     public Result<List<Map<String, Object>>> applies(

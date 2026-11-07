@@ -46,7 +46,9 @@ public class CappToolingService {
                 SELECT t.id, t.code, t.name, t.tooling_type, t.spec, t.status, t.location, t.owner_id,
                        u.display_name AS owner_name, t.purchase_date, t.remark,
                        (SELECT COUNT(1) FROM capp_tooling_borrow b
-                         WHERE b.tooling_id = t.id AND b.returned_at IS NULL) AS borrowed
+                         WHERE b.tooling_id = t.id AND b.returned_at IS NULL) AS borrowed,
+                       (SELECT COUNT(1) FROM capp_routing_step s
+                         WHERE s.tooling_id = t.id) AS usage_count
                   FROM capp_tooling t
                   LEFT JOIN sys_user u ON u.id = t.owner_id
                  WHERE t.company_id = ? AND t.deleted = false
@@ -108,7 +110,12 @@ public class CappToolingService {
                 req.remark(), id, companyId);
     }
 
-    /** 删除：有未归还借用时拒绝（否则借用记录会指向一个不存在的东西）。 */
+    /**
+     * 删除：两种引用会拒绝——未归还的借用记录、被工艺路线工序引用（旧 {@code ToolingImpactAnalysis}）。
+     *
+     * <p>引用不用软删兜底：工序上的 {@code tooling_id} 是物理列，工装软删后工序详情会变成空引用，
+     * 影响分析也就查不到了，所以必须在删除前拦住。</p>
+     */
     @Transactional
     public void delete(Long id, Long companyId) {
         requireTooling(id, companyId);
@@ -119,7 +126,28 @@ public class CappToolingService {
         if (active != null && active > 0) {
             throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "该工装仍在借用中，先归还再删除");
         }
+        List<Map<String, Object>> refs = usages(id, companyId);
+        if (!refs.isEmpty()) {
+            Map<String, Object> first = refs.get(0);
+            String sample = first.get("routing_code") + " 工序" + first.get("step_no");
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "该工装已被 " + refs.size() + " 道工序引用（如 " + sample + "），先在工艺路线中解除引用");
+        }
         jdbcTemplate.update("UPDATE capp_tooling SET deleted = true, updated_at = now() WHERE id = ?", id);
+    }
+
+    /** 工装影响分析（只读）：被哪些工艺路线的哪道工序引用。 */
+    public List<Map<String, Object>> usages(Long id, Long companyId) {
+        return jdbcTemplate.queryForList("""
+                SELECT s.routing_id, r.code AS routing_code, r.name AS routing_name, r.status AS routing_status,
+                       r.typical, s.seq_no AS step_no, s.name AS step_name, s.op_type,
+                       o.code AS object_code, o.name AS object_name
+                  FROM capp_routing_step s
+                  JOIN capp_routing r ON r.id = s.routing_id AND r.deleted = false
+                  LEFT JOIN plm_object o ON o.id = r.object_id AND o.deleted = false
+                 WHERE s.tooling_id = ? AND s.company_id = ?
+                 ORDER BY r.code, s.seq_no
+                """, id, companyId);
     }
 
     // ------------------------------------------------------------ 申请单

@@ -217,6 +217,29 @@
             </el-select>
           </template>
         </el-table-column>
+        <el-table-column label="工装" width="170">
+          <template #default="{ row }">
+            <el-select
+              v-model="row.toolingId"
+              filterable
+              remote
+              reserve-keyword
+              clearable
+              placeholder="可选"
+              :remote-method="searchToolings"
+              :loading="toolingsLoading"
+              :disabled="readonly"
+              @visible-change="(visible: boolean) => visible && searchToolings('')"
+            >
+              <el-option
+                v-for="item in toolings"
+                :key="item.id"
+                :label="`${item.code} ${item.name}`"
+                :value="String(item.id)"
+              />
+            </el-select>
+          </template>
+        </el-table-column>
         <el-table-column label="准备工时(h)" width="120">
           <template #default="{ row }">
             <el-input-number v-model="row.setupMinutes" :min="0" :precision="2" :controls="false" :disabled="readonly" style="width: 100%" />
@@ -391,6 +414,7 @@ import {
   type SubstepRow
 } from '@/api/capp'
 import { workflowApi, type ActorUserRow } from '@/api/workflow'
+import { toolingApi, type Row as ToolingRow } from '@/api/tooling'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
@@ -428,6 +452,9 @@ const users = ref<ActorUserRow[]>([])
 const usersLoading = ref(false)
 const resources = ref<CappResource[]>([])
 const resourcesLoading = ref(false)
+/** 工序可选工装（台账里排除已报废的）。 */
+const toolings = ref<ToolingRow[]>([])
+const toolingsLoading = ref(false)
 
 /** 工步编辑抽屉：改动只落在本地草稿，点「确定」写回当前工序，随路线保存一起提交。 */
 const substepVisible = ref(false)
@@ -533,6 +560,19 @@ async function searchResources(keywordText: string): Promise<void> {
   }
 }
 
+/** 工序可选工装：取台账前 50 条（关键字远程搜索），报废件不参与选挂。 */
+async function searchToolings(keywordText: string): Promise<void> {
+  toolingsLoading.value = true
+  try {
+    const list = await toolingApi.list({ keyword: keywordText || undefined })
+    toolings.value = list.filter((item) => item.status !== 'SCRAP')
+  } catch {
+    toolings.value = []
+  } finally {
+    toolingsLoading.value = false
+  }
+}
+
 async function searchUsers(keywordText: string): Promise<void> {
   usersLoading.value = true
   try {
@@ -590,6 +630,7 @@ async function fillForm(id: string): Promise<void> {
       typical: detail.typical === true
     })
     mergeBoundResources(form.steps)
+    mergeBoundToolings(form.steps)
     if (detail.ownerId && detail.ownerName) {
       users.value = [{ id: detail.ownerId, username: detail.ownerName, displayName: detail.ownerName } as ActorUserRow]
     }
@@ -615,6 +656,7 @@ function emptyStep(seqNo: number): RoutingStep {
     opType: 'MACHINING',
     workCenter: '',
     resourceId: null,
+    toolingId: null,
     setupMinutes: 0,
     runMinutes: 0,
     remark: ''
@@ -638,6 +680,23 @@ function mergeBoundResources(steps: RoutingStep[]): void {
     }
   })
   resources.value = [...merged.values()]
+}
+
+/** 同理：已绑工装补进候选，否则下拉会显示裸 id（工装可能已报废但引用仍在）。 */
+function mergeBoundToolings(steps: RoutingStep[]): void {
+  const merged = new Map(toolings.value.map((item) => [String(item.id), item]))
+  steps.forEach((step) => {
+    const id = step.toolingId ? String(step.toolingId) : ''
+    if (id && !merged.has(id)) {
+      merged.set(id, {
+        id,
+        code: step.toolingCode ?? id,
+        name: step.toolingName ?? '(已删除工装)',
+        status: 'IDLE'
+      })
+    }
+  })
+  toolings.value = [...merged.values()]
 }
 
 function addStep(): void {
@@ -704,6 +763,7 @@ async function onSave(): Promise<void> {
         opType: step.opType,
         workCenter: step.workCenter || null,
         resourceId: step.resourceId ?? null,
+        toolingId: step.toolingId ?? null,
         setupMinutes: step.setupMinutes ?? 0,
         runMinutes: step.runMinutes ?? 0,
         remark: step.remark || null,
