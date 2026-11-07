@@ -20,7 +20,7 @@
  * - useBase64URL=true 让图片内联为 data URL，避免页面里 blob URL 随容器销毁失效；
  * - 仅支持 .docx/.docm 这类 OOXML 包，旧版 .doc（OLE 复合文档）由后端归入转换链路。
  */
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { downloadFile, saveBlob } from '../api/http'
 
 const props = defineProps<{
@@ -49,6 +49,14 @@ async function load(): Promise<void> {
       return
     }
     container.innerHTML = ''
+    // 关键：docx-preview 用 getBoundingClientRect 测量段落实际宽度来换算 Word 制表位，
+    // Word 目录的「标题 …… 页码」正是靠右对齐 leader 制表位实现的。
+    // 容器若仍处于 display:none（v-show 遮罩未撤），所有尺寸都读成 0，
+    // tab 会被算成整页宽度 → 点线撑满整行、页码被挤到下一行、标题栏折行。
+    // 所以渲染前必须先撤遮罩并等一帧完成布局。
+    loading.value = false
+    await nextTick()
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
     await renderAsync(blob, container, container, {
       className: 'docx',
       inWrapper: true,
@@ -113,6 +121,10 @@ onBeforeUnmount(() => {
 .docx-host :deep(.docx-wrapper > section.docx) {
   margin: 0 auto 16px;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+  /* .docx-wrapper 是 flex 容器，不锁定就会被压到容器宽度：
+     段落变窄后 Word 目录的右对齐制表位（A4 正文 9072 twips ≈ 604.7px）无法到达，
+     点线会被算成负宽/整行宽，页码换行。宁可出横向滚动条也不能压缩页面。 */
+  flex-shrink: 0;
 }
 
 .docx-mask {

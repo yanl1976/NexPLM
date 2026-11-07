@@ -311,8 +311,13 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="previewVisible" title="文档预览" width="860px" @closed="clearPreviewUrl">
+    <el-dialog v-model="previewVisible" title="文档预览" width="1040px" @closed="clearPreviewUrl">
       <div v-if="previewLoading" v-loading="true" class="preview-loading" />
+      <!-- 浏览器内可直接渲染的格式（.docx / 电子表格）：不依赖 LibreOffice 转换代理 -->
+      <template v-else-if="localEngine && localFile">
+        <docx-preview v-if="localEngine === 'DOCX'" :file-id="localFile.fileId" :file-name="localFile.fileName" />
+        <sheet-preview v-else :file-id="localFile.fileId" :file-name="localFile.fileName" />
+      </template>
       <template v-else>
         <el-alert
           v-if="previewInfo?.status === 'SKIPPED'"
@@ -346,7 +351,12 @@
       <template #footer>
         <el-button v-if="previewInfo?.status === 'READY'" @click="downloadPreview">下载预览</el-button>
         <el-button @click="previewVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="previewLoading" @click="generatePreview(previewTargetFileId ?? undefined)">
+        <el-button
+          v-if="!localEngine"
+          type="primary"
+          :loading="previewLoading"
+          @click="generatePreview(previewTargetFileId ?? undefined)"
+        >
           {{ previewInfo?.status === 'READY' ? '重新生成' : '生成预览' }}
         </el-button>
       </template>
@@ -378,7 +388,10 @@ import {
   type FileRole
 } from '@/api/doc'
 import { metaApi, type MetaTabDef } from '@/api/system'
+import { visualApi, type VisualInfo } from '@/api/visual'
 import { workspaceApi } from '@/api/workspace'
+import DocxPreview from '@/components/DocxPreview.vue'
+import SheetPreview from '@/components/SheetPreview.vue'
 import WorkflowPanel from '@/components/WorkflowPanel.vue'
 import VisualPreview from '@/components/VisualPreview.vue'
 import StatusDot from '@/components/StatusDot.vue'
@@ -435,6 +448,13 @@ const previewLoading = ref(false)
 const previewInfo = ref<DocPreviewStatus | null>(null)
 const previewUrl = ref('')
 const previewTargetFileId = ref<string | null>(null)
+/**
+ * 前端可直接渲染的引擎（DOCX / SHEET）。
+ * 命中时预览弹窗直接用 docx-preview / SheetJS 渲染原始文件，
+ * 不再走 LibreOffice 转换代理（该链路未配置时会返回 SKIPPED，导致格式「暂不支持」）。
+ */
+const localEngine = ref<'DOCX' | 'SHEET' | ''>('')
+const localFile = ref<VisualInfo['file']>(null)
 
 const IMAGE_FORMATS = ['PNG', 'JPG', 'JPEG', 'GIF', 'BMP', 'WEBP']
 const isImagePreview = computed(() =>
@@ -595,9 +615,24 @@ async function openPreview(fileId?: string): Promise<void> {
   previewVisible.value = true
   previewInfo.value = null
   previewTargetFileId.value = fileId ?? null
+  localEngine.value = ''
+  localFile.value = null
   clearPreviewUrl()
   previewLoading.value = true
   try {
+    // 优先判定能否在浏览器内直接渲染（.docx / 表格）。
+    // 这一类文件根本不需要转换代理，也就不会出现「未配置 LibreOffice」的 SKIPPED 提示。
+    const visual = await visualApi.doc(docId.value).catch(() => null)
+    if (
+      visual &&
+      !visual.needsConvert &&
+      visual.file &&
+      (visual.engine === 'DOCX' || visual.engine === 'SHEET')
+    ) {
+      localEngine.value = visual.engine
+      localFile.value = visual.file
+      return
+    }
     const current = await docApi.preview(docId.value)
     previewInfo.value = current
     if (fileId) {
