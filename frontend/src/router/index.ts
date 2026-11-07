@@ -93,6 +93,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '自定义看板' }
       },
       {
+        path: 'report/templates',
+        name: 'report-templates',
+        component: () => import('@/views/report/ReportTemplateView.vue'),
+        meta: { title: '报表管理' }
+      },
+      {
+        path: 'report/run/:id',
+        name: 'report-run',
+        component: () => import('@/views/report/ReportRunView.vue'),
+        meta: { title: '运行报表' }
+      },
+      {
         path: 'item',
         name: 'item-list',
         component: () => import('@/views/item/ItemListView.vue'),

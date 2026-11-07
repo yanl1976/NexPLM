@@ -63,6 +63,10 @@
             <el-icon><Grid /></el-icon>
             <template #title>自定义看板</template>
           </el-menu-item>
+          <el-menu-item v-if="canReadReport" index="/report/templates">
+            <el-icon><Document /></el-icon>
+            <template #title>报表管理</template>
+          </el-menu-item>
           <el-sub-menu index="/system">
             <template #title>
               <el-icon><Setting /></el-icon>
@@ -215,6 +219,7 @@ const canManageWorkflow = computed(() => userStore.can('wf.process.manage'))
 const canReadNotify = computed(() => userStore.can('sys.notify.read'))
 const canReadDashboard = computed(() => userStore.can('ana.dashboard.read'))
 const canReadBoard = computed(() => userStore.can('ana.board.read'))
+const canReadReport = computed(() => userStore.can('ana.report.read'))
 
 const activeMenu = computed(() => {
   if (route.path === '/doc/class') {
