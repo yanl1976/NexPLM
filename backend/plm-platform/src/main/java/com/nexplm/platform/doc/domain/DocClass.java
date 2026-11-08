@@ -26,6 +26,12 @@ public class DocClass {
     private String remark;
     /** 关联编码规则 code（对齐蓝本分类的「关联编码」）；为空表示不参与按编码自动归类。 */
     private String codeRuleCode;
+    /**
+     * 编码路径（对齐蓝本 {@code CLASSIFYCLASS.CLASSCODEPATH}）：
+     * {@code 种类规则/码值1/码值2/*}，如 {@code Kind_61a20f96312e419c/1001/02/*}；
+     * 为空表示该分类不自动取号（人工/图号），见 `EXP-20261108-44`。
+     */
+    private String codePath;
 
     @Version
     private Integer version;

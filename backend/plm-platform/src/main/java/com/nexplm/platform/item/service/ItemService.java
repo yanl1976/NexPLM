@@ -874,10 +874,15 @@ public class ItemService {
             }
             return trimmed;
         }
-        // 蓝本编码 = 分类码 + 分类内流水（EXP-20261108-43）：创建时给了分类就走分类规则
         if (classId != null) {
-            String classCode = classService.requireClass(classId, OBJECT_TYPE).getCode();
-            return codeRuleService.next("PdmItemByClass", OBJECT_TYPE, classCode);
+            var clazz = classService.requireClass(classId, OBJECT_TYPE);
+            // 蓝本真实机制（EXP-20261108-44）：分类绑定「编码种类 + 码值路径」，按路径取号；
+            // 例 100102 → Kind_61a2…/1001/02/* → 1001 + 02 + 00001
+            if (clazz.getCodePath() != null && !clazz.getCodePath().isBlank()) {
+                return codeRuleService.nextByPath(clazz.getCodePath(), clazz.getCode());
+            }
+            // 兜底（EXP-20261108-43 的老口径）：分类未绑定路径时按分类编码取号
+            return codeRuleService.next("PdmItemByClass", OBJECT_TYPE, clazz.getCode());
         }
         return codeRuleService.nextForObjectType(OBJECT_TYPE + ":" + itemType, "PdmItem");
     }

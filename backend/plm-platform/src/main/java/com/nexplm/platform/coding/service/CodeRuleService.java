@@ -326,6 +326,72 @@ public class CodeRuleService {
         return rendered;
     }
 
+    /**
+     * 按**分类编码路径**取号（蓝本 {@code CLASSCODEPATH} 口径，`EXP-20261108-44`）。
+     *
+     * <p>路径形如 {@code Kind_61a20f96312e419c/1001/02/*}：首段是 {@code code_rule.code}，
+     * 中间是各 {@code VALUE} 段的码值，末尾 {@code *} 是流水占位。
+     * 例：{@code 1001} + {@code 02} + {@code 00001} = {@code 10010200001}。</p>
+     *
+     * @param fullPath 分类的 {@code code_path}
+     * @param scopeKey 流水作用域（一般是分类编码），按它独立计数
+     */
+    @Transactional
+    public String nextByPath(String fullPath, String scopeKey) {
+        if (fullPath == null || fullPath.isBlank()) {
+            throw BizException.of(ErrorCode.CODE_RULE_INVALID, "分类未绑定编码路径，不能自动取号");
+        }
+        String[] parts = fullPath.split("/");
+        String ruleCode = parts[0].trim();
+        List<String> values = new ArrayList<>();
+        for (int i = 1; i < parts.length; i++) {
+            String part = parts[i].trim();
+            if (part.isEmpty() || "*".equals(part)) {
+                continue;
+            }
+            values.add(part);
+        }
+        List<Map<String, Object>> locked = jdbcTemplate.queryForList("""
+                SELECT segments_json, status FROM code_rule WHERE code = ? FOR UPDATE
+                """, ruleCode);
+        if (locked.isEmpty()) {
+            throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "编码规则不存在：" + ruleCode);
+        }
+        if (!"ACTIVE".equals(String.valueOf(locked.get(0).get("status")))) {
+            throw BizException.of(ErrorCode.CODE_RULE_INVALID, "编码规则已停用：" + ruleCode);
+        }
+        List<Segment> segments = parse(String.valueOf(locked.get(0).get("segments_json")));
+        long nextNo = nextClassSeq(ruleCode,
+                scopeKey == null || scopeKey.isBlank() ? "DEFAULT" : scopeKey.trim());
+        String rendered = renderByPath(segments, values, nextNo);
+        recordIssue(ruleCode, rendered, null);
+        return rendered;
+    }
+
+    /** 按「路径码值 + 流水」渲染；{@code VALUE} 段依次消费 {@code values}。 */
+    private String renderByPath(List<Segment> segments, List<String> values, long no) {
+        StringBuilder sb = new StringBuilder();
+        int index = 0;
+        for (Segment segment : segments) {
+            switch (segment.type() == null ? "" : segment.type().toUpperCase()) {
+                case "TEXT" -> sb.append(segment.value() == null ? "" : segment.value());
+                case "DATE" -> sb.append(datePart(segment.format()));
+                case "CLASS" -> sb.append("");
+                case "VALUE" -> {
+                    if (index >= values.size()) {
+                        throw BizException.of(ErrorCode.CODE_RULE_INVALID,
+                                "编码路径的码值不足（规则需要的 VALUE 段多于路径提供的码值）");
+                    }
+                    sb.append(values.get(index++));
+                }
+                case "SEQ" -> sb.append(seqPart(no, segment));
+                default -> throw BizException.of(ErrorCode.CODE_RULE_INVALID,
+                        "未知段类型：" + segment.type());
+            }
+        }
+        return sb.toString();
+    }
+
     /** 分类内独立流水：{@code (rule_code, scope_key=分类编码)} 原子自增。 */
     private long nextClassSeq(String ruleCode, String classCode) {
         Long no = jdbcTemplate.queryForObject("""
@@ -388,9 +454,11 @@ public class CodeRuleService {
                 case "TEXT" -> sb.append(segment.value() == null ? "" : segment.value());
                 case "DATE" -> sb.append(datePart(segment.format()));
                 case "CLASS" -> sb.append(classCode == null || classCode.isBlank() ? "{CLASS}" : classCode);
+                // VALUE 段的值来自分类编码路径（见 nextByPath）；不带路径时渲染为空，仅用于校验/预览
+                case "VALUE" -> sb.append("");
                 case "SEQ" -> sb.append(seqPart(no, segment));
                 default -> throw BizException.of(ErrorCode.CODE_RULE_INVALID,
-                        "未知段类型：" + segment.type() + "（只支持 TEXT/DATE/CLASS/SEQ）");
+                        "未知段类型：" + segment.type() + "（只支持 TEXT/DATE/CLASS/VALUE/SEQ）");
             }
         }
         return sb.toString();

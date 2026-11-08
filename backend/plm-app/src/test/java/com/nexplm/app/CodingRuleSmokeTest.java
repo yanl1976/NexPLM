@@ -274,6 +274,49 @@ class CodingRuleSmokeTest {
         }
     }
 
+    /**
+     * 蓝本真实机制（`EXP-20261108-44`）：分类绑定「编码种类 + 码值路径」，
+     * 编码 = 各码段取值拼接 + 流水自增（`1001` + `02` + `00001`）。
+     */
+    @Test
+    void itemCodeFollowsClassCodePath() throws Exception {
+        String admin = login();
+        long classId = 94_100_000_001L;
+        jdbcTemplate.update("DELETE FROM doc_class WHERE id = ?", classId);
+        jdbcTemplate.update("DELETE FROM code_rule WHERE code = 'Kind_test01'");
+        jdbcTemplate.update("""
+                        INSERT INTO code_rule (id, code, name, segments_json, scope_json, reset_policy, status,
+                                               version_no, created_at, updated_at, current_no, object_type, remark)
+                        VALUES (?, 'Kind_test01', '测试编码种类',
+                                '[{"type":"VALUE"},{"type":"VALUE"},{"type":"SEQ","width":5,"radix":"DECIMAL"}]'::jsonb,
+                                '{}'::jsonb, 'NEVER', 'ACTIVE', 1, now(), now(), 0, 'PdmItem', 'EXP-20261108-44')
+                        """, IdWorker.getId());
+        jdbcTemplate.update("""
+                        INSERT INTO doc_class (id, parent_id, entity_code, code, name, path, sort, status,
+                                               code_path, deleted, version, created_at, updated_at)
+                        VALUES (?, NULL, 'PdmItem', 'T9301', '测试种类分类', '/T9301', 0, 'ACTIVE',
+                                'Kind_test01/1001/02/*', false, 0, now(), now())
+                        """, classId);
+        try {
+            String first = call(post("/api/v1/items"), admin, json(Map.of(
+                    "name", "码值路径零件1", "itemType", "PART", "sourceType", "MAKE",
+                    "classId", String.valueOf(classId)))).path("code").asText();
+            String second = call(post("/api/v1/items"), admin, json(Map.of(
+                    "name", "码值路径零件2", "itemType", "PART", "sourceType", "MAKE",
+                    "classId", String.valueOf(classId)))).path("code").asText();
+
+            assertThat(first).as("码值 1001 + 02 + 流水 00001").isEqualTo("10010200001");
+            assertThat(second).isEqualTo("10010200002");
+        } finally {
+            jdbcTemplate.update("DELETE FROM item_master WHERE class_id = ?", classId);
+            jdbcTemplate.update("DELETE FROM plm_object WHERE object_type = 'PdmItem'"
+                    + " AND id NOT IN (SELECT object_id FROM item_master)");
+            jdbcTemplate.update("DELETE FROM doc_class WHERE id = ?", classId);
+            jdbcTemplate.update("DELETE FROM code_sequence WHERE rule_code = 'Kind_test01'");
+            jdbcTemplate.update("DELETE FROM code_rule WHERE code = 'Kind_test01'");
+        }
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {
