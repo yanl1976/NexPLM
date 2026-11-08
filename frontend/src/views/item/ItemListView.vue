@@ -213,6 +213,7 @@
               <el-input
                 :model-value="displayCode"
                 readonly
+                class="code-readonly"
                 :placeholder="editingId ? '' : '选择最末级分类后自动生成'"
               />
               <div v-if="!editingId" class="code-preview">
@@ -1530,6 +1531,18 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 只读编码框：加深灰底 + 禁止光标，明确"不可编辑" */
+.code-readonly :deep(.el-input__wrapper) {
+  background-color: var(--el-fill-color-dark, #e6e8eb);
+  box-shadow: 0 0 0 1px var(--el-border-color-darker, #c7cbd1) inset;
+}
+
+.code-readonly :deep(.el-input__inner) {
+  color: var(--el-text-color-regular, #303133);
+  font-family: var(--el-font-family-mono, monospace);
+  cursor: not-allowed;
+}
+
 /* 编码预览：手工编码用警示色，自动取号用主色高亮 */
 .code-preview {
   margin-top: 4px;
