@@ -111,3 +111,27 @@ DRW-01 状态：**已对齐**；DRW-02 状态：**已对齐（复用文档域）
 | 密级 | 未在 DOCDATASET 明列 | `plm_object.security_level` | 已保留 0~3 |
 | 状态/检出 | `STATEID` / `CHECKOUT*` | 生命周期 + `plm_checkout` | 已复用 |
 | 图幅 `TUFU1` | `PSEBASEFORM`（物料） | 未落 | 待加到物料设计属性 |
+
+## DRW-05 图文档文件夹（EXP-20261108-66）
+
+**证据**：蓝本 `WSFOLDERCONTENT` 列 `LID/PEID/CEID/LQUALITY/LSEQUENCE/CETYPE`，
+`InforCenter/PDM/CAD/CADService/Config/Model/Cad.cmdsql:185-193` 用
+`WSFOLDERCONTENT.CEID = PSEITEM.EUID` 取文件夹内容；`PseItem.cmdsql:42` 明确
+`CETYPE='DOCMASTER'`。说明**文件夹（整理）与分类（属性）是两套维度**。
+
+**实现**：复用 `ws_folder`（`space_type='DOC'`，按 `owner_id` 隔离）+ `ws_folder_content`：
+
+| 接口 | 用途 |
+|---|---|
+| `GET /doc-folders` | 当前用户的文件夹扁平列表 |
+| `POST /doc-folders` | 新建（同级重名 409） |
+| `PUT /doc-folders/{id}` | 重命名（递归同步子孙 path） |
+| `DELETE /doc-folders/{id}` | 删除（有子文件夹拒绝） |
+| `POST /doc-folders/{id}/documents?docId=` | 文档归档到文件夹 |
+| `DELETE /doc-folders/{id}/documents/{docId}` | 移出 |
+
+`GET /docs?folderId=` 按文件夹过滤；前端文档库左侧新增文件夹树，列表行新增「归档」。
+
+**差异**：蓝本文件夹是带权限的公共树；当前按用户私有，后续若要项目/公共文件夹，需扩展 `space_type` 与 ACL。
+
+**状态**：**已对齐（私有文件夹）**。

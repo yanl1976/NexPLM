@@ -209,6 +209,12 @@ public class DocService {
     public PageResult<DocDtos.DocSummary> page(int page, int size, String keyword,
                                                String docType, String lifecycleState, Long classId,
                                                String fullText) {
+        return page(page, size, keyword, docType, lifecycleState, classId, fullText, null);
+    }
+
+    public PageResult<DocDtos.DocSummary> page(int page, int size, String keyword,
+                                               String docType, String lifecycleState, Long classId,
+                                               String fullText, Long folderId) {
         int pageNo = Math.max(1, page);
         int pageSize = Math.min(Math.max(1, size), 200);
         LambdaQueryWrapper<PlmObject> wrapper = new LambdaQueryWrapper<PlmObject>()
@@ -240,6 +246,10 @@ public class DocService {
                 wrapper.apply("id IN (SELECT object_id FROM doc_master WHERE class_id IN ("
                         + joinIds(classIds) + "))");
             }
+        }
+        if (folderId != null) {
+            // 文件夹是整理维度（ws_folder_content），与分类（doc_class）并行
+            wrapper.apply("id IN (SELECT object_id FROM ws_folder_content WHERE folder_id = {0})", folderId);
         }
         scopeApplier.apply(wrapper, PlmObject::getCompanyId, PlmObject::getOrgId, PlmObject::getOwnerId);
 

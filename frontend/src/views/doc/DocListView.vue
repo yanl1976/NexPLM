@@ -11,6 +11,26 @@
         </div>
       </template>
 
+      <div class="doc-body">
+        <aside class="folder-side">
+          <div class="folder-head">
+            <span>文件夹</span>
+            <el-button link type="primary" @click="openFolderCreate">新建</el-button>
+          </div>
+          <el-tree
+            :data="folderTreeData"
+            node-key="id"
+            :props="{ label: 'name', children: 'children' }"
+            highlight-current
+            default-expand-all
+            @node-click="onFolderClick"
+          />
+          <div class="folder-actions">
+            <el-button link size="small" :disabled="!currentFolderId" @click="openFolderRename">重命名</el-button>
+            <el-button link size="small" type="danger" :disabled="!currentFolderId" @click="removeFolder">删除</el-button>
+          </div>
+        </aside>
+        <div class="doc-main">
       <div class="filters">
         <el-input
           v-model="query.q"
@@ -78,9 +98,10 @@
         <el-table-column label="更新时间" width="170">
           <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="90" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="openDetail(row)">打开</el-button>
+            <el-button link type="primary" @click.stop="openFolderPick(row)">归档</el-button>
           </template>
         </el-table-column>
         <template #empty>
@@ -98,7 +119,54 @@
         @current-change="load"
         @size-change="search"
       />
+        </div>
+      </div>
     </el-card>
+
+    <el-dialog
+      v-model="folderDialogVisible"
+      :title="folderEditingId ? '重命名文件夹' : '新建文件夹'"
+      width="420px"
+    >
+      <el-form label-width="80px">
+        <el-form-item label="名称" required>
+          <el-input v-model="folderForm.name" placeholder="如 图纸归档 / 2026 项目" />
+        </el-form-item>
+        <el-form-item v-if="!folderEditingId" label="上级">
+          <el-tree-select
+            v-model="folderForm.parentId"
+            :data="folderTreeData"
+            :props="{ label: 'name', children: 'children' }"
+            node-key="id"
+            check-strictly
+            clearable
+            placeholder="不选=根目录"
+            style="width: 100%"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="folderDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitFolder">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="folderPickVisible" title="归档到文件夹" width="420px">
+      <el-tree-select
+        v-model="folderPickId"
+        :data="folderTreeData"
+        :props="{ label: 'name', children: 'children' }"
+        node-key="id"
+        check-strictly
+        filterable
+        placeholder="选择文件夹"
+        style="width: 100%"
+      />
+      <template #footer>
+        <el-button @click="folderPickVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitFolderPick">确定</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="importVisible" title="批量导入文档" width="600px">
       <el-alert
@@ -315,6 +383,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ElMessage,
+  ElMessageBox,
   type FormInstance,
   type FormRules,
   type UploadRequestOptions
@@ -337,6 +406,7 @@ import {
   type DocSummary
 } from '@/api/doc'
 import { metaApi } from '@/api/system'
+import { docFolderApi, type DocFolderRow, type DocFolderTreeNode } from '@/api/docFolder'
 import StatusDot from '@/components/StatusDot.vue'
 
 const router = useRouter()
@@ -358,8 +428,137 @@ const query = reactive({
   q: '',
   docType: '',
   lifecycleState: '',
-  classId: '' as string
+  classId: '' as string,
+  folderId: '' as string
 })
+
+// ---------------- 文件夹（整理维度，与分类 doc_class 并行） ----------------
+const folders = ref<DocFolderRow[]>([])
+const currentFolderId = ref('')
+const folderDialogVisible = ref(false)
+const folderEditingId = ref<string | null>(null)
+const folderForm = reactive({ name: '', parentId: '' as string })
+const folderPickVisible = ref(false)
+const folderPickId = ref('')
+const pickingDoc = ref<DocSummary | null>(null)
+
+const folderTreeData = computed<DocFolderTreeNode[]>(() => {
+  const map = new Map<string, DocFolderTreeNode>()
+  folders.value.forEach((row) => map.set(row.id, { ...row, children: [] }))
+  const roots: DocFolderTreeNode[] = []
+  folders.value.forEach((row) => {
+    const node = map.get(row.id)
+    if (!node) {
+      return
+    }
+    const parent = row.parent_id ? map.get(row.parent_id) : undefined
+    if (parent) {
+      parent.children.push(node)
+    } else {
+      roots.push(node)
+    }
+  })
+  return roots
+})
+
+async function loadFolders(): Promise<void> {
+  try {
+    folders.value = await docFolderApi.tree()
+  } catch {
+    folders.value = []
+  }
+}
+
+function onFolderClick(node: DocFolderTreeNode): void {
+  currentFolderId.value = node.id
+  query.folderId = node.id
+  query.page = 1
+  load()
+}
+
+function openFolderCreate(): void {
+  folderEditingId.value = null
+  folderForm.name = ''
+  folderForm.parentId = currentFolderId.value
+  folderDialogVisible.value = true
+}
+
+function openFolderRename(): void {
+  const hit = folders.value.find((row) => row.id === currentFolderId.value)
+  if (!hit) {
+    return
+  }
+  folderEditingId.value = hit.id
+  folderForm.name = hit.name
+  folderForm.parentId = hit.parent_id ?? ''
+  folderDialogVisible.value = true
+}
+
+async function submitFolder(): Promise<void> {
+  if (!folderForm.name.trim()) {
+    ElMessage.warning('请填写文件夹名称')
+    return
+  }
+  try {
+    if (folderEditingId.value) {
+      await docFolderApi.rename(folderEditingId.value, folderForm.name.trim())
+    } else {
+      await docFolderApi.create({
+        name: folderForm.name.trim(),
+        parentId: folderForm.parentId || null
+      })
+    }
+    ElMessage.success('已保存')
+    folderDialogVisible.value = false
+    await loadFolders()
+  } catch (error) {
+    ElMessage.error((error as Error).message || '保存文件夹失败')
+  }
+}
+
+async function removeFolder(): Promise<void> {
+  if (!currentFolderId.value) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm('确定删除该文件夹？文档本身不会被删除。', '删除文件夹', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await docFolderApi.remove(currentFolderId.value)
+    ElMessage.success('已删除')
+    currentFolderId.value = ''
+    query.folderId = ''
+    await loadFolders()
+    await load()
+  } catch (error) {
+    ElMessage.error((error as Error).message || '删除失败')
+  }
+}
+
+function openFolderPick(row: DocSummary): void {
+  pickingDoc.value = row
+  folderPickId.value = currentFolderId.value
+  folderPickVisible.value = true
+}
+
+async function submitFolderPick(): Promise<void> {
+  if (!pickingDoc.value || !folderPickId.value) {
+    ElMessage.warning('请选择文件夹')
+    return
+  }
+  try {
+    await docFolderApi.addDocument(folderPickId.value, pickingDoc.value.id)
+    ElMessage.success('已归档到文件夹')
+    folderPickVisible.value = false
+    if (query.folderId === folderPickId.value) {
+      await load()
+    }
+  } catch (error) {
+    ElMessage.error((error as Error).message || '归档失败')
+  }
+}
 
 const advancedVisible = ref(false)
 const savedQueries = ref<DocSavedQuery[]>([])
@@ -426,7 +625,8 @@ async function load(): Promise<void> {
       q: query.q || undefined,
       docType: query.docType || undefined,
       lifecycleState: query.lifecycleState || undefined,
-      classId: query.classId || undefined
+      classId: query.classId || undefined,
+      folderId: query.folderId || undefined
     })
     rows.value = page.items
     total.value = page.total
@@ -748,6 +948,7 @@ async function submitGrant(): Promise<void> {
 onMounted(() => {
   load()
   loadClassTree()
+  loadFolders()
 })
 </script>
 
@@ -756,6 +957,43 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.doc-body {
+  display: flex;
+  gap: 12px;
+  min-height: 520px;
+}
+
+.folder-side {
+  width: 210px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding-right: 10px;
+  border-right: 1px solid var(--el-border-color-lighter);
+}
+
+.folder-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  color: #2c4a6e;
+  padding: 2px 4px 6px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.folder-actions {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.doc-main {
+  flex: 1;
+  min-width: 0;
 }
 
 .card-header {

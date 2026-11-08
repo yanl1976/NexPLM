@@ -238,6 +238,8 @@ export const docApi = {
     docType?: string
     lifecycleState?: string
     classId?: string
+    /** 文件夹（整理维度，ws_folder_content）。 */
+    folderId?: string
     /** 全文检索关键字（编码/名称/关键词/描述）。 */
     q?: string
   }): Promise<PageResult<DocSummary>> {
