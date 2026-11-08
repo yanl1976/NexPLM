@@ -31,6 +31,12 @@ const routes: RouteRecordRaw[] = [
         name: 'm-scan',
         component: () => import('@/views/mobile/MobileScanView.vue'),
         meta: { title: '扫码查对象' }
+      },
+      {
+        path: 'task',
+        name: 'm-task',
+        component: () => import('@/views/mobile/MobileTaskView.vue'),
+        meta: { title: '我的任务' }
       }
     ]
   },

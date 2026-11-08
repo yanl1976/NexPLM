@@ -31,7 +31,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Camera, Document, List } from '@element-plus/icons-vue'
+import { Camera, Document, List, Tickets } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -44,6 +44,7 @@ const pageTitle = computed(() => (route.meta.title as string | undefined) ?? 'Ne
 const tabs = computed(() =>
   [
     { path: '/m/todo', label: '待办', icon: List, visible: userStore.can('wf.task.read') },
+    { path: '/m/task', label: '任务', icon: Tickets, visible: userStore.can('prj.project.read') },
     { path: '/m/doc', label: '文档', icon: Document, visible: userStore.can('pdm.doc.read') },
     { path: '/m/scan', label: '扫码', icon: Camera, visible: true }
   ].filter((tab) => tab.visible)
