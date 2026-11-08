@@ -120,7 +120,7 @@ class SupplierIssuanceSmokeTest {
                 .andExpect(status().isNotFound());
 
         // 3. 给一个零件挂主文件，导出应带上文件条目
-        long fileId = upload("支架图纸.pdf", "pdf-content".getBytes(StandardCharsets.UTF_8),
+        long fileId = upload("支架图纸.pdf", "%PDF-1.4\npdf-content".getBytes(StandardCharsets.UTF_8),
                 admin, itemId);
         MvcResult zipResult = mockMvc.perform(
                         post("/api/v1/sup/issuances/{id}/export", issuanceId)
@@ -166,7 +166,7 @@ class SupplierIssuanceSmokeTest {
                 .andExpect(status().isConflict());
 
         // 6. 回执登记：先上传文件（不绑对象）再登记；重复登记 409
-        long receiptFileId = upload("回执确认单.pdf", "receipt".getBytes(StandardCharsets.UTF_8),
+        long receiptFileId = upload("回执确认单.pdf", "%PDF-1.4\nreceipt".getBytes(StandardCharsets.UTF_8),
                 admin, null);
         JsonNode received = call(post("/api/v1/sup/issuances/{id}/receipt", issuanceId), admin,
                 json(Map.of("fileId", receiptFileId, "fileName", "回执确认单.pdf",

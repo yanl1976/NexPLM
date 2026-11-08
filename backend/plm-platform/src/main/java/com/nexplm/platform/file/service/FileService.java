@@ -112,12 +112,33 @@ public class FileService {
     private final FileScanHook scanHook;
     /** 禁止上传的扩展名：可执行、服务端脚本、以及能挂脚本的 html/svg（等保自查整改 ①）。 */
     private final Set<String> blockedExt;
+    /** 是否校验"文件头与扩展名一致"（默认开；关闭需显式配 false）。 */
+    private final boolean magicCheck;
+    /** 有确定魔数的扩展名 → 期望的文件头前缀；未列出的类型跳过（如 dwg/step/svg 等容器格式）。 */
+    private static final Map<String, byte[]> MAGIC_PREFIX = Map.ofEntries(
+            Map.entry("png", new byte[]{(byte) 0x89, 'P', 'N', 'G'}),
+            Map.entry("jpg", new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF}),
+            Map.entry("jpeg", new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF}),
+            Map.entry("gif", new byte[]{'G', 'I', 'F', '8'}),
+            Map.entry("bmp", new byte[]{'B', 'M'}),
+            // OOXML 与 zip 同族；空包是 PK\x05\x06，用 2 字节最稳
+            Map.entry("docx", new byte[]{'P', 'K'}),
+            Map.entry("xlsx", new byte[]{'P', 'K'}),
+            Map.entry("pptx", new byte[]{'P', 'K'}),
+            Map.entry("zip", new byte[]{'P', 'K'}),
+            // OLE 复合文档（老版 Office）
+            Map.entry("doc", new byte[]{(byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0}),
+            Map.entry("xls", new byte[]{(byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0}),
+            Map.entry("ppt", new byte[]{(byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0})
+    );
+    private static final byte[] PDF_MAGIC = "%PDF".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
 
     public FileService(FileObjectMapper fileObjectMapper, FileLinkMapper fileLinkMapper,
                        ObjectAccessGuard objectAccessGuard, FileStorage storage, FileScanHook scanHook,
                        @Value("${nexplm.file.upload.blocked-ext:exe,dll,bat,cmd,ps1,scr,msi,com,pif,"
                                + "jsp,jspx,php,asp,aspx,html,htm,svg}")
-                       String blockedExtConfig) {
+                       String blockedExtConfig,
+                       @Value("${nexplm.file.upload.magic-check:true}") boolean magicCheck) {
         this.fileObjectMapper = fileObjectMapper;
         this.fileLinkMapper = fileLinkMapper;
         this.objectAccessGuard = objectAccessGuard;
@@ -133,6 +154,7 @@ public class FileService {
             }
         }
         this.blockedExt = Set.copyOf(blocked);
+        this.magicCheck = magicCheck;
     }
 
     /**
@@ -149,6 +171,65 @@ public class FileService {
             throw BizException.of(ErrorCode.FILE_EXT_FORBIDDEN,
                     "不允许上传 ." + ext + " 类型的文件");
         }
+    }
+
+    /**
+     * 文件头校验（等保整改 ① 的另一半）：扩展名有确定魔数时，内容必须与之相符。
+     *
+     * <p>只校验"有明确签名"的格式（图片 / PDF / OOXML / 老版 Office / zip）；dwg、step、txt
+     * 这类没有统一签名的容器/文本格式直接跳过——硬校验只会误杀正常文件。
+     * PDF 用"前 1024 字节内出现 {@code %PDF}"而非严格开头，容忍少量前导垃圾字节。</p>
+     */
+    private void ensureMagicMatches(Path temp, String safeName) {
+        if (!magicCheck) {
+            return;
+        }
+        String ext = extOf(safeName);
+        if (ext == null) {
+            return;
+        }
+        String key = ext.toLowerCase(Locale.ROOT);
+        byte[] prefix = MAGIC_PREFIX.get(key);
+        boolean pdf = "pdf".equals(key);
+        if (prefix == null && !pdf) {
+            return;
+        }
+        byte[] head;
+        try (InputStream in = Files.newInputStream(temp)) {
+            head = in.readNBytes(1024);
+        } catch (IOException ex) {
+            throw BizException.of(ErrorCode.FILE_STORAGE_ERROR, "读取待校验文件失败：" + ex.getMessage());
+        }
+        boolean matched = pdf ? indexOf(head, PDF_MAGIC) >= 0 : startsWith(head, prefix);
+        if (!matched) {
+            throw BizException.of(ErrorCode.FILE_CONTENT_MISMATCH,
+                    "文件内容与扩展名 ." + key + " 不匹配");
+        }
+    }
+
+    private static boolean startsWith(byte[] data, byte[] prefix) {
+        if (data.length < prefix.length) {
+            return false;
+        }
+        for (int i = 0; i < prefix.length; i++) {
+            if (data[i] != prefix[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static int indexOf(byte[] data, byte[] target) {
+        outer:
+        for (int i = 0; i + target.length <= data.length; i++) {
+            for (int j = 0; j < target.length; j++) {
+                if (data[i + j] != target[j]) {
+                    continue outer;
+                }
+            }
+            return i;
+        }
+        return -1;
     }
 
     public String storageType() {
@@ -182,6 +263,7 @@ public class FileService {
         String role = normalizeRole(fileRole);
         String safeName = safeFileName(fileName);
         ensureUploadAllowed(safeName);
+        ensureMagicMatches(temp, safeName);
         if (ownerObjectId != null) {
             requireObject(ownerObjectId);
         }

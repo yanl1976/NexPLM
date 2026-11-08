@@ -118,6 +118,8 @@ nexplm:
       # 上传安全闸门（等保自查整改 ①）：禁止的扩展名，逗号分隔，空串=不拦。
       # 默认挡可执行/服务端脚本/可挂脚本的标记文件；PLM 常见格式（dwg/docx/pdf/step/zip…）不受影响。
       blocked-ext: ${NEXPLM_FILE_BLOCKED_EXT:exe,dll,bat,cmd,ps1,scr,msi,com,pif,jsp,jspx,php,asp,aspx,html,htm,svg}
+      # 文件头与扩展名一致性校验（pdf/图片/OOXML/老 Office/zip）；无统一签名的格式自动跳过
+      magic-check: ${NEXPLM_FILE_MAGIC_CHECK:true}
     # storage=minio 时生效；启动时自动创建存储桶
     minio:
       endpoint: ${NEXPLM_MINIO_ENDPOINT:http://localhost:9000}

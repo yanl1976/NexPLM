@@ -231,6 +231,33 @@ class FileVaultSmokeTest {
         assertThat(ok.path("fileId").asLong()).isPositive();
     }
 
+    /**
+     * 等保整改 ① 的另一半：扩展名有确定魔数时，内容必须相符。
+     * 覆盖：假 PDF（纯文本）被拒、真 PDF 通过、无签名格式（.step）不参与魔数校验。
+     */
+    @Test
+    void fileContentMustMatchExtension() throws Exception {
+        String token = login();
+        // 独立 owner：本用例会成功上传 2 个文件，共用 OWNER_ID 会污染其它用例的"最新链接"断言
+        long owner = OWNER_ID + 7;
+        createOwnerObject(currentUserId(token), owner);
+
+        mockMvc.perform(multipart("/api/v1/files")
+                        .file(new MockMultipartFile("file", "fake.pdf", "application/pdf",
+                                "hello-not-a-pdf".getBytes(StandardCharsets.UTF_8)))
+                        .param("ownerObjectId", String.valueOf(owner))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest());
+
+        byte[] pdf = "%PDF-1.4\n% test\n".getBytes(StandardCharsets.US_ASCII);
+        JsonNode ok = upload(token, pdf, "real.pdf", owner);
+        assertThat(ok.path("fileId").asLong()).isPositive();
+
+        // 没有统一签名的格式不参与校验（否则会误杀）
+        JsonNode step = upload(token, "ISO-10303-21;".getBytes(StandardCharsets.UTF_8), "part.step", owner);
+        assertThat(step.path("fileId").asLong()).isPositive();
+    }
+
     private JsonNode upload(String token, byte[] content, String fileName, long ownerObjectId) throws Exception {
         MvcResult result = mockMvc.perform(multipart("/api/v1/files")
                         .file(new MockMultipartFile("file", fileName, "text/plain", content))
@@ -249,13 +276,18 @@ class FileVaultSmokeTest {
     }
 
     private void createOwnerObject(long adminId) {
+        createOwnerObject(adminId, OWNER_ID);
+    }
+
+    /** 每个用例用自己的 owner，避免"最新链接数"这类断言被其它用例上传的文件污染。 */
+    private void createOwnerObject(long adminId, long ownerId) {
         jdbcTemplate.update("""
                         INSERT INTO plm_object (id, object_type, master_id, code, name, company_id, owner_id,
                                                 lifecycle_state, revision, iteration, is_latest, version, deleted, ext_json)
-                        VALUES (?, 'PdmDoc', ?, 'DOC-9101', '文件仓测试文档', 1, ?, 'Draft',
+                        VALUES (?, 'PdmDoc', ?, ?, '文件仓测试文档', 1, ?, 'Draft',
                                 1, 1, true, 0, false, '{}'::jsonb)
                         ON CONFLICT DO NOTHING
-                        """, OWNER_ID, OWNER_ID, adminId);
+                        """, ownerId, ownerId, "DOC-" + (9100 + (ownerId % 100)), adminId);
     }
 
     private int refCount(long fileId) {

@@ -99,7 +99,8 @@ class DocSmokeTest {
 
         // 3. 上传主文件与附件：子表统计随之刷新
         uploadFile(admin, docId, "装配图.dwg", "MAIN", "drawing-content");
-        uploadFile(admin, docId, "技术要求.pdf", "ATTACHMENT", "pdf-content");
+        // 内容带真 PDF 头：上传入口会校验"文件头与扩展名一致"
+        uploadFile(admin, docId, "技术要求.pdf", "ATTACHMENT", "%PDF-1.4\npdf-content");
         JsonNode withFiles = call(get("/api/v1/docs/{id}", docId), admin, null);
         assertThat(withFiles.path("fileCount").asInt()).isEqualTo(2);
         assertThat(withFiles.path("fileExt").asText()).isEqualTo("dwg");
