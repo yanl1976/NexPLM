@@ -1221,6 +1221,8 @@ async function openEdit(row?: ItemSummary): Promise<void> {
     form.weight = detail.weight ?? null
     form.stdCode = detail.stdCode ?? ''
     form.remark = detail.remark ?? ''
+    // ItemDetail 已返回 location（V85）；类型定义稍后同步，这里用结构化断言拿到值
+    form.location = (detail as unknown as { location?: string | null }).location ?? ''
     form.designAttr = { ...emptyDesignAttr(), ...(detail.designAttr ?? {}) }
     extOriginal.value = { ...(detail.ext ?? {}) }
     resetExtForms(detail.ext ?? {})

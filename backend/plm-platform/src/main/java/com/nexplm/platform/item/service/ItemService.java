@@ -291,7 +291,8 @@ public class ItemService {
                 object.getSecurityLevel(), object.getCreatedBy(), names.get(object.getCreatedBy()),
                 object.getUpdatedBy(), names.get(object.getUpdatedBy()), object.getReleasedAt(),
                 object.getCreatedAt(), object.getUpdatedAt(),
-                designAttr(id), checkoutInfo(id), ext);
+                designAttr(id), checkoutInfo(id), ext,
+                master == null ? null : master.getLocation());
     }
 
     /** 设计属性（旧系统 PSEBASEFORM）；未填过时返回空对象而不是 null，前端表单绑定更稳。 */

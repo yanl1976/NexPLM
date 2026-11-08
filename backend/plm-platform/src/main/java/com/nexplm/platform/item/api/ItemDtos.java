@@ -36,7 +36,9 @@ public final class ItemDtos {
                              Long updatedBy, String updatedByName, OffsetDateTime releasedAt,
                              OffsetDateTime createdAt, OffsetDateTime updatedAt,
                              ItemDesignAttr designAttr, CheckoutInfo checkout,
-                             java.util.Map<String, Object> ext) {
+                             java.util.Map<String, Object> ext,
+                             /** 位置（工作区/目录路径）；V85。 */
+                             String location) {
                              }
 
     /** 设计属性（旧系统 PSEBASEFORM）：独立表，随零件 1:1。 */
