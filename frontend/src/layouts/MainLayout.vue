@@ -26,6 +26,7 @@
 
       <div class="header-right">
         <el-button link @click="goMobile">移动版</el-button>
+        <el-button link @click="openChangePwd">修改密码</el-button>
         <span class="user">{{ userStore.displayName }}</span>
         <el-button link @click="onLogout">退出</el-button>
       </div>
@@ -197,6 +198,13 @@
         <el-button type="primary" @click="broadcastVisible = false">我已知晓</el-button>
       </template>
     </el-dialog>
+
+    <ChangePasswordDialog
+      v-model="pwdVisible"
+      :forced="pwdForced"
+      @success="onPwdChanged"
+      @logout="onLogout"
+    />
   </el-container>
 </template>
 
@@ -224,6 +232,7 @@ import {
   Share,
   Star
 } from '@element-plus/icons-vue'
+import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 import { useUserStore } from '@/stores/user'
 import { workflowApi } from '@/api/workflow'
 import { taskApi } from '@/api/project'
@@ -319,6 +328,22 @@ function countOverdue(rows: { planEnd?: string | null; status: string }[]): numb
   }).length
 }
 
+// ---------------- 修改密码（自助，docs/07 待整改 ④） ----------------
+const pwdVisible = ref(false)
+const pwdForced = ref(false)
+
+function openChangePwd(): void {
+  pwdForced.value = userStore.user?.mustChangePwd === true
+  pwdVisible.value = true
+}
+
+/** 改密成功后刷新用户信息，mustChangePwd 变 false，强制弹窗不再出现。 */
+function onPwdChanged(): void {
+  userStore.loadMe().catch(() => {
+    // 刷新失败不影响改密结果，下次进路由守卫会再拉一次
+  })
+}
+
 onMounted(async () => {
   try {
     const page = await workflowApi.todo(1, 1)
@@ -333,6 +358,11 @@ onMounted(async () => {
     overdueCount.value = 0
   }
   await loadBroadcasts()
+  // 首次登录/管理员重置后强制改密：进主布局即弹，且不可关闭（关掉等于没强制）
+  if (userStore.user?.mustChangePwd) {
+    pwdForced.value = true
+    pwdVisible.value = true
+  }
 })
 
 // ---------------- 批次 F-2 登录广播 ----------------
