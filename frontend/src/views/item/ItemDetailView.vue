@@ -2413,6 +2413,20 @@ async function openClassify(): Promise<void> {
   classifyDefs.value = classify.value.attrDefs ?? []
   resetClassifyAttrs(classify.value.attrs)
   classifyDialog.value = true
+
+  // 未归类时按编码自动匹配分类（对齐蓝本 Classify.js:117-127）；命中只做预选，用户仍可改
+  if (!classifyForm.classId) {
+    try {
+      const suggestion = await itemClassApi.suggestion(itemId.value)
+      if (suggestion.matched && suggestion.classId) {
+        classifyForm.classId = suggestion.classId
+        await onClassPicked(suggestion.classId)
+        ElMessage.info(suggestion.reason ?? '已按编码自动匹配分类')
+      }
+    } catch {
+      // 自动匹配是增强项，失败不影响手动归类
+    }
+  }
 }
 
 /** 切换分类时重新取生效属性（含继承），已填值保留 */

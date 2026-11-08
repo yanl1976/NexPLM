@@ -143,6 +143,22 @@
             <el-radio value="DISABLED">停用</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="关联编码">
+          <el-select
+            v-model="classForm.codeRuleCode"
+            clearable
+            placeholder="按编码自动归类的规则（可空）"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="rule in codeRules"
+              :key="rule.code"
+              :label="`${rule.name}（${rule.code}）`"
+              :value="rule.code"
+            />
+          </el-select>
+          <div class="attr-hint">零件编码匹配到该规则时，归类弹窗会自动带出本分类</div>
+        </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="classForm.remark" type="textarea" :rows="2" />
         </el-form-item>
@@ -279,6 +295,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { codingApi, type CodeRule } from '@/api/coding'
 import {
   itemApi,
   itemClassApi,
@@ -298,6 +315,8 @@ const rows = ref<ItemSummary[]>([])
 const total = ref(0)
 const loading = ref(false)
 const saving = ref(false)
+/** 编码规则（只列 PdmItem 类型，供分类的「关联编码」选择）。 */
+const codeRules = ref<CodeRule[]>([])
 
 const query = reactive({
   page: 1,
@@ -419,8 +438,19 @@ const classForm = reactive<ItemClassSaveReq>({
   parentId: null,
   sort: 0,
   status: 'ACTIVE',
-  remark: ''
+  remark: '',
+  codeRuleCode: ''
 })
+
+/** 关联编码候选：只取 PdmItem 类型的规则（后端还会校验对象类型与唯一性）。 */
+async function loadCodeRules(): Promise<void> {
+  try {
+    const rules = await codingApi.rules()
+    codeRules.value = rules.filter((rule) => !rule.objectType || rule.objectType === 'PdmItem')
+  } catch {
+    codeRules.value = []
+  }
+}
 const classRules: FormRules = {
   code: [
     { required: true, message: '分类编码不能为空', trigger: 'blur' },
@@ -445,7 +475,8 @@ function openCreate(parent: ItemClassNode | null): void {
     parentId: parent?.id ?? null,
     sort: 0,
     status: 'ACTIVE',
-    remark: ''
+    remark: '',
+    codeRuleCode: ''
   })
   classDialog.value = true
 }
@@ -459,7 +490,8 @@ function openEdit(node: ItemClassNode): void {
     parentId: node.parentId ?? null,
     sort: node.sort ?? 0,
     status: node.status ?? 'ACTIVE',
-    remark: node.remark ?? ''
+    remark: node.remark ?? '',
+    codeRuleCode: node.codeRuleCode ?? ''
   })
   classDialog.value = true
 }
@@ -682,8 +714,7 @@ function openItem(row: ItemSummary): void {
 }
 
 onMounted(async () => {
-  await loadTree()
-  await loadRows()
+  await Promise.all([loadTree(), loadRows(), loadCodeRules()])
 })
 </script>
 

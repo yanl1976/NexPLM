@@ -182,6 +182,8 @@ export interface ItemClassNode {
   sort: number
   status: string
   remark?: string | null
+  /** 关联编码规则 code（对齐蓝本分类的「关联编码」）；为空表示不参与按编码自动归类。 */
+  codeRuleCode?: string | null
   /** 该分类下（不含子分类）的对象数。 */
   docCount: number
   children?: ItemClassNode[]
@@ -210,6 +212,18 @@ export interface ItemClassSaveReq {
   sort?: number
   status?: string
   remark?: string | null
+  /** 关联编码规则 code；空串表示解除关联（null 表示不修改）。 */
+  codeRuleCode?: string | null
+}
+
+/** 按编码自动匹配分类的建议（仅零件未归类时给出）。 */
+export interface ItemClassifySuggestion {
+  matched: boolean
+  classId?: string | null
+  classCode?: string | null
+  className?: string | null
+  codeRuleCode?: string | null
+  reason?: string | null
 }
 
 export interface ItemClassAttrItem {
@@ -835,5 +849,9 @@ export const itemClassApi = {
   /** 归类 / 取消归类（classId 传 null 表示取消）。 */
   assign(itemId: string, classId: string | null, attrs: Record<string, string>): Promise<ItemClassifyInfo> {
     return http.put<ItemClassifyInfo>(`/items/${itemId}/classify`, { classId, attrs })
+  },
+  /** 按编码自动匹配分类的建议（已归类 / 无匹配时 matched=false，reason 给原因）。 */
+  suggestion(itemId: string): Promise<ItemClassifySuggestion> {
+    return http.get<ItemClassifySuggestion>(`/items/${itemId}/classify/suggestion`)
   }
 }
