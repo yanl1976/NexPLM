@@ -200,7 +200,11 @@
     </el-card>
 
     <!-- 新建 / 编辑：基本属性 + 设计属性（对齐旧系统 PSEBASEFORM） -->
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑零部件' : '新建零部件'" width="900px">
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId ? '编辑零部件' : '新建零部件（分类→编码自动生成）'"
+      width="900px"
+    >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <div class="form-section">基本属性</div>
         <el-row :gutter="12">
