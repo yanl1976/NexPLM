@@ -1,11 +1,16 @@
 package com.nexplm.platform.workspace.api;
 
 import com.nexplm.common.api.Result;
+import com.nexplm.platform.doc.service.CheckoutService;
+import com.nexplm.platform.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,9 +30,28 @@ import java.util.Map;
 public class WorkspaceConsoleController {
 
     private final JdbcTemplate jdbcTemplate;
+    private final CheckoutService checkoutService;
 
-    public WorkspaceConsoleController(JdbcTemplate jdbcTemplate) {
+    public WorkspaceConsoleController(JdbcTemplate jdbcTemplate, CheckoutService checkoutService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.checkoutService = checkoutService;
+    }
+
+    /** 检出：锁定对象，其他人不能再编辑（蓝本 CHECKOUT）。 */
+    @Operation(summary = "检出对象")
+    @PostMapping("/objects/{id}/checkout")
+    @PreAuthorize("hasAuthority('pse.item.write')")
+    public Result<CheckoutService.Lock> checkout(@PathVariable Long id) {
+        return Result.ok(checkoutService.acquire(id, CurrentUser.userId(), null, null, null));
+    }
+
+    /** 取消检出：只能由检出人自己释放。 */
+    @Operation(summary = "取消检出")
+    @DeleteMapping("/objects/{id}/checkout")
+    @PreAuthorize("hasAuthority('pse.item.write')")
+    public Result<Void> checkin(@PathVariable Long id) {
+        checkoutService.release(id, CurrentUser.userId());
+        return Result.ok();
     }
 
     /** 文件夹扁平列表；space = MY / PUBLIC / PROJECT。 */

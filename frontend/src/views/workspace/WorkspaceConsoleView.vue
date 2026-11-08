@@ -28,6 +28,8 @@
         <el-button size="small" disabled>发送</el-button>
         <el-button size="small" type="primary" @click="openCreate">新建</el-button>
         <el-button size="small" :disabled="!selectedRows.length" @click="openItem('edit')">编辑</el-button>
+        <el-button size="small" :disabled="!selectedRows.length" @click="onCheckout">检出</el-button>
+        <el-button size="small" :disabled="!selectedRows.length" @click="onCheckin">取消检出</el-button>
         <el-button size="small" disabled>添加</el-button>
         <el-button size="small" :disabled="!selectedRows.length" @click="openItem('bom')">BOM 管理</el-button>
         <el-button size="small" disabled>产品完整性检查</el-button>
@@ -125,6 +127,43 @@ function openCreate(): void {
     query.projectId = String(currentFolder.value.projectId)
   }
   router.push({ path: '/item', query })
+}
+
+async function refreshObjects(): Promise<void> {
+  if (currentFolder.value?.folderId) {
+    await onNodeClick(currentFolder.value)
+  }
+}
+
+/** 检出：锁定对象；成功后刷新列表里的检出人/状态/时间 */
+async function onCheckout(): Promise<void> {
+  const row = selectedRows.value[0]
+  if (!row) {
+    ElMessage.warning('请先选择一行')
+    return
+  }
+  try {
+    await wsConsoleApi.checkout(row.id)
+    ElMessage.success('已检出')
+    await refreshObjects()
+  } catch (error) {
+    ElMessage.error((error as Error).message || '检出失败（可能已被他人检出）')
+  }
+}
+
+async function onCheckin(): Promise<void> {
+  const row = selectedRows.value[0]
+  if (!row) {
+    ElMessage.warning('请先选择一行')
+    return
+  }
+  try {
+    await wsConsoleApi.checkin(row.id)
+    ElMessage.success('已取消检出')
+    await refreshObjects()
+  } catch (error) {
+    ElMessage.error((error as Error).message || '取消检出失败')
+  }
 }
 
 /** 编辑 / BOM 管理：跳零部件详情（同一套页面） */
