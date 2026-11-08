@@ -63,7 +63,32 @@ function Esc([string]$value) {
 try {
     $version = ([string](Invoke-Query 'SELECT @@VERSION AS v').Rows[0].v -split "`n")[0].Trim()
     $groups = Invoke-Query 'SELECT ECODE, ENAME, REFERENCECODE FROM CLASSIFYGROUP ORDER BY ECODE'
-    $classes = Invoke-Query 'SELECT ECODE, ENAME, CLASSOBJECTTYPE, PERGROUP, CLASSCODEPATH FROM CLASSIFYCLASS ORDER BY ECODE'
+    $classes = Invoke-Query 'SELECT EID, ECODE, ENAME, CLASSOBJECTTYPE, PERGROUP, CLASSCODEPATH FROM CLASSIFYCLASS ORDER BY ECODE'
+    # 树：CLASSIFYLINK 是权威父子关系（分组→分类、分组→分组、CLASSIFYMANAGE→根分组）
+    $parents = Invoke-Query @'
+SELECT c.EID AS classId, g.ECODE AS parentCode, g.ENAME AS parentName
+  FROM CLASSIFYLINK l
+  JOIN CLASSIFYCLASS c ON c.EID = l.CEID
+  JOIN CLASSIFYGROUP g ON g.EID = l.PEID
+ WHERE l.CETYPE = 'CLASSIFYCLASS'
+'@
+    $treePairs = Invoke-Query @'
+SELECT PETYPE, CETYPE, COUNT(*) AS c FROM CLASSIFYLINK GROUP BY PETYPE, CETYPE ORDER BY COUNT(*) DESC
+'@
+    $roots = Invoke-Query @'
+SELECT g.ECODE, g.ENAME FROM CLASSIFYGROUP g
+  JOIN CLASSIFYLINK l ON l.CEID = g.EID
+  JOIN CLASSIFYMANAGE m ON m.EID = l.PEID
+ ORDER BY g.ECODE
+'@
+    $prefixMismatch = Invoke-Query @'
+SELECT COUNT(*) AS total,
+       SUM(CASE WHEN g.ECODE = LEFT(c.ECODE,4) THEN 1 ELSE 0 END) AS prefixMatch
+  FROM CLASSIFYLINK l
+  JOIN CLASSIFYCLASS c ON c.EID = l.CEID
+  JOIN CLASSIFYGROUP g ON g.EID = l.PEID
+ WHERE l.CETYPE = 'CLASSIFYCLASS'
+'@
     $stats = Invoke-Query @'
 SELECT (SELECT COUNT(*) FROM CLASSIFYCLASS) AS classCount,
        (SELECT COUNT(*) FROM CLASSIFYGROUP) AS groupCount,
@@ -110,6 +135,10 @@ SELECT cnt AS perItem, COUNT(*) AS items
         $code = Get-Text $row 'ECODE'
         if ($code) { $groupNameByCode[$code] = Get-Text $row 'ENAME' }
     }
+    $parentMap = @{}
+    foreach ($row in $parents.Rows) {
+        $parentMap[(Get-Text $row 'classId')] = ("$((Get-Text $row 'parentCode')) $((Get-Text $row 'parentName'))").Trim()
+    }
 
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add('# TCPLM 分类数据清单（蓝本）')
@@ -128,8 +157,23 @@ SELECT cnt AS perItem, COUNT(*) AS items
     $lines.Add("| 属性定义（``CLASSIFYATTRIBUTE``） | $($s['attrCount']) |")
     $lines.Add("| 属性值（``CLASSIFYATTRIBUTEDATA``） | $($s['attrValueCount']) |")
     $lines.Add("| 对象-分类关系（``CLASSIFYRELATION``） | $($s['linkCount']) |")
+    $treeTotal = ($treePairs.Rows | ForEach-Object { [int]$_['c'] } | Measure-Object -Sum).Sum
+    $lines.Add("| 分类树链接（``CLASSIFYLINK``） | $treeTotal |")
     $lines.Add("| 被分类的零件数 | $($s['itemCount']) |")
     $lines.Add("| `PERGROUP` 非空（部门授权在用） | $($s['perGroupUsed']) |")
+    $lines.Add('')
+    $lines.Add('### 分类树（`CLASSIFYLINK`）')
+    $lines.Add('')
+    $lines.Add('| 父类型 → 子类型 | 链接数 |')
+    $lines.Add('|---|---|')
+    foreach ($row in $treePairs.Rows) {
+        $lines.Add("| $($row['PETYPE']) → $($row['CETYPE']) | $($row['c']) |")
+    }
+    $lines.Add('')
+    $rootText = ($roots.Rows | ForEach-Object { "$((Get-Text $_ 'ECODE')) $((Get-Text $_ 'ENAME'))" }) -join '、'
+    $lines.Add("根分组（挂在伪根 ``CLASSIFYMANAGE`` 下）：$rootText")
+    $lines.Add('')
+    $lines.Add("分类父级一致性：264 条「分组→分类」中，编码前缀与 ``CLASSIFYLINK`` 父级一致的只有 $($prefixMismatch.Rows[0]['prefixMatch'])/$($prefixMismatch.Rows[0]['total'])；**建树以 ``CLASSIFYLINK`` 为准**。")
     $lines.Add('')
     $lines.Add('## 二、一物多分类分布')
     $lines.Add('')
@@ -182,14 +226,15 @@ SELECT cnt AS perItem, COUNT(*) AS items
     $lines.Add('|---|---|---|---|---|')
     foreach ($row in $classes.Rows) {
         $code = Get-Text $row 'ECODE'
-        $parentCode = if ($code.Length -ge 4) { $code.Substring(0, 4) } else { '' }
-        $parentName = if ($parentCode -and $groupNameByCode.ContainsKey($parentCode)) { $groupNameByCode[$parentCode] } else { '' }
+        $eid = Get-Text $row 'EID'
+        # 父分组取自 CLASSIFYLINK（权威）；编码前缀只覆盖 258/264
+        $parentName = if ($eid -and $parentMap.ContainsKey($eid)) { $parentMap[$eid] } else { '' }
         $lines.Add("| $(Esc $code) | $(Esc (Get-Text $row 'ENAME')) | $(Esc (Get-Text $row 'CLASSOBJECTTYPE')) | $(Esc $parentName) | $(Esc (Get-Text $row 'PERGROUP')) |")
     }
     $lines.Add('')
     $lines.Add('## 六、迁移口径建议（待 `03` D1 决策）')
     $lines.Add('')
-    $lines.Add('1. **树可由编码前缀还原**：分组编码 2/4 位、分类编码 6 位；`CLASSCODEPATH` 是 16 位 hex 链（语义未解出），**不要**用它建树。')
+    $lines.Add('1. **树用 `CLASSIFYLINK` 还原**（权威）：305 条 = 4 个根分组（`CH 产号` / `LBZJ 零部组件` / `QGD 请购单` / `80 成品库`，挂在伪根 `CLASSIFYMANAGE` 下）+ 37 条分组嵌套 + 264 条「分组→分类」；实测**每个节点单父、无孤儿**。编码前缀只覆盖 258/264（6 条不一致，如 `CH001 → CH`、`2001 → LBZJ`），`CLASSCODEPATH` 是 16 位 hex 链（语义未解），**两者都不要用来建树**。')
     $lines.Add('2. **单分类口径**（新系统现状 `item_master.class_id`）：覆盖绝大多数零件；实测只有 66/16276 个零件挂 2~4 个分类（0.41%），这 66 个只保留一个（建议按"最小编码"或"最先关联"），**会丢失**其余关系但影响面很小。')
     $lines.Add('3. **多分类口径**（如需支持）：新增 `item_classify` 关系表（object_id + class_id + 主分类标记），把 `CLASSIFYRELATION` 全量映射过去，再把 `item_master.class_id` 作为"主分类"冗余字段保留。')
     $lines.Add('4. **属性迁移**：`CLASSIFYATTRIBUTE`(120) → `doc_class_attr`；`CLASSIFYATTRIBUTEDATA`(57,235) → `item_classify_attr`（或 `item_master.ext_json`）；**另需迁移"属性→分类"复用关系**（`CLASSIFYRELATION` 中 `CLASSIFYATTRIBUTE_*` 那 1,287 条 / 119 个属性），否则属性挂不到分类上。')
