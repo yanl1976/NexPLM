@@ -359,6 +359,13 @@ export const BOM_VIEW_LABEL: Record<string, string> = {
   MANUFACTURE: '制造'
 }
 
+/** BOM 类型（蓝本 `LBOMTYPE`）：新系统默认 DESIGN，迁移的报价 BOM 用 QUOTE。 */
+export const BOM_TYPE_LABEL: Record<string, string> = {
+  DESIGN: '设计',
+  QUOTE: '报价',
+  MANUFACTURE: '制造'
+}
+
 export interface BomNode {
   lineId: string
   childId: string
@@ -368,6 +375,18 @@ export interface BomNode {
   specification?: string | null
   unit?: string | null
   qty: number
+  /** 总用量（蓝本 `TOTALQTY`）；为空表示按层级累乘计算。 */
+  totalQty?: number | null
+  /** 剩余用量（蓝本 `SURPLUSQTY`）。 */
+  surplusQty?: number | null
+  /** 子用量（蓝本 `SUBUSEQTY`）。 */
+  subUseQty?: number | null
+  /** BOM 类型（蓝本 `LBOMTYPE`）：DESIGN / QUOTE / … */
+  bomType?: string | null
+  /** 工序路线（蓝本 `ITEMROUTE`）。 */
+  itemRoute?: string | null
+  /** 数据来源：MANUAL / IMPORT / ERP（蓝本 `DATASOURCE`）。 */
+  dataSource?: string | null
   lossRate?: number | null
   lineNo: number
   /** 有效性区间（含边界）；为空表示该侧不限。 */

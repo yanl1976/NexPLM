@@ -8,7 +8,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Delete } from '@element-plus/icons-vue'
 import { codingApi } from '@/api/coding'
-import type { CodeRule, CodeSegment } from '@/api/coding'
+import type { CodeIssueRow, CodeRule, CodeSegment } from '@/api/coding'
 
 const loading = ref(false)
 const rules = ref<CodeRule[]>([])
@@ -162,6 +162,63 @@ async function load() {
   }
 }
 
+/** 后端返回 ISO 8601（带时区）；只保留到分钟，避免窄列换行。 */
+function formatTime(value: string | null): string {
+  if (!value) {
+    return '-'
+  }
+  return value.replace('T', ' ').slice(0, 16)
+}
+
+// ---------------- 发放流水（docs/15 T-CORE-02 的 UI 收口） ----------------
+const issueVisible = ref(false)
+const issueLoading = ref(false)
+const issueRule = ref<CodeRule | null>(null)
+const issueRows = ref<CodeIssueRow[]>([])
+const issueTotal = ref(0)
+const issuePage = ref(1)
+const issueSize = ref(20)
+const issueKeyword = ref('')
+
+async function loadIssues(): Promise<void> {
+  if (!issueRule.value) {
+    return
+  }
+  issueLoading.value = true
+  try {
+    const result = await codingApi.issues({
+      ruleCode: issueRule.value.code,
+      code: issueKeyword.value.trim() || undefined,
+      page: issuePage.value,
+      size: issueSize.value
+    })
+    issueRows.value = result.items
+    issueTotal.value = result.total
+  } catch (error) {
+    ElMessage.error((error as Error).message || '加载流水失败')
+  } finally {
+    issueLoading.value = false
+  }
+}
+
+function openIssues(row: CodeRule): void {
+  issueRule.value = row
+  issueKeyword.value = ''
+  issuePage.value = 1
+  issueVisible.value = true
+  loadIssues()
+}
+
+function onIssueSearch(): void {
+  issuePage.value = 1
+  loadIssues()
+}
+
+function onIssuePageChange(page: number): void {
+  issuePage.value = page
+  loadIssues()
+}
+
 onMounted(load)
 </script>
 
@@ -205,14 +262,59 @@ onMounted(load)
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button link type="warning" @click="reset(row)">重置</el-button>
+            <el-button link type="info" @click="openIssues(row)">流水</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
+
+    <!-- 发放流水：蓝本 CODERES 的等价物，回答"这个码是什么时候发给谁的" -->
+    <el-drawer
+      v-model="issueVisible"
+      :title="`发放流水：${issueRule?.name ?? ''}（${issueRule?.code ?? ''}）`"
+      size="620px"
+    >
+      <div class="issue-toolbar">
+        <el-input
+          v-model="issueKeyword"
+          placeholder="按编码搜索"
+          clearable
+          style="width: 220px"
+          @keyup.enter="onIssueSearch"
+          @clear="onIssueSearch"
+        />
+        <el-button type="primary" plain @click="onIssueSearch">查询</el-button>
+        <span class="issue-hint">共 {{ issueTotal }} 条</span>
+      </div>
+      <el-table v-loading="issueLoading" :data="issueRows" size="small" border>
+        <el-table-column prop="code" label="编码" width="150" />
+        <el-table-column prop="objectType" label="对象类型" width="130">
+          <template #default="{ row }">{{ row.objectType || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="issuedByName" label="操作人" width="110">
+          <template #default="{ row }">{{ row.issuedByName || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="发放时间" min-width="170">
+          <template #default="{ row }">{{ formatTime(row.issuedAt) }}</template>
+        </el-table-column>
+        <template #empty>
+          <span class="issue-hint">该规则还没有发放记录</span>
+        </template>
+      </el-table>
+      <div class="issue-pager">
+        <el-pagination
+          layout="total, prev, pager, next"
+          :total="issueTotal"
+          :page-size="issueSize"
+          :current-page="issuePage"
+          @current-change="onIssuePageChange"
+        />
+      </div>
+    </el-drawer>
 
     <el-dialog v-model="dialogVisible" :title="`编辑编码规则：${editing?.code ?? ''}`" width="780px">
       <el-form label-width="96px">
@@ -271,7 +373,29 @@ onMounted(load)
 
 <style scoped>
 .coding-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   padding: 4px;
+}
+
+/* 发放流水抽屉：搜索行 + 分页行 */
+.issue-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.issue-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.issue-pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
 }
 
 .card-header {

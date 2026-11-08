@@ -318,6 +318,18 @@
             </el-table-column>
             <el-table-column prop="specification" label="规格型号" min-width="140" show-overflow-tooltip />
             <el-table-column prop="qty" label="用量" width="100" />
+            <el-table-column label="总用量" width="100">
+              <template #default="{ row }">{{ row.totalQty ?? '按层级' }}</template>
+            </el-table-column>
+            <el-table-column label="BOM 类型" width="100">
+              <template #default="{ row }">{{ BOM_TYPE_LABEL[String(row.bomType)] ?? row.bomType ?? '-' }}</template>
+            </el-table-column>
+            <el-table-column label="工序 / 来源" width="150" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span>{{ row.itemRoute || '-' }}</span>
+                <span class="bom-source">/ {{ row.dataSource || '-' }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="unit" label="单位" width="80" />
             <el-table-column label="损耗率" width="90">
               <template #default="{ row }">{{ row.lossRate ?? 0 }}%</template>
@@ -1172,6 +1184,7 @@ import {
   BASELINE_CHANGE_LABEL,
   BOM_IMPORT_ACTION_LABEL,
   BOM_ISSUE_LABEL,
+  BOM_TYPE_LABEL,
   BOM_VIEW_LABEL,
   ITEM_PHASE_LABEL,
   ITEM_SOURCE_LABEL,
@@ -2517,6 +2530,13 @@ onMounted(() => {
 
 .name {
   font-weight: 600;
+}
+
+/* BOM 表格「工序 / 来源」列：来源用小字弱化，避免与工序抢视线 */
+.bom-source {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .bom-toolbar {
