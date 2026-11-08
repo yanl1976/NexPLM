@@ -53,3 +53,18 @@ npm run dev      # http://localhost:5173 ，/api 已代理到 8080
    `.ttc` 需带索引，形如 `/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc,0`。
    未配置时后端会按 Windows/Linux 常见路径探测；都找不到则导出接口返回 400 并提示配置该项
    （不会生成乱码 PDF）。
+
+## 依赖漏洞扫描（`docs/07` 待整改 ②）
+
+`deploy/ci/security-scan.ps1` 封装 [trivy](https://github.com/aquasecurity/trivy)，CI 里作为构建门禁：
+
+```bash
+pwsh deploy/ci/security-scan.ps1                                    # 文件系统（依赖 + 配置）
+pwsh deploy/ci/security-scan.ps1 -Target image -Image nexplm:<tag>  # 容器镜像
+```
+
+- 默认 `--severity HIGH,CRITICAL --ignore-unfixed --exit-code 1`：发现高危即失败；
+- 报告落 `deploy/ci/reports/trivy-*.json`，建议作为 CI artifact 保留 30 天；
+- **本机未安装 trivy 时返回 exit 2 并打印安装方式**，不会静默通过；
+- CI 示例：GitLab `script: [ "pwsh deploy/ci/security-scan.ps1" ]`；Jenkins 加一个 `powershell` step；
+- 脚本存在 **不等于**该项已验收：CI 未真正接入前，`docs/07` 里保持"待整改"。
