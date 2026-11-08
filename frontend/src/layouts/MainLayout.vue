@@ -45,6 +45,10 @@
             <el-icon><HomeFilled /></el-icon>
             <template #title>概览</template>
           </el-menu-item>
+          <el-menu-item index="/ws-console">
+            <el-icon><Document /></el-icon>
+            <template #title>工作空间</template>
+          </el-menu-item>
           <el-sub-menu index="/my">
             <template #title>
               <el-icon><Star /></el-icon>
@@ -94,7 +98,6 @@
             </template>
             <el-menu-item index="/doc">文档库</el-menu-item>
             <el-menu-item index="/doc/class">文档分类</el-menu-item>
-            <el-menu-item index="/workspace">工作空间</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="/pse">
             <template #title>
@@ -102,7 +105,6 @@
               <span>零部件/BOM</span>
             </template>
             <el-menu-item index="/item">零部件</el-menu-item>
-            <el-menu-item index="/ws-console">工作空间（列表）</el-menu-item>
             <el-menu-item index="/item/classify">零部件分类</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="/wf">
