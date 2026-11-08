@@ -221,6 +221,9 @@
                 <template v-else-if="codePreview">
                   将生成：
                   <span class="code-preview-value">{{ codePreview.code }}</span>
+                  <el-tag size="small" effect="plain" :type="codePreview.source === 'DRAWING' ? 'warning' : 'success'">
+                    {{ codePreview.source === 'DRAWING' ? '按图号' : '按分类' }}
+                  </el-tag>
                   <span class="code-preview-src">{{ codePreview.ruleName }}（预览不占号）</span>
                 </template>
                 <template v-else>请选择最末级分类</template>
@@ -250,15 +253,13 @@
           </el-col>
           <el-col v-if="!editingId" :span="12">
             <el-form-item label="分类">
-              <el-tree-select
+              <el-cascader
                 v-model="form.classId"
-                :data="classTree"
-                node-key="id"
-                :props="{ label: 'name', children: 'children', disabled: 'selectDisabled' }"
-                check-strictly
+                :options="classTree"
+                :props="{ value: 'id', label: 'name', children: 'children', emitPath: false }"
                 clearable
                 filterable
-                placeholder="只能选最末级（小类）"
+                placeholder="逐级选择，只能落在最末级（小类）"
                 style="width: 100%"
               />
             </el-form-item>
@@ -400,7 +401,8 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
+        <el-button v-if="!editingId" :loading="saving" @click="onSave(true)">保存并继续新建</el-button>
+        <el-button type="primary" :loading="saving" @click="onSave()">保存</el-button>
       </template>
     </el-dialog>
 
@@ -1159,7 +1161,7 @@ async function openEdit(row?: ItemSummary): Promise<void> {
   }
 }
 
-async function onSave(): Promise<void> {
+async function onSave(keepOpen = false): Promise<void> {
   if (!formRef.value) {
     return
   }
@@ -1183,7 +1185,15 @@ async function onSave(): Promise<void> {
       await itemApi.create({ ...form, code, ext })
       ElMessage.success('已创建')
     }
-    dialogVisible.value = false
+    if (keepOpen) {
+      // 连续录入：保留类型/分类/单位，清空名称与图号后重新预览
+      form.name = ''
+      form.designAttr.dwgNo = ''
+      codePreview.value = null
+      schedulePreview()
+    } else {
+      dialogVisible.value = false
+    }
     await load()
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存失败')
