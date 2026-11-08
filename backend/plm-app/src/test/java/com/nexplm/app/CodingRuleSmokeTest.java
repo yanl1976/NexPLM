@@ -904,6 +904,58 @@ class CodingRuleSmokeTest {
         }
     }
 
+    /** CODE-08：纯数字编码必须 11 位；4 位流水的规则应被拒绝。 */
+    @Test
+    void itemCodeLengthIsEnforced() throws Exception {
+        String admin = login();
+        String rule = "Kind_lentest";
+        long classId = 94_900_000_001L;
+        String okRule = "Kind_lenok";
+        long okClassId = 94_900_000_002L;
+        jdbcTemplate.update("DELETE FROM doc_class WHERE id IN (?, ?)", classId, okClassId);
+        jdbcTemplate.update("DELETE FROM code_rule WHERE code IN (?, ?)", rule, okRule);
+        jdbcTemplate.update("""
+                        INSERT INTO code_rule (id, code, name, segments_json, scope_json, reset_policy, status,
+                                               version_no, created_at, updated_at, current_no, object_type, remark)
+                        VALUES (?, ?, '长度校验规则',
+                                '[{"type":"VALUE"},{"type":"VALUE"},{"type":"SEQ","width":4,"radix":"DECIMAL"}]'::jsonb,
+                                '{}'::jsonb, 'NEVER', 'ACTIVE', 1, now(), now(), 0, 'PdmItem', 'EXP-20261108-61')
+                        """, IdWorker.getId(), rule);
+        jdbcTemplate.update("""
+                        INSERT INTO doc_class (id, parent_id, entity_code, code, name, path, sort, status,
+                                               code_path, deleted, version, created_at, updated_at)
+                        VALUES (?, NULL, 'PdmItem', '950101', '长度测试小类', '/950101', 0, 'ACTIVE',
+                                ?, false, 0, now(), now())
+                        """, classId, rule + "/9501/01/*");
+        jdbcTemplate.update("""
+                        INSERT INTO code_rule (id, code, name, segments_json, scope_json, reset_policy, status,
+                                               version_no, created_at, updated_at, current_no, object_type, remark)
+                        VALUES (?, ?, '长度合格规则',
+                                '[{"type":"VALUE"},{"type":"VALUE"},{"type":"SEQ","width":5,"radix":"DECIMAL"}]'::jsonb,
+                                '{}'::jsonb, 'NEVER', 'ACTIVE', 1, now(), now(), 0, 'PdmItem', 'EXP-20261108-61')
+                        """, IdWorker.getId(), okRule);
+        jdbcTemplate.update("""
+                        INSERT INTO doc_class (id, parent_id, entity_code, code, name, path, sort, status,
+                                               code_path, deleted, version, created_at, updated_at)
+                        VALUES (?, NULL, 'PdmItem', '950102', '长度合格小类', '/950102', 0, 'ACTIVE',
+                                ?, false, 0, now(), now())
+                        """, okClassId, okRule + "/9501/02/*");
+        try {
+            mockMvc.perform(get("/api/v1/items/code-preview")
+                            .param("classId", String.valueOf(classId))
+                            .header("Authorization", "Bearer " + admin))
+                    .andExpect(status().isBadRequest());
+
+            JsonNode real = call(get("/api/v1/items/code-preview")
+                    .param("classId", String.valueOf(okClassId)), admin, null);
+            assertThat(real.path("code").asText()).matches("^\\d{11}$");
+        } finally {
+            jdbcTemplate.update("DELETE FROM doc_class WHERE id IN (?, ?)", classId, okClassId);
+            jdbcTemplate.update("DELETE FROM code_sequence WHERE rule_code IN (?, ?)", rule, okRule);
+            jdbcTemplate.update("DELETE FROM code_rule WHERE code IN (?, ?)", rule, okRule);
+        }
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {

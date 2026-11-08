@@ -157,7 +157,9 @@ public class CodeRuleService {
         }
         List<Segment> segments = parse(String.valueOf(rows.get(0).get("segments_json")));
         long nextNo = peekClassSeq(ruleCode, scopeKey);
-        return new Preview(renderByPath(segments, values, nextNo), ruleCode,
+        String rendered = renderByPath(segments, values, nextNo);
+        assertItemCodeLength(rendered);
+        return new Preview(rendered, ruleCode,
                 rows.get(0).get("name") == null ? ruleCode : String.valueOf(rows.get(0).get("name")),
                 "CLASS_PATH");
     }
@@ -175,6 +177,17 @@ public class CodeRuleService {
         }
         Preview fallback = preview(fallbackRuleCode, null);
         return new Preview(fallback.code(), fallback.ruleCode(), fallback.ruleName(), "TYPE_RULE");
+    }
+
+    /**
+     * CODE-08：纯数字零部件编码必须是 11 位（6 位小类 + 5 位流水）。
+     * 图号/前缀型编码（含字母）不受此约束。
+     */
+    private void assertItemCodeLength(String code) {
+        if (code != null && code.matches("\\d+") && code.length() != 11) {
+            throw BizException.of(ErrorCode.CODE_RULE_INVALID,
+                    "零部件编码必须为 11 位（6 位小类 + 5 位流水），实际 " + code.length() + " 位：" + code);
+        }
     }
 
     /** 只读下一个分类流水（不占用）；已迁移的历史编码也算进去。 */
@@ -692,6 +705,7 @@ public class CodeRuleService {
         List<String> codes = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             String rendered = renderByPath(segments, values, base + i);
+            assertItemCodeLength(rendered);
             // 留路径快照：分类绑定后续变更不影响已发编码的追溯（T-CORE-10）
             recordIssue(ruleCode, rendered, null, fullPath);
             codes.add(rendered);
