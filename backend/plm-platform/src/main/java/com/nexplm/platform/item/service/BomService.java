@@ -266,6 +266,12 @@ public class BomService {
         line.setViewType(view);
         line.setLineNo(nextLineNo(parentId, view));
         line.setQty(req.qty());
+        line.setTotalQty(req.totalQty());
+        line.setSurplusQty(req.surplusQty());
+        line.setSubUseQty(req.subUseQty());
+        line.setBomType(normalizeBomType(req.bomType(), "DESIGN"));
+        line.setItemRoute(trimToNull(req.itemRoute()));
+        line.setDataSource(trimToNull(req.dataSource()));
         line.setUnit(normalizeUnit(req.unit(), req.childId()));
         line.setLossRate(req.lossRate() == null ? BigDecimal.ZERO : req.lossRate());
         validateEffectRange(req.effectFrom(), req.effectTo());
@@ -290,6 +296,14 @@ public class BomService {
         update.setId(lineId);
         update.setVersion(line.getVersion());
         update.setQty(req.qty());
+        update.setTotalQty(req.totalQty());
+        update.setSurplusQty(req.surplusQty());
+        update.setSubUseQty(req.subUseQty());
+        // 空表示不动（保留原类型），避免前端不传字段时被冲成 DESIGN
+        update.setBomType(req.bomType() == null || req.bomType().isBlank()
+                ? line.getBomType() : normalizeBomType(req.bomType(), "DESIGN"));
+        update.setItemRoute(trimToNull(req.itemRoute()));
+        update.setDataSource(trimToNull(req.dataSource()));
         update.setUnit(normalizeUnit(req.unit(), line.getChildObjectId()));
         update.setLossRate(req.lossRate() == null ? BigDecimal.ZERO : req.lossRate());
         validateEffectRange(req.effectFrom(), req.effectTo());
@@ -479,7 +493,10 @@ public class BomService {
     private List<BomDtos.BomNode> childrenOf(Long parentId, String view, int level, int maxDepth, LocalDate effectAt) {
         List<Object> args = new ArrayList<>(List.of(parentId, view));
         StringBuilder sql = new StringBuilder("""
-                        SELECT b.id, b.child_object_id, b.qty, b.unit, b.loss_rate, b.line_no,
+                        SELECT b.id, b.child_object_id, b.qty,
+                               b.total_qty, b.surplus_qty, b.sub_use_qty,
+                               b.bom_type, b.item_route, b.data_source,
+                               b.unit, b.loss_rate, b.line_no,
                                b.effect_from, b.effect_to, b.ref_designator, b.remark, b.version,
                                o.code, o.name, m.item_type, m.specification,
                                EXISTS (SELECT 1 FROM bom_line c
@@ -497,6 +514,9 @@ public class BomService {
                 (rs, rowNum) -> new BomDtos.BomNode(rs.getLong("id"), rs.getLong("child_object_id"),
                         rs.getString("code"), rs.getString("name"), rs.getString("item_type"),
                         rs.getString("specification"), rs.getString("unit"), rs.getBigDecimal("qty"),
+                        rs.getBigDecimal("total_qty"), rs.getBigDecimal("surplus_qty"),
+                        rs.getBigDecimal("sub_use_qty"), rs.getString("bom_type"),
+                        rs.getString("item_route"), rs.getString("data_source"),
                         rs.getBigDecimal("loss_rate"), rs.getInt("line_no"),
                         rs.getObject("effect_from", LocalDate.class), rs.getObject("effect_to", LocalDate.class),
                         rs.getString("ref_designator"), rs.getString("remark"), rs.getInt("version"),
@@ -524,9 +544,20 @@ public class BomService {
                 "SELECT EXISTS (SELECT 1 FROM bom_line WHERE parent_object_id = ? AND view_type = ? AND deleted = false)",
                 rs -> rs.next() && rs.getBoolean(1), line.getChildObjectId(), line.getViewType()));
         return new BomDtos.BomNode(line.getId(), line.getChildObjectId(), child.getCode(), child.getName(),
-                itemMeta[0], itemMeta[1], line.getUnit(), line.getQty(), line.getLossRate(), line.getLineNo(),
+                itemMeta[0], itemMeta[1], line.getUnit(), line.getQty(),
+                line.getTotalQty(), line.getSurplusQty(), line.getSubUseQty(),
+                line.getBomType(), line.getItemRoute(), line.getDataSource(),
+                line.getLossRate(), line.getLineNo(),
                 line.getEffectFrom(), line.getEffectTo(),
                 line.getRefDesignator(), line.getRemark(), line.getVersion(), hasChildren, new ArrayList<>());
+    }
+
+    /** BOM 类型归一：空用默认值，非空转大写下划线（`Quote` → `QUOTE`）。 */
+    private static String normalizeBomType(String raw, String fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        return raw.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
     private void ensureNoCycle(Long parentId, Long childId, String view) {

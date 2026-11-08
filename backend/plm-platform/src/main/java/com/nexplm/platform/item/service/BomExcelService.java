@@ -145,12 +145,15 @@ public class BomExcelService {
         int skipped = 0;
         for (ParsedRow row : analysis.rows()) {
             if ("NEW".equals(row.action())) {
-                BomDtos.BomLineSaveReq req = new BomDtos.BomLineSaveReq(row.childId(), row.qty(), row.unit(),
+                // Excel 导入暂不识别蓝本的数量四兄弟/BOM 类型/工序路线/来源，留空由服务端取默认
+                BomDtos.BomLineSaveReq req = new BomDtos.BomLineSaveReq(row.childId(), row.qty(),
+                        null, null, null, null, null, null, row.unit(),
                         row.lossRate(), row.effectFrom(), row.effectTo(), null, null);
                 bomService.add(analysis.parentIdOf(row), analysis.view(), req, userId);
                 created++;
             } else if ("UPDATE".equals(row.action())) {
-                BomDtos.BomLineUpdateReq req = new BomDtos.BomLineUpdateReq(row.qty(), row.unit(), row.lossRate(),
+                BomDtos.BomLineUpdateReq req = new BomDtos.BomLineUpdateReq(row.qty(),
+                        null, null, null, null, null, null, row.unit(), row.lossRate(),
                         row.effectFrom(), row.effectTo(), null, null);
                 bomService.update(row.existingLineId(), req, userId);
                 updated++;

@@ -24,7 +24,20 @@ public class BomLine {
     private Long childObjectId;
     private String viewType;
     private Integer lineNo;
+    /** 单台用量（对应蓝本 {@code USEQTY}）。 */
     private BigDecimal qty;
+    /** 总用量（对应蓝本 {@code TOTALQTY}）；为空表示按层级累乘计算。 */
+    private BigDecimal totalQty;
+    /** 剩余用量（蓝本 {@code SURPLUSQTY}）。 */
+    private BigDecimal surplusQty;
+    /** 子用量（蓝本 {@code SUBUSEQTY}）。 */
+    private BigDecimal subUseQty;
+    /** BOM 类型（蓝本 {@code LBOMTYPE}）：DESIGN / QUOTE / … */
+    private String bomType;
+    /** 工序路线（蓝本 {@code ITEMROUTE}）。 */
+    private String itemRoute;
+    /** 数据来源：MANUAL / IMPORT / ERP（蓝本 {@code DATASOURCE}）。 */
+    private String dataSource;
     private String unit;
     private BigDecimal lossRate;
     /** 有效性区间（含边界）；为空表示该侧不限，即无区间 = 始终有效。 */

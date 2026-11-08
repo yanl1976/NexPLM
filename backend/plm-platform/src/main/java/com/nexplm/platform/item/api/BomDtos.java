@@ -17,9 +17,15 @@ public final class BomDtos {
     private BomDtos() {
     }
 
-    /** BOM 树节点；children 为空表示叶子，hasChildren 用于前端判断是否显示展开箭头。 */
+    /**
+     * BOM 树节点；children 为空表示叶子，hasChildren 用于前端判断是否显示展开箭头。
+     * <p>{@code qty} 是单台用量（蓝本 {@code USEQTY}）；{@code totalQty} 为空表示按层级累乘计算。</p>
+     */
     public record BomNode(Long lineId, Long childId, String code, String name, String itemType,
-                          String specification, String unit, BigDecimal qty, BigDecimal lossRate,
+                          String specification, String unit, BigDecimal qty,
+                          BigDecimal totalQty, BigDecimal surplusQty, BigDecimal subUseQty,
+                          String bomType, String itemRoute, String dataSource,
+                          BigDecimal lossRate,
                           Integer lineNo, LocalDate effectFrom, LocalDate effectTo,
                           String refDesignator, String remark, Integer version,
                           Boolean hasChildren, List<BomNode> children) {
@@ -28,6 +34,12 @@ public final class BomDtos {
     public record BomLineSaveReq(
             @NotNull(message = "子件不能为空") Long childId,
             @NotNull(message = "用量不能为空") @DecimalMin(value = "0.000001", message = "用量必须大于 0") BigDecimal qty,
+            @DecimalMin(value = "0", message = "总用量不能为负") BigDecimal totalQty,
+            @DecimalMin(value = "0", message = "剩余用量不能为负") BigDecimal surplusQty,
+            @DecimalMin(value = "0", message = "子用量不能为负") BigDecimal subUseQty,
+            String bomType,
+            String itemRoute,
+            String dataSource,
             String unit,
             BigDecimal lossRate,
             LocalDate effectFrom,
@@ -38,6 +50,12 @@ public final class BomDtos {
 
     public record BomLineUpdateReq(
             @NotNull(message = "用量不能为空") @DecimalMin(value = "0.000001", message = "用量必须大于 0") BigDecimal qty,
+            @DecimalMin(value = "0", message = "总用量不能为负") BigDecimal totalQty,
+            @DecimalMin(value = "0", message = "剩余用量不能为负") BigDecimal surplusQty,
+            @DecimalMin(value = "0", message = "子用量不能为负") BigDecimal subUseQty,
+            String bomType,
+            String itemRoute,
+            String dataSource,
             String unit,
             BigDecimal lossRate,
             LocalDate effectFrom,
