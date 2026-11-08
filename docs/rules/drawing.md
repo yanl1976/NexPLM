@@ -61,3 +61,53 @@
 | 只有关联/解除 | 组件内完成：新建图纸文档 → 上传文件 → 关联物料；并列出该物料已有图纸可解除 |
 
 DRW-01 状态：**已对齐**；DRW-02 状态：**已对齐（复用文档域）**；DRW-04（BOM 图纸目录汇总）仍待开发。
+
+## 图纸字段清单（P0 取证，EXP-20261108-65）
+
+### DOCDATASET（图纸对象）
+
+| 蓝本字段 | 含义 | 新系统落点 |
+|---|---|---|
+| `ECODE` | 编号（图号） | `plm_object.code` |
+| `ENAME` | 名称 | `plm_object.name` |
+| `DESCRIPTION` | 详细描述 | `plm_object.ext_json.description` |
+| `EVERSION` / `EMINORVERSION` | 大/小版本 | `plm_object.revision` / `iteration` |
+| `STATEID` / `WORKFLOWSTATE` | 生命周期/流程状态 | `plm_object.lifecycle_state` / `workflow_state` |
+| `DATASETCLASS` / `TYPEID` | 数据集分类/类型 | `doc_master.class_id` / `doc_type` |
+| `FILEEXTENT` | 文件扩展名（dwg） | `doc_master.file_ext` |
+| `MAINFILEID` | 主文件 | `doc_master.main_file_id` |
+| `CHECKOUTSTATE` / `CHECKOUTUSER` / `CHECKOUTDATE` | 检出状态/人/时间 | `plm_checkout` |
+
+### DOCBASEFORM（图档属性，`DOCDWG-CREATE.dic` + `DOCBASEFORM$.dic`）
+
+| 蓝本字段 | 中文标签 | 新系统落点 |
+|---|---|---|
+| `DOCTYPE` | DocType（`DOCDWG`） | `doc_master.doc_type='DESIGN'` |
+| `STANDARDCODE` | 标准号 | `ext_json.drawing.standardCode` |
+| `NIANDAIHAO` | 年代号 | `ext_json.drawing.yearNo` |
+| `JIUBIANHAO` | 旧编号 | `ext_json.drawing.oldCode` |
+| `GUIGE` | 规格 | `ext_json.drawing.spec` |
+| `ZHONGYAODU` | 重要度等级 | `ext_json.drawing.importance` |
+| `JINGDUDJ` | 精度等级 | `ext_json.drawing.precisionGrade` |
+| `JILIANGDANGWEI` | 计量单位 | `ext_json.drawing.measureUnit` |
+| `ATTACHXH` / `ATTACHORDER` | 附图序号 | `ext_json.drawing.attachNo` |
+| `ATTACHTYPE` | 附图分类 | `ext_json.drawing.attachType` |
+| `XMDH` | 项目代号 | `ext_json.drawing.projectCode` |
+| `WENJIANLEIXING` | 文件类型 | `ext_json.drawing.fileType` |
+
+### DOCFILEMODEL（文件）
+
+| 蓝本字段 | 新系统 |
+|---|---|
+| `FILENAME` / `FILEEXTENT` / `FILESIZE` / `ISMAINFILE` | `file_object` + `file_link(file_role=MAIN)` |
+| `CHECKOUTUSER` / `CHECKOUTSTATE` | `plm_checkout` |
+
+### 差异（P3）
+
+| 项 | 蓝本 | 现状 | 处置 |
+|---|---|---|---|
+| 图档属性存储 | `DOCBASEFORM` 独立表 | `plm_object.ext_json.drawing` | 够用；若需按属性检索，再建 GIN 索引或独立表 |
+| 图纸类型 | `TYPEID` / `DATASETCLASS` | `doc_master.doc_type` + `class_id` | 已覆盖 |
+| 密级 | 未在 DOCDATASET 明列 | `plm_object.security_level` | 已保留 0~3 |
+| 状态/检出 | `STATEID` / `CHECKOUT*` | 生命周期 + `plm_checkout` | 已复用 |
+| 图幅 `TUFU1` | `PSEBASEFORM`（物料） | 未落 | 待加到物料设计属性 |

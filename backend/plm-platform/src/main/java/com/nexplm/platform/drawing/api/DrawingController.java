@@ -1,9 +1,12 @@
 package com.nexplm.platform.drawing.api;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexplm.common.api.Result;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
+import com.nexplm.platform.doc.api.DocDtos;
+import com.nexplm.platform.doc.service.DocService;
 import com.nexplm.platform.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -13,10 +16,12 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,9 +40,63 @@ public class DrawingController {
     private static final String RELATION = "Specification";
 
     private final JdbcTemplate jdbcTemplate;
+    private final DocService docService;
+    private final ObjectMapper objectMapper;
 
-    public DrawingController(JdbcTemplate jdbcTemplate) {
+    public DrawingController(JdbcTemplate jdbcTemplate, DocService docService, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
+        this.docService = docService;
+        this.objectMapper = objectMapper;
+    }
+
+    /**
+     * 新建图纸并关联物料。
+     *
+     * <p>字段取自蓝本 `DOCDATASET + DOCBASEFORM`：
+     * 编号/名称/详细描述/分类/密级；
+     * 标准号、年代号、旧编号、规格、重要度等级、精度等级、计量单位、
+     * 附图序号、附图分类、项目代号、文件类型（`DOCDWG-CREATE.dic` 与
+     * `DOCBASEFORM$.dic`）。</p>
+     */
+    @Operation(summary = "新建图纸并关联物料")
+    @PostMapping
+    @PreAuthorize("hasAuthority('pdm.doc.write')")
+    public Result<Map<String, Object>> create(@jakarta.validation.Valid @RequestBody DrawingCreateReq req) {
+        requireObject(req.itemId(), "PdmItem", "物料不存在：");
+        DocDtos.DocDetail doc = docService.create(new DocDtos.DocSaveReq(
+                req.code().trim(),
+                req.name().trim(),
+                "DESIGN", "CAD", null, req.description(), null, req.securityLevel(), req.classId(), null),
+                CurrentUser.userId());
+
+        Map<String, Object> drawing = new HashMap<>();
+        drawing.put("standardCode", req.standardCode());
+        drawing.put("yearNo", req.yearNo());
+        drawing.put("oldCode", req.oldCode());
+        drawing.put("spec", req.spec());
+        drawing.put("importance", req.importance());
+        drawing.put("precisionGrade", req.precisionGrade());
+        drawing.put("measureUnit", req.measureUnit());
+        drawing.put("attachNo", req.attachNo());
+        drawing.put("attachType", req.attachType());
+        drawing.put("projectCode", req.projectCode());
+        drawing.put("fileType", req.fileType());
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(Map.of("drawing", drawing));
+        } catch (Exception ex) {
+            throw new IllegalStateException("图纸属性序列化失败", ex);
+        }
+        jdbcTemplate.update("""
+                UPDATE plm_object SET ext_json = ext_json || ?::jsonb WHERE id = ?
+                """, json, doc.id());
+
+        linkRelation(req.itemId(), doc.id());
+        Map<String, Object> result = new HashMap<>();
+        result.put("docId", doc.id());
+        result.put("code", doc.code());
+        result.put("name", doc.name());
+        return Result.ok(result);
     }
 
     /** 某个物料的图纸（等价蓝本 GetUpdateDWGDocInfo）。 */
@@ -81,6 +140,11 @@ public class DrawingController {
     public Result<Void> link(@PathVariable Long docId, @RequestParam Long itemId) {
         requireObject(itemId, "PdmItem", "物料不存在：");
         requireObject(docId, "PdmDoc", "图纸文档不存在：");
+        linkRelation(itemId, docId);
+        return Result.ok();
+    }
+
+    private void linkRelation(Long itemId, Long docId) {
         Long companyId = CurrentUser.companyId() == null ? 0L : CurrentUser.companyId();
         jdbcTemplate.update("""
                 INSERT INTO plm_relation (id, relation_type, src_id, dst_id, seq, attrs_json,
@@ -88,7 +152,6 @@ public class DrawingController {
                 VALUES (?, ?, ?, ?, 0, '{}'::jsonb, ?, false, ?, now(), now())
                 ON CONFLICT DO NOTHING
                 """, IdWorker.getId(), RELATION, itemId, docId, companyId, CurrentUser.userId());
-        return Result.ok();
     }
 
     /** 解除关联：只删关系，不删图纸文档与文件。 */
@@ -101,6 +164,27 @@ public class DrawingController {
                  WHERE id = ? AND relation_type = ? AND deleted = false
                 """, linkId, RELATION);
         return Result.ok();
+    }
+
+    /** 图纸新建请求：对应蓝本 `DOCDATASET + DOCBASEFORM` 的图档属性。 */
+    public record DrawingCreateReq(
+            @jakarta.validation.constraints.NotNull(message = "物料不能为空") Long itemId,
+            @jakarta.validation.constraints.NotBlank(message = "图号不能为空") String code,
+            @jakarta.validation.constraints.NotBlank(message = "图纸名称不能为空") String name,
+            String description,
+            Long classId,
+            Integer securityLevel,
+            String standardCode,
+            String yearNo,
+            String oldCode,
+            String spec,
+            String importance,
+            String precisionGrade,
+            String measureUnit,
+            Integer attachNo,
+            String attachType,
+            String projectCode,
+            String fileType) {
     }
 
     private void requireObject(Long id, String objectType, String prefix) {

@@ -66,15 +66,30 @@ class DrawingSmokeTest {
         long itemId = item.path("id").asLong();
         long docId = 0L;
         try {
-            JsonNode doc = call(post("/api/v1/docs"), admin, json(Map.of(
-                    "code", "DRW-TEST-001",
-                    "name", "测试图纸",
-                    "docType", "DESIGN",
-                    "source", "CAD")));
-            docId = doc.path("id").asLong();
+            Map<String, Object> drawing = new java.util.HashMap<>();
+            drawing.put("itemId", String.valueOf(itemId));
+            drawing.put("code", "DRW-TEST-001");
+            drawing.put("name", "测试图纸");
+            drawing.put("description", "图纸描述");
+            drawing.put("standardCode", "GB/T 1234");
+            drawing.put("yearNo", "2026");
+            drawing.put("oldCode", "OLD-001");
+            drawing.put("spec", "5S719-110134L");
+            drawing.put("importance", "A");
+            drawing.put("precisionGrade", "IT7");
+            drawing.put("measureUnit", "mm");
+            drawing.put("attachNo", 1);
+            drawing.put("attachType", "附图");
+            drawing.put("projectCode", "PJ-000001");
+            drawing.put("fileType", "DWG");
+            JsonNode doc = call(post("/api/v1/drawings"), admin, json(drawing));
+            docId = doc.path("docId").asLong();
             assertThat(docId).isGreaterThan(0L);
 
-            call(post("/api/v1/drawings/{docId}/link?itemId={itemId}", docId, itemId), admin, null);
+            String ext = jdbcTemplate.queryForObject(
+                    "SELECT ext_json->'drawing'->>'standardCode' FROM plm_object WHERE id = ?",
+                    String.class, docId);
+            assertThat(ext).isEqualTo("GB/T 1234");
 
             JsonNode rows = call(get("/api/v1/drawings/items/{itemId}", itemId), admin, null);
             assertThat(rows).hasSize(1);
