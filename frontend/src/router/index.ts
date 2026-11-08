@@ -153,6 +153,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '文档分类' }
       },
       {
+        path: 'doc/drawings',
+        name: 'doc-drawings',
+        component: () => import('@/views/doc/DrawingLibraryView.vue'),
+        meta: { title: '图纸库' }
+      },
+      {
         path: 'item/classify',
         name: 'item-classify',
         component: () => import('@/views/item/ItemClassifyView.vue'),

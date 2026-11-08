@@ -240,6 +240,8 @@ export const docApi = {
     classId?: string
     /** 文件夹（整理维度，ws_folder_content）。 */
     folderId?: string
+    /** 文件扩展名：图纸库用 `dwg`。 */
+    fileExt?: string
     /** 全文检索关键字（编码/名称/关键词/描述）。 */
     q?: string
   }): Promise<PageResult<DocSummary>> {

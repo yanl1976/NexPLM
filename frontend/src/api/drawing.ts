@@ -7,6 +7,8 @@ export interface DrawingLinkRow {
   doc_id: string
   dwg_no: string
   doc_name: string
+  item_code?: string | null
+  item_name?: string | null
   lifecycle_state?: string | null
   revision?: number | null
   iteration?: number | null
@@ -16,7 +18,8 @@ export interface DrawingLinkRow {
 
 /** 新建图纸请求：对应蓝本 DOCDATASET + DOCBASEFORM 的图档属性。 */
 export interface DrawingSaveReq {
-  itemId: string
+  /** 关联物料；为空时只建图纸文档，稍后再关联。 */
+  itemId?: string | null
   code: string
   name: string
   description?: string

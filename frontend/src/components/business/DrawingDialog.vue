@@ -9,7 +9,7 @@
       <div class="form-section">基本信息</div>
       <el-row :gutter="12">
         <el-col :span="12">
-          <el-form-item label="关联物料" required>
+          <el-form-item label="关联物料">
             <el-select
               v-model="form.itemId"
               filterable
@@ -302,10 +302,6 @@ function onFileRemove(): void {
 }
 
 async function submit(): Promise<void> {
-  if (!form.itemId) {
-    ElMessage.warning('请选择关联物料')
-    return
-  }
   if (!form.code.trim()) {
     ElMessage.warning('请填写图号')
     return
@@ -317,7 +313,7 @@ async function submit(): Promise<void> {
   saving.value = true
   try {
     const doc = await drawingApi.create({
-      itemId: form.itemId,
+      itemId: form.itemId || null,
       code: form.code.trim(),
       name: form.name.trim(),
       description: form.description,

@@ -62,12 +62,17 @@ public class DrawingController {
     @PostMapping
     @PreAuthorize("hasAuthority('pdm.doc.write')")
     public Result<Map<String, Object>> create(@jakarta.validation.Valid @RequestBody DrawingCreateReq req) {
-        requireObject(req.itemId(), "PdmItem", "物料不存在：");
+        if (req.itemId() != null) {
+            requireObject(req.itemId(), "PdmItem", "物料不存在：");
+        }
         DocDtos.DocDetail doc = docService.create(new DocDtos.DocSaveReq(
                 req.code().trim(),
                 req.name().trim(),
                 "DESIGN", "CAD", null, req.description(), null, req.securityLevel(), req.classId(), null),
                 CurrentUser.userId());
+
+        // 图纸库的识别标记：即使还没上传文件，也按 dwg 归类（蓝本 DOCDATASET.FILEEXTENT）
+        jdbcTemplate.update("UPDATE doc_master SET file_ext = 'dwg' WHERE object_id = ?", doc.id());
 
         Map<String, Object> drawing = new HashMap<>();
         drawing.put("standardCode", req.standardCode());
@@ -91,7 +96,9 @@ public class DrawingController {
                 UPDATE plm_object SET ext_json = ext_json || ?::jsonb WHERE id = ?
                 """, json, doc.id());
 
-        linkRelation(req.itemId(), doc.id());
+        if (req.itemId() != null) {
+            linkRelation(req.itemId(), doc.id());
+        }
         Map<String, Object> result = new HashMap<>();
         result.put("docId", doc.id());
         result.put("code", doc.code());
@@ -168,7 +175,7 @@ public class DrawingController {
 
     /** 图纸新建请求：对应蓝本 `DOCDATASET + DOCBASEFORM` 的图档属性。 */
     public record DrawingCreateReq(
-            @jakarta.validation.constraints.NotNull(message = "物料不能为空") Long itemId,
+            Long itemId,
             @jakarta.validation.constraints.NotBlank(message = "图号不能为空") String code,
             @jakarta.validation.constraints.NotBlank(message = "图纸名称不能为空") String name,
             String description,

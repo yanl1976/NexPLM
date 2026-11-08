@@ -97,6 +97,7 @@
               <span>图文档</span>
             </template>
             <el-menu-item index="/doc">文档库</el-menu-item>
+            <el-menu-item index="/doc/drawings">图纸库</el-menu-item>
             <el-menu-item index="/doc/class">文档分类</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="/pse">
