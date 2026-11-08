@@ -28,15 +28,45 @@ public class AuthService {
     private final JwtService jwtService;
     private final UserSessionService sessionService;
     private final JdbcTemplate jdbcTemplate;
+    private final PasswordPolicy passwordPolicy;
 
     public AuthService(SysUserMapper userMapper, PasswordEncoder passwordEncoder,
                        JwtService jwtService, UserSessionService sessionService,
-                       JdbcTemplate jdbcTemplate) {
+                       JdbcTemplate jdbcTemplate, PasswordPolicy passwordPolicy) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.sessionService = sessionService;
         this.jdbcTemplate = jdbcTemplate;
+        this.passwordPolicy = passwordPolicy;
+    }
+
+    /**
+     * 用户自助改密：校验旧密码 → 强度 → 历史不可重用 → 更新哈希并清 {@code must_change_pwd}。
+     *
+     * <p>此前系统只有管理员重置、没有自助改密接口，{@code must_change_pwd} 标记形同虚设
+     * （前端拿得到却无处可改）。改密成功后旧密码进入历史表，不能立即改回。</p>
+     */
+    @Transactional
+    public void changePassword(Long userId, String oldPassword, String newPassword) {
+        SysUser user = userId == null ? null : userMapper.selectById(userId);
+        if (user == null) {
+            throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "用户不存在");
+        }
+        if (!passwordEncoder.matches(oldPassword == null ? "" : oldPassword, user.getPasswordHash())) {
+            throw BizException.of(ErrorCode.AUTH_BAD_CREDENTIALS);
+        }
+        passwordPolicy.validate(newPassword, user.getUsername());
+        passwordPolicy.assertNotReused(userId, newPassword);
+        String hash = passwordEncoder.encode(newPassword);
+        SysUser update = new SysUser();
+        update.setId(userId);
+        update.setPasswordHash(hash);
+        update.setMustChangePwd(false);
+        update.setPwdUpdatedAt(OffsetDateTime.now());
+        update.setUpdatedAt(OffsetDateTime.now());
+        userMapper.updateById(update);
+        passwordPolicy.record(userId, hash);
     }
 
     /**
@@ -62,6 +92,13 @@ public class AuthService {
         if (user.getLockUntil() != null && user.getLockUntil().isAfter(OffsetDateTime.now())) {
             writeLoginLog(username, user.getId(), "FAILED", "账号已锁定", ip, ua);
             throw BizException.of(ErrorCode.AUTH_ACCOUNT_LOCKED);
+        }
+        try {
+            // 密码有效期（默认 0 天=不检查，避免锁死历史账号）
+            passwordPolicy.assertNotExpired(user);
+        } catch (BizException ex) {
+            writeLoginLog(username, user.getId(), "FAILED", "密码已过期", ip, ua);
+            throw ex;
         }
         SysUser update = new SysUser();
         update.setId(user.getId());

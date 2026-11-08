@@ -90,6 +90,16 @@ nexplm:
       secret: ${NEXPLM_JWT_SECRET:nexplm-dev-only-secret-key-change-in-production-32b}
       access-ttl: PT30M
       refresh-ttl: P7D
+    # 密码策略（docs/07 待整改 ④）：默认安全但不锁死历史账号
+    password:
+      # 最短长度（上限固定 64）
+      min-length: ${NEXPLM_PWD_MIN_LENGTH:8}
+      # 需包含的字符类数量（大写/小写/数字/符号，取 1~4）
+      required-classes: ${NEXPLM_PWD_REQUIRED_CLASSES:3}
+      # 历史不可重用条数（0=不检查）
+      history-size: ${NEXPLM_PWD_HISTORY_SIZE:3}
+      # 有效期天数（0=不过期；>0 时登录会校验 pwd_updated_at）
+      expire-days: ${NEXPLM_PWD_EXPIRE_DAYS:0}
     bootstrap:
       admin-username: ${NEXPLM_ADMIN_USERNAME:admin}
       admin-password: ${NEXPLM_ADMIN_PASSWORD:Admin@12345}

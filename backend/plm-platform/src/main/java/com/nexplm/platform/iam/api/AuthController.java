@@ -58,6 +58,14 @@ public class AuthController {
         return Result.ok(authService.currentUser(CurrentUser.require()));
     }
 
+    @Operation(summary = "修改自己的密码（校验强度与历史，成功后清除强制改密标记）")
+    @PostMapping("/change-password")
+    @Audit(module = "IAM", action = "USER_CHANGE_PASSWORD", recordArgs = false)
+    public Result<Void> changePassword(@Valid @RequestBody AuthDtos.ChangePwdReq req) {
+        authService.changePassword(CurrentUser.userId(), req.oldPassword(), req.newPassword());
+        return Result.ok();
+    }
+
     /** 从访问令牌取 sid：登出只针对当前这条会话，不影响其它设备。 */
     private Long currentSessionId(String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ")) {

@@ -258,6 +258,56 @@ class SecurityHardeningTest {
                 "name", "组织归属兜底", "docType", "DESIGN", "source", "NORMAL")));
         assertThat(jdbcTemplate.queryForObject("SELECT org_id FROM plm_object WHERE id = ?",
                 Long.class, ownDoc.path("id").asLong())).isEqualTo(77_000_001L);
+
+        // ---- 11. 密码策略：弱密码拒绝、自助改密（旧密码校验 + 历史不可重用）
+        mockMvc.perform(post("/api/v1/system/users")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("username", "weak_user", "password", "12345678",
+                                "displayName", "弱密码用户"))))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/v1/system/users")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("username", "pwd_user", "password", "Str0ng!Pass1",
+                                "displayName", "改密用户"))))
+                .andExpect(status().isOk());
+        jdbcTemplate.update("UPDATE sys_user SET must_change_pwd = false WHERE username = 'pwd_user'");
+        String pwdUser = login("pwd_user", "Str0ng!Pass1");
+
+        // 旧密码错 → 401
+        mockMvc.perform(post("/api/v1/auth/change-password")
+                        .header("Authorization", "Bearer " + pwdUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("oldPassword", "Wrong@12345",
+                                "newPassword", "Str0ng!Pass2"))))
+                .andExpect(status().isUnauthorized());
+        // 新密码强度不足 → 400
+        mockMvc.perform(post("/api/v1/auth/change-password")
+                        .header("Authorization", "Bearer " + pwdUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("oldPassword", "Str0ng!Pass1",
+                                "newPassword", "aaaaaaaa"))))
+                .andExpect(status().isBadRequest());
+        // 正常改密 → 200
+        mockMvc.perform(post("/api/v1/auth/change-password")
+                        .header("Authorization", "Bearer " + pwdUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("oldPassword", "Str0ng!Pass1",
+                                "newPassword", "Str0ng!Pass2"))))
+                .andExpect(status().isOk());
+        // 再改回旧密码 → 400（历史不可重用）
+        mockMvc.perform(post("/api/v1/auth/change-password")
+                        .header("Authorization", "Bearer " + pwdUser)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("oldPassword", "Str0ng!Pass2",
+                                "newPassword", "Str0ng!Pass1"))))
+                .andExpect(status().isBadRequest());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM sys_user_pwd_history WHERE user_id = "
+                        + "(SELECT id FROM sys_user WHERE username = 'pwd_user')", Long.class))
+                .isGreaterThanOrEqualTo(2);
     }
 
     // ------------------------------------------------------------------ 工具

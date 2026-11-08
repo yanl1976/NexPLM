@@ -37,13 +37,16 @@ public class UserAdminService {
     private final SysRoleMapper roleMapper;
     private final PasswordEncoder passwordEncoder;
     private final JdbcTemplate jdbcTemplate;
+    private final PasswordPolicy passwordPolicy;
 
     public UserAdminService(SysUserMapper userMapper, SysRoleMapper roleMapper,
-                            PasswordEncoder passwordEncoder, JdbcTemplate jdbcTemplate) {
+                            PasswordEncoder passwordEncoder, JdbcTemplate jdbcTemplate,
+                            PasswordPolicy passwordPolicy) {
         this.userMapper = userMapper;
         this.roleMapper = roleMapper;
         this.passwordEncoder = passwordEncoder;
         this.jdbcTemplate = jdbcTemplate;
+        this.passwordPolicy = passwordPolicy;
     }
 
     public PageResult<IamDtos.UserRow> page(Long companyId, String keyword, String status, int page, int size) {
@@ -118,10 +121,12 @@ public class UserAdminService {
         if (exists != null && exists > 0) {
             throw BizException.of(ErrorCode.COMMON_CONFLICT, "用户名已存在：" + req.username());
         }
+        passwordPolicy.validate(req.password(), req.username().trim());
         SysUser user = new SysUser();
         user.setCompanyId(companyId);
         user.setUsername(req.username().trim());
-        user.setPasswordHash(passwordEncoder.encode(req.password()));
+        String passwordHash = passwordEncoder.encode(req.password());
+        user.setPasswordHash(passwordHash);
         user.setDisplayName(req.displayName().trim());
         user.setEmail(req.email());
         user.setMobile(req.mobile());
@@ -135,6 +140,8 @@ public class UserAdminService {
         user.setCreatedAt(OffsetDateTime.now());
         user.setUpdatedAt(OffsetDateTime.now());
         userMapper.insert(user);
+        // 初始密码也记一条历史：之后"不能改回初始密码"靠它拦截
+        passwordPolicy.record(user.getId(), passwordHash);
         replaceRoles(user.getId(), req.roleIds());
         return user.getId();
     }
@@ -158,16 +165,24 @@ public class UserAdminService {
         }
     }
 
+    /**
+     * 管理员重置密码：强度校验 + 历史不可重用；重置后强制下次登录改密。
+     * <p>注意重置密码不受"与用户名相同"以外的历史限制的豁免——管理员也不能把密码设回旧值。</p>
+     */
     @Transactional
     public void resetPassword(Long id, String newPassword) {
         SysUser user = require(id);
+        passwordPolicy.validate(newPassword, user.getUsername());
+        passwordPolicy.assertNotReused(user.getId(), newPassword);
+        String hash = passwordEncoder.encode(newPassword);
         SysUser update = new SysUser();
         update.setId(user.getId());
-        update.setPasswordHash(passwordEncoder.encode(newPassword));
+        update.setPasswordHash(hash);
         update.setMustChangePwd(true);
         update.setPwdUpdatedAt(OffsetDateTime.now());
         update.setUpdatedAt(OffsetDateTime.now());
         userMapper.updateById(update);
+        passwordPolicy.record(user.getId(), hash);
     }
 
     @Transactional
