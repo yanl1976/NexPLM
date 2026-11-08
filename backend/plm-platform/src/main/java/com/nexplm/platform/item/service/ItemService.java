@@ -1057,6 +1057,87 @@ public class ItemService {
         return id;
     }
 
+    /**
+     * CODE-07：编码反查分类（蓝本保存物料时的真实方向）。
+     *
+     * <p>优先级：① 已发编码的流水快照 {@code code_issue.generator_path}（分类绑定后来改了也能查到发放当时的分类）；
+     * ② 11 位数字码按「6 位小类 + 5 位流水」用分类绑定路径反推；③ 叶子分类编码等于前 6 位。</p>
+     */
+    public ItemDtos.CodeResolve resolveCode(String raw) {
+        String code = raw == null ? "" : raw.trim();
+        if (code.isEmpty()) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "编码不能为空");
+        }
+        boolean exists = codeExists(code);
+
+        // ① 流水快照（发放时的路径，等价于蓝本 CODERES.GENERATORPATH）
+        List<String> paths = jdbcTemplate.queryForList("""
+                SELECT generator_path FROM code_issue
+                 WHERE code = ? AND state = 'ACTIVE' AND generator_path IS NOT NULL
+                 ORDER BY issued_at DESC LIMIT 1
+                """, String.class, code);
+        if (!paths.isEmpty() && paths.get(0) != null) {
+            String path = paths.get(0);
+            List<Map<String, Object>> found = jdbcTemplate.queryForList("""
+                    SELECT id, code, name, code_path FROM doc_class
+                     WHERE entity_code = ? AND code_path = ? AND deleted = false
+                     ORDER BY id LIMIT 1
+                    """, OBJECT_TYPE, path);
+            if (!found.isEmpty()) {
+                return buildResolve(code, "ISSUE_PATH", exists, found.get(0));
+            }
+        }
+
+        // ②/③ 11 位数字码：6 位小类 + 5 位流水
+        if (code.matches("^\\d{11}$")) {
+            String prefix = code.substring(0, 6);
+            List<Map<String, Object>> classes = jdbcTemplate.queryForList("""
+                    SELECT id, code, name, code_path FROM doc_class
+                     WHERE entity_code = ? AND deleted = false AND code_path IS NOT NULL
+                    """, OBJECT_TYPE);
+            for (Map<String, Object> row : classes) {
+                String classPath = String.valueOf(row.get("code_path"));
+                StringBuilder value = new StringBuilder();
+                for (String part : classPath.split("/")) {
+                    if (part.isEmpty() || "*".equals(part) || part.equals(String.valueOf(row.get("code")))) {
+                        continue;
+                    }
+                    if (value.length() == 0 && part.matches("^Kind_.*")) {
+                        continue;
+                    }
+                    if (part.matches("[A-Za-z0-9]+")) {
+                        value.append(part);
+                    }
+                }
+                if (prefix.equals(value.toString())) {
+                    return buildResolve(code, "CLASS_PATH_PREFIX", exists, row);
+                }
+            }
+            List<Map<String, Object>> byClassCode = jdbcTemplate.queryForList("""
+                    SELECT id, code, name, code_path FROM doc_class
+                     WHERE entity_code = ? AND code = ? AND deleted = false
+                     ORDER BY id LIMIT 1
+                    """, OBJECT_TYPE, prefix);
+            if (!byClassCode.isEmpty()) {
+                return buildResolve(code, "CLASS_CODE", exists, byClassCode.get(0));
+            }
+        }
+        return new ItemDtos.CodeResolve(code, "NOT_FOUND", exists, null, null, null, null, List.of());
+    }
+
+    private ItemDtos.CodeResolve buildResolve(String code, String source, boolean exists,
+                                              Map<String, Object> row) {
+        Long classId = ((Number) row.get("id")).longValue();
+        List<ItemDtos.AttrDefault> attrs = classService.attrs(classId).stream()
+                .map(attr -> new ItemDtos.AttrDefault(attr.code(), attr.name(), attr.valueType(),
+                        attr.required(), attr.defaultValue()))
+                .toList();
+        return new ItemDtos.CodeResolve(code, source, exists, classId,
+                row.get("code") == null ? null : String.valueOf(row.get("code")),
+                row.get("name") == null ? null : String.valueOf(row.get("name")),
+                row.get("code_path") == null ? null : String.valueOf(row.get("code_path")), attrs);
+    }
+
     /** 项目下拉选项（新建物料绑定项目用，V86）。 */
     /** CODE-05：编码是否已被未删除的零部件占用。 */
     public boolean codeExists(String code) {

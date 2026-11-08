@@ -77,6 +77,14 @@ public class ItemController {
         return Result.ok(itemService.codeExists(code));
     }
 
+    /** CODE-07：由编码反查分类与属性默认值（蓝本保存物料时的真实方向）。 */
+    @Operation(summary = "编码反查分类与属性默认值")
+    @GetMapping("/code-resolve")
+    @PreAuthorize("hasAuthority('pse.item.read')")
+    public Result<ItemDtos.CodeResolve> codeResolve(@RequestParam String code) {
+        return Result.ok(itemService.resolveCode(code));
+    }
+
     @Operation(summary = "项目下拉选项（绑定物料用）")
     @GetMapping("/project-options")
     @PreAuthorize("hasAuthority('pse.item.read')")

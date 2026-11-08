@@ -91,6 +91,16 @@ public final class ItemDtos {
     public record CodePreview(String code, String ruleCode, String ruleName, String source) {
     }
 
+    /** CODE-07：由已有编码反查分类与属性默认值（蓝本 GetPathByCode → GetClassByPathName → GetAttributeDefaultData）。 */
+    public record CodeResolve(String code, String source, boolean codeExists,
+                              Long classId, String classCode, String className, String codePath,
+                              java.util.List<AttrDefault> attrs) {
+    }
+
+    /** 分类属性的默认值（用于新建表单回填）。 */
+    public record AttrDefault(String code, String name, String valueType, Boolean required, String defaultValue) {
+    }
+
     /** 使用状态迁移（旧系统 STATEID：Using / StopUsing / GiveUp）。 */
     public record UsingStateReq(@NotBlank(message = "使用状态不能为空") String usingState) {
     }

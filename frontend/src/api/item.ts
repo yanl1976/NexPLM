@@ -161,6 +161,24 @@ export interface CodePreview {
   source: string
 }
 
+/** CODE-07：由已有编码反查分类与属性默认值。 */
+export interface CodeResolve {
+  code: string
+  source: string
+  codeExists: boolean
+  classId?: string | null
+  classCode?: string | null
+  className?: string | null
+  codePath?: string | null
+  attrs: Array<{
+    code: string
+    name: string
+    valueType: string
+    required?: boolean | null
+    defaultValue?: string | null
+  }>
+}
+
 /** 列表查询条件（对齐旧系统 PSEITEM 的 8 项 + 材料/规格 + 分类维度）。 */
 export interface ItemQuery {
   page?: number
@@ -779,6 +797,10 @@ export const itemApi = {
   /** 编码预览（不消耗流水）：选分类后显示将生成的编码。 */
   previewCode(params: { classId?: string; itemType?: string; dwgNo?: string }): Promise<CodePreview> {
     return http.get<CodePreview>('/items/code-preview', params)
+  },
+  /** CODE-07：由编码反查分类与属性默认值。 */
+  codeResolve(code: string): Promise<CodeResolve> {
+    return http.get<CodeResolve>('/items/code-resolve', { code })
   },
   create(req: ItemSaveReq): Promise<ItemDetail> {
     return http.post<ItemDetail>('/items', req)

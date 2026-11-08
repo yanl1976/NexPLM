@@ -20,6 +20,18 @@
             </div>
           </el-form-item>
         </el-col>
+        <el-col v-if="!editingId" :span="24">
+          <el-form-item label="沿用旧码">
+            <el-input
+              v-model="legacyCode"
+              placeholder="输入已有编码，按蓝本规则反查分类与属性默认值"
+              @keyup.enter="onResolveLegacyCode"
+            >
+              <template #append><el-button @click="onResolveLegacyCode">反查</el-button></template>
+            </el-input>
+            <div v-if="resolveHint" class="code-preview">{{ resolveHint }}</div>
+          </el-form-item>
+        </el-col>
         <el-col :span="12">
           <el-form-item label="名称" required>
             <el-input v-model="form.name" />
@@ -148,6 +160,7 @@ import {
   itemClassApi,
   ITEM_TYPE_LABEL,
   type CodePreview,
+  type CodeResolve,
   type ItemClassNode,
   type ItemDesignAttr,
   type ItemSaveReq
@@ -236,9 +249,12 @@ const extTextForm = reactive<Record<string, string>>({})
 const extBoolForm = reactive<Record<string, boolean | ''>>({})
 const extOriginal = ref<Record<string, unknown>>({})
 const saving = ref(false)
+const legacyCode = ref('')
+const resolveResult = ref<CodeResolve | null>(null)
+const resolveHint = ref('')
 
 const displayCode = computed(() =>
-  props.editingId ? form.code ?? '' : codePreview.value?.code ?? ''
+  props.editingId ? form.code ?? '' : legacyCode.value.trim() || codePreview.value?.code || ''
 )
 
 function toSelectable(nodes: ItemClassNode[]): SelectableClass[] {
@@ -317,6 +333,9 @@ watch(
       return
     }
     await loadBasics()
+    legacyCode.value = ''
+    resolveResult.value = null
+    resolveHint.value = ''
     if (props.editingId) {
       const detail = await itemApi.detail(props.editingId)
       form.code = detail.code ?? ''
@@ -362,6 +381,49 @@ watch(
   }
 )
 
+/** CODE-07：按蓝本方向「编码 → 反查分类 → 带出属性默认值」。 */
+async function onResolveLegacyCode(): Promise<void> {
+  const code = legacyCode.value.trim()
+  resolveResult.value = null
+  resolveHint.value = ''
+  if (!code) {
+    return
+  }
+  try {
+    const result = await itemApi.codeResolve(code)
+    resolveResult.value = result
+    if (!result.classId) {
+      resolveHint.value = '未匹配到分类（可手动选择分类）'
+      return
+    }
+    form.classId = String(result.classId)
+    const defaults: Record<string, unknown> = {}
+    for (const attr of result.attrs ?? []) {
+      if (attr.defaultValue != null && attr.defaultValue !== '') {
+        defaults[attr.code] = attr.defaultValue
+      }
+    }
+    for (const [key, value] of Object.entries(defaults)) {
+      const field = customFields.value.find((item) => item.code === key)
+      if (!field) {
+        continue
+      }
+      if (isBoolField(field)) {
+        extBoolForm[key] = value === true || value === 'true' || value === '是'
+      } else {
+        extTextForm[key] = String(value)
+      }
+    }
+    resolveHint.value = `已反查分类 ${result.classCode ?? ''} ${result.className ?? ''}`
+      + `（${result.source}），带出 ${Object.keys(defaults).length} 项属性默认值`
+    if (result.codeExists) {
+      ElMessage.warning('该编码已存在，不能重复创建')
+    }
+  } catch (error) {
+    resolveHint.value = '反查失败：' + (error as Error).message
+  }
+}
+
 function close(value = false): void {
   emit('update:modelValue', value)
 }
@@ -375,11 +437,15 @@ async function submit(): Promise<void> {
     ElMessage.warning('请选择项目')
     return
   }
+  if (!props.editingId && legacyCode.value.trim() && resolveResult.value?.codeExists) {
+    ElMessage.warning('该编码已存在，请更换或清空「沿用旧码」')
+    return
+  }
   saving.value = true
   try {
     const payload: ItemSaveReq = {
       ...form,
-      code: undefined,
+      code: props.editingId ? undefined : legacyCode.value.trim() || undefined,
       ext: props.editingId
         ? buildErpPatch(customFields.value, extTextForm, extBoolForm, extOriginal.value)
         : buildErpValues(customFields.value, extTextForm, extBoolForm)
