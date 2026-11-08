@@ -26,7 +26,18 @@
         </el-select>
         <el-button size="small" :icon="Refresh" @click="reload">刷新</el-button>
         <el-button size="small" disabled>发送</el-button>
-        <el-button size="small" type="primary" @click="openCreate">新建</el-button>
+        <el-dropdown size="small" trigger="click" @command="onCreateCommand">
+          <el-button size="small" type="primary">
+            新建<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="item">零部件</el-dropdown-item>
+              <el-dropdown-item command="doc" disabled>文档（待接入）</el-dropdown-item>
+              <el-dropdown-item command="purchase" disabled>请购单（待接入）</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button size="small" :disabled="!selectedRows.length" @click="openEdit">编辑</el-button>
         <el-button size="small" :disabled="!selectedRows.length" @click="onCheckout">检出</el-button>
         <el-button size="small" :disabled="!selectedRows.length" @click="onCheckin">取消检出</el-button>
@@ -229,7 +240,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, Refresh } from '@element-plus/icons-vue'
 import { wsConsoleApi, type WsFolder, type WsObject } from '@/api/wsConsole'
 import {
   bomApi,
@@ -437,6 +448,13 @@ async function refreshPreview(): Promise<void> {
     })
   } catch {
     createPreview.value = null
+  }
+}
+
+/** 新建下拉：以后每类对象各自挂一个公共组件（请购单/文档…） */
+function onCreateCommand(command: string): void {
+  if (command === 'item') {
+    openCreate()
   }
 }
 
