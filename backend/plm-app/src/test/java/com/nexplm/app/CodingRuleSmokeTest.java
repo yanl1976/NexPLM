@@ -225,6 +225,55 @@ class CodingRuleSmokeTest {
         assertThat(first.path("issuedByName").asText()).isNotBlank();
     }
 
+    /**
+     * 蓝本编码体系（`EXP-20261108-43`）：**编码 = 分类码 + 该分类内独立递增的流水**。
+     *
+     * <p>蓝本实测 `CODES=10010100001`、`ORDINAL=00001`，且每个分类组都从 xxxxxx00001 起。
+     * 断言：同分类连续两个 → 00001/00002；另一个分类 → 各自从 00001 起；无分类回退 `PN-`。</p>
+     */
+    @Test
+    void itemCodeUsesClassPrefixAndPerClassSequence() throws Exception {
+        String admin = login();
+        long classA = 94_000_000_001L;
+        long classB = 94_000_000_002L;
+        jdbcTemplate.update("DELETE FROM doc_class WHERE id IN (?, ?)", classA, classB);
+        jdbcTemplate.update("""
+                        INSERT INTO doc_class (id, parent_id, entity_code, code, name, path, sort, status,
+                                               deleted, version, created_at, updated_at)
+                        VALUES (?, NULL, 'PdmItem', 'T9101', '测试分类A', '/T9101', 0, 'ACTIVE', false, 0, now(), now())
+                        """, classA);
+        jdbcTemplate.update("""
+                        INSERT INTO doc_class (id, parent_id, entity_code, code, name, path, sort, status,
+                                               deleted, version, created_at, updated_at)
+                        VALUES (?, NULL, 'PdmItem', 'T9102', '测试分类B', '/T9102', 0, 'ACTIVE', false, 0, now(), now())
+                        """, classB);
+
+        try {
+            String a1 = call(post("/api/v1/items"), admin, json(Map.of(
+                    "name", "分类编码零件A1", "itemType", "PART", "sourceType", "MAKE",
+                    "classId", String.valueOf(classA)))).path("code").asText();
+            String a2 = call(post("/api/v1/items"), admin, json(Map.of(
+                    "name", "分类编码零件A2", "itemType", "PART", "sourceType", "MAKE",
+                    "classId", String.valueOf(classA)))).path("code").asText();
+            String b1 = call(post("/api/v1/items"), admin, json(Map.of(
+                    "name", "分类编码零件B1", "itemType", "PART", "sourceType", "MAKE",
+                    "classId", String.valueOf(classB)))).path("code").asText();
+            String noClass = call(post("/api/v1/items"), admin, json(Map.of(
+                    "name", "无分类零件", "itemType", "PART", "sourceType", "MAKE"))).path("code").asText();
+
+            assertThat(a1).as("分类 A 第一个").isEqualTo("T910100001");
+            assertThat(a2).as("分类 A 第二个（同分类独立流水）").isEqualTo("T910100002");
+            assertThat(b1).as("分类 B 从 00001 起").isEqualTo("T910200001");
+            assertThat(noClass).as("无分类回退通用规则").startsWith("PN-");
+        } finally {
+            jdbcTemplate.update("DELETE FROM item_master WHERE class_id IN (?, ?)", classA, classB);
+            jdbcTemplate.update("DELETE FROM plm_object WHERE object_type = 'PdmItem'"
+                    + " AND id NOT IN (SELECT object_id FROM item_master)");
+            jdbcTemplate.update("DELETE FROM doc_class WHERE id IN (?, ?)", classA, classB);
+            jdbcTemplate.update("DELETE FROM code_sequence WHERE rule_code = 'PdmItemByClass'");
+        }
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {
