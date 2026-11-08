@@ -108,6 +108,23 @@ public class WorkspaceConsoleController {
     public record AddObjectReq(Long objectId) {
     }
 
+    /** 从文件夹移除对象：只删映射，不删对象本身。 */
+    @Operation(summary = "从文件夹移除对象（只删映射，不删对象）")
+    @DeleteMapping("/objects")
+    @PreAuthorize("hasAuthority('pse.item.write')")
+    public Result<Void> removeObject(@RequestParam String space,
+                                     @RequestParam Long folderId,
+                                     @RequestParam Long objectId) {
+        if ("PROJECT".equalsIgnoreCase(space)) {
+            jdbcTemplate.update("DELETE FROM prj_project_content WHERE project_folder_id = ? AND object_id = ?",
+                    folderId, objectId);
+        } else {
+            jdbcTemplate.update("DELETE FROM ws_folder_content WHERE folder_id = ? AND object_id = ?",
+                    folderId, objectId);
+        }
+        return Result.ok();
+    }
+
     /** 文件夹内容（对象列表，带项目代号 / 规格型号 / 检出信息）。 */
     @Operation(summary = "文件夹内容（对象列表）")
     @GetMapping("/objects")

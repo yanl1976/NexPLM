@@ -37,6 +37,8 @@ export const wsConsoleApi = {
     http.post<void>(`/ws-console/objects?space=${encodeURIComponent(space)}&folderId=${encodeURIComponent(folderId)}`, {
       objectId
     }),
+  removeObject: (space: string, folderId: string, objectId: string) =>
+    http.delete<void>(`/ws-console/objects?space=${encodeURIComponent(space)}&folderId=${encodeURIComponent(folderId)}&objectId=${encodeURIComponent(objectId)}`),
   checkout: (id: string) => http.post<void>(`/ws-console/objects/${id}/checkout`, {}),
   checkin: (id: string) => http.delete<void>(`/ws-console/objects/${id}/checkout`)
 }

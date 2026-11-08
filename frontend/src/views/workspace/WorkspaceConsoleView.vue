@@ -91,22 +91,22 @@
             </el-dropdown>
             <el-button size="small" :disabled="!selectedRows.length" @click="openEdit">编辑</el-button>
             <el-button size="small" @click="openAdd">添加</el-button>
-            <el-button size="small" disabled>删除</el-button>
+            <el-button size="small" :disabled="!selectedRows.length" @click="onRemove">删除</el-button>
           </div>
           <el-divider direction="vertical" />
           <div class="tool-group">
             <el-button size="small" :disabled="!selectedRows.length" @click="onCheckout">检出</el-button>
             <el-button size="small" :disabled="!selectedRows.length" @click="onCheckin">取消检出</el-button>
             <el-button size="small" :disabled="!selectedRows.length" @click="openBom">BOM 管理</el-button>
-            <el-button size="small" disabled>产品完整性检查</el-button>
+            <el-button size="small" :disabled="!selectedRows.length" @click="onValidate">产品完整性检查</el-button>
           </div>
           <el-divider direction="vertical" />
           <div class="tool-group">
             <el-button size="small" disabled>发起流程</el-button>
-            <el-button size="small" disabled>修订</el-button>
+            <el-button size="small" :disabled="!selectedRows.length" @click="onRevise">修订</el-button>
             <el-button size="small" disabled>权限更改</el-button>
             <el-button size="small" disabled>ERP 集成</el-button>
-            <el-button size="small" disabled>下载</el-button>
+            <el-button size="small" @click="exportCsv">下载</el-button>
           </div>
         </div>
 
@@ -214,6 +214,26 @@
       </template>
     </el-dialog>
 
+    <!-- 产品完整性检查结果 -->
+    <el-dialog v-model="validateVisible" title="产品完整性检查" width="680px">
+      <el-alert
+        :title="validateIssues.length ? `发现 ${validateIssues.length} 项问题` : '结构完整，未发现问题'"
+        :type="validateIssues.length ? 'warning' : 'success'"
+        :closable="false"
+        show-icon
+      />
+      <el-table v-loading="validateLoading" :data="validateIssues" size="small" border class="validate-table">
+        <el-table-column label="问题类型" width="130">
+          <template #default="{ row }">{{ BOM_ISSUE_LABEL[row.type] || row.type }}</template>
+        </el-table-column>
+        <el-table-column prop="message" label="说明" min-width="300" />
+        <template #empty><span class="hint">无问题</span></template>
+      </el-table>
+      <template #footer>
+        <el-button @click="validateVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- BOM：只读树，不跳页 -->
     <el-dialog v-model="bomVisible" title="BOM 结构" width="720px">
       <el-table v-loading="bomLoading" :data="bomRows" size="small" border max-height="420">
@@ -231,7 +251,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, Box, Collection, Document, Folder, FolderOpened, HomeFilled, Refresh, Search, Tickets, User } from '@element-plus/icons-vue'
 import { wsConsoleApi, type WsFolder, type WsObject } from '@/api/wsConsole'
 import ItemFormDialog from '@/components/business/ItemFormDialog.vue'
@@ -239,6 +259,8 @@ import {
   bomApi,
   itemApi,
   itemClassApi,
+  BOM_ISSUE_LABEL,
+  type BomIssue,
   type BomNode,
   type CodePreview,
   type ItemClassNode,
@@ -522,6 +544,100 @@ async function submitAdd(): Promise<void> {
   }
 }
 
+// ---------------- 移除 / 完整性检查 / 修订 / 导出 ----------------
+function currentRow(): WsObject | null {
+  return selectedRows.value[0] ?? null
+}
+
+async function onRemove(): Promise<void> {
+  const row = currentRow()
+  const folder = currentFolder.value
+  if (!row || !folder?.folderId) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定从「${pathLabel.value}」移除 ${row.code} ${row.name}？对象本身不会被删除。`,
+      '移除对象',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    await wsConsoleApi.removeObject(folder.space, folder.folderId, row.id)
+    ElMessage.success('已移除')
+    await refreshObjects()
+  } catch (error) {
+    ElMessage.error((error as Error).message || '移除失败')
+  }
+}
+
+const validateVisible = ref(false)
+const validateLoading = ref(false)
+const validateIssues = ref<BomIssue[]>([])
+
+async function onValidate(): Promise<void> {
+  const row = currentRow()
+  if (!row) {
+    return
+  }
+  validateVisible.value = true
+  validateLoading.value = true
+  validateIssues.value = []
+  try {
+    const result = await bomApi.validate(row.id, 'DESIGN')
+    validateIssues.value = result.issues ?? []
+  } catch (error) {
+    ElMessage.error((error as Error).message || '完整性检查失败')
+  } finally {
+    validateLoading.value = false
+  }
+}
+
+async function onRevise(): Promise<void> {
+  const row = currentRow()
+  if (!row) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确定对 ${row.code} ${row.name} 生成新版本？`, '修订', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    const detail = await itemApi.revise(row.id)
+    ElMessage.success(`已生成 ${detail.revisionLabel ?? '新版本'}`)
+    await refreshObjects()
+  } catch (error) {
+    ElMessage.error((error as Error).message || '修订失败')
+  }
+}
+
+function exportCsv(): void {
+  const header = ['对象类型', '编号', '名称', '项目代号', '版本', '使用状态', '规格型号', '物料类型', '检出人', '检出时间']
+  const esc = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`
+  const rows = searchedObjects.value.map((row) => [
+    TYPE_LABEL[row.object_type] || row.object_type,
+    row.code,
+    row.name,
+    row.project_code,
+    `A.${String(row.iteration ?? 1).padStart(3, '0')}`,
+    row.using_state,
+    row.specification,
+    row.item_type,
+    row.checkout_user,
+    row.checked_out_at
+  ])
+  const csv = [header.map(esc).join(','), ...rows.map((row) => row.map(esc).join(','))].join('\r\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = `workspace-${Date.now()}.csv`
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
 // ---------------- BOM（只读弹窗） ----------------
 const bomVisible = ref(false)
 const bomLoading = ref(false)
@@ -720,6 +836,10 @@ onMounted(loadTree)
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.validate-table {
+  margin-top: 10px;
 }
 
 .type-cell .el-icon {
