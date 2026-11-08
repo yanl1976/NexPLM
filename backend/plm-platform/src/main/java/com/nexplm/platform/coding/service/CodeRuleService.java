@@ -93,6 +93,48 @@ public class CodeRuleService {
      *
      * @param objectType 对象类型（如 {@code PdmItem}）；空表示不限
      */
+    /** 编码种类行（对应蓝本 {@code CODEKIND}）。 */
+    public record KindRow(String code, String name, String ruleCode, String legacyId,
+                          long valueCount, long classCount) {
+    }
+
+    /** 码值行（对应蓝本 {@code CODEVALUE}）；{@code valuePath} 形如 {@code 1001} 或 {@code 1001/02}。 */
+    public record ValueRow(String valuePath, String codeValue, String name, String segment, int sort) {
+    }
+
+    /** 编码种类列表（含码值数与已绑定分类数）。 */
+    public List<KindRow> listKinds() {
+        return jdbcTemplate.query("""
+                SELECT k.code, k.name, k.rule_code, k.legacy_id,
+                       (SELECT COUNT(1) FROM code_segment_value v
+                         WHERE v.kind_code = k.code AND v.deleted = false) AS value_count,
+                       (SELECT COUNT(1) FROM doc_class c
+                         WHERE c.entity_code = 'PdmItem' AND c.deleted = false
+                           AND c.code_path LIKE k.code || '/%') AS class_count
+                  FROM code_kind k
+                 ORDER BY k.sort, k.code
+                """,
+                (rs, rowNum) -> new KindRow(rs.getString("code"), rs.getString("name"),
+                        rs.getString("rule_code"), rs.getString("legacy_id"),
+                        rs.getLong("value_count"), rs.getLong("class_count")));
+    }
+
+    /** 某个种类下的全部码值（扁平，前端按 {@code valuePath} 拼成树）。 */
+    public List<ValueRow> listValues(String kindCode) {
+        if (kindCode == null || kindCode.isBlank()) {
+            return List.of();
+        }
+        return jdbcTemplate.query("""
+                SELECT value_path, code_value, name, segment, sort
+                  FROM code_segment_value
+                 WHERE kind_code = ? AND deleted = false
+                 ORDER BY sort, code_value
+                """,
+                (rs, rowNum) -> new ValueRow(rs.getString("value_path"), rs.getString("code_value"),
+                        rs.getString("name"), rs.getString("segment"), rs.getInt("sort")),
+                kindCode.trim());
+    }
+
     /** 发放流水行（{@code code_issue} + 操作人姓名）。 */
     public record IssueRow(Long id, String ruleCode, String code, String objectType,
                            Long issuedBy, String issuedByName, OffsetDateTime issuedAt) {

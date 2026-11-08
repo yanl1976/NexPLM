@@ -317,6 +317,52 @@ class CodingRuleSmokeTest {
         }
     }
 
+    /** 三层模型的读取接口：编码种类列表 + 种类下的码值（供编码管理页三页签使用）。 */
+    @Test
+    void kindAndValueApisExposeThreeLayerModel() throws Exception {
+        String admin = login();
+        jdbcTemplate.update("DELETE FROM code_segment_value WHERE kind_code = 'Kind_test02'");
+        jdbcTemplate.update("DELETE FROM code_kind WHERE code = 'Kind_test02'");
+        jdbcTemplate.update("DELETE FROM code_rule WHERE code = 'Kind_test02'");
+        jdbcTemplate.update("""
+                        INSERT INTO code_rule (id, code, name, segments_json, scope_json, reset_policy, status,
+                                               version_no, created_at, updated_at, current_no, object_type, remark)
+                        VALUES (?, 'Kind_test02', '测试种类2',
+                                '[{"type":"VALUE"},{"type":"SEQ","width":4,"radix":"DECIMAL"}]'::jsonb,
+                                '{}'::jsonb, 'NEVER', 'ACTIVE', 1, now(), now(), 0, 'PdmItem', 'EXP-20261108-44')
+                        """, IdWorker.getId());
+        jdbcTemplate.update("""
+                        INSERT INTO code_kind (code, name, legacy_id, rule_code, sort)
+                        VALUES ('Kind_test02', '测试种类2', 'LEGACY_TEST', 'Kind_test02', 9)
+                        """);
+        jdbcTemplate.update("""
+                        INSERT INTO code_segment_value (id, kind_code, segment, value_path, code_value, name, sort)
+                        VALUES (?, 'Kind_test02', '大类', '2001', '2001', '测试大类', 1)
+                        """, IdWorker.getId());
+        try {
+            JsonNode kinds = call(get("/api/v1/system/coding/kinds"), admin, null);
+            JsonNode matched = null;
+            for (JsonNode item : kinds) {
+                if ("Kind_test02".equals(item.path("code").asText())) {
+                    matched = item;
+                }
+            }
+            assertThat(matched).as("种类列表应包含刚插入的种类").isNotNull();
+            assertThat(matched.path("name").asText()).isEqualTo("测试种类2");
+            assertThat(matched.path("valueCount").asLong()).isEqualTo(1);
+
+            JsonNode values = call(get("/api/v1/system/coding/kinds/Kind_test02/values"), admin, null);
+            assertThat(values).hasSize(1);
+            assertThat(values.get(0).path("valuePath").asText()).isEqualTo("2001");
+            assertThat(values.get(0).path("codeValue").asText()).isEqualTo("2001");
+            assertThat(values.get(0).path("name").asText()).isEqualTo("测试大类");
+        } finally {
+            jdbcTemplate.update("DELETE FROM code_segment_value WHERE kind_code = 'Kind_test02'");
+            jdbcTemplate.update("DELETE FROM code_kind WHERE code = 'Kind_test02'");
+            jdbcTemplate.update("DELETE FROM code_rule WHERE code = 'Kind_test02'");
+        }
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {

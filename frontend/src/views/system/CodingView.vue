@@ -8,7 +8,8 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Delete } from '@element-plus/icons-vue'
 import { codingApi } from '@/api/coding'
-import type { CodeIssueRow, CodeRule, CodeSegment } from '@/api/coding'
+import type { CodeIssueRow, CodeKindRow, CodeRule, CodeSegment, CodeValueRow } from '@/api/coding'
+import { itemClassApi, type ItemClassNode } from '@/api/item'
 
 const loading = ref(false)
 const rules = ref<CodeRule[]>([])
@@ -219,12 +220,94 @@ function onIssuePageChange(page: number): void {
   loadIssues()
 }
 
-onMounted(load)
+// ---------------- 三层模型：编码种类 / 码值树 / 分类绑定（EXP-20261108-44） ----------------
+const activeTab = ref('rules')
+const kinds = ref<CodeKindRow[]>([])
+const kindsLoading = ref(false)
+const currentKind = ref<CodeKindRow | null>(null)
+const values = ref<CodeValueRow[]>([])
+const valuesLoading = ref(false)
+const classTree = ref<ItemClassNode[]>([])
+const classLoading = ref(false)
+
+interface ValueTreeNode {
+  path: string
+  label: string
+  children: ValueTreeNode[]
+}
+
+/** 码值扁平列表 → 树：valuePath 已含全部祖先（1001、1001/02），按最后一个 / 找父。 */
+const valueTree = computed<ValueTreeNode[]>(() => {
+  const nodes = values.value.map((row) => ({
+    path: row.valuePath,
+    label: `${row.codeValue}  ${row.name ?? ''}`.trim(),
+    children: [] as ValueTreeNode[]
+  }))
+  const byPath = new Map(nodes.map((node) => [node.path, node]))
+  const roots: ValueTreeNode[] = []
+  for (const node of nodes) {
+    const index = node.path.lastIndexOf('/')
+    const parent = index > 0 ? byPath.get(node.path.slice(0, index)) : undefined
+    if (parent) {
+      parent.children.push(node)
+    } else {
+      roots.push(node)
+    }
+  }
+  return roots
+})
+
+async function loadKinds(): Promise<void> {
+  kindsLoading.value = true
+  try {
+    kinds.value = await codingApi.kinds()
+  } catch (error) {
+    ElMessage.error((error as Error).message || '加载编码种类失败')
+  } finally {
+    kindsLoading.value = false
+  }
+}
+
+function openKindValues(row: CodeKindRow): void {
+  currentKind.value = row
+  activeTab.value = 'values'
+  loadValues(row.code)
+}
+
+async function loadValues(code: string): Promise<void> {
+  valuesLoading.value = true
+  try {
+    values.value = await codingApi.kindValues(code)
+  } catch (error) {
+    ElMessage.error((error as Error).message || '加载码值失败')
+  } finally {
+    valuesLoading.value = false
+  }
+}
+
+async function loadClasses(): Promise<void> {
+  classLoading.value = true
+  try {
+    classTree.value = await itemClassApi.tree()
+  } catch (error) {
+    ElMessage.error((error as Error).message || '加载分类树失败')
+  } finally {
+    classLoading.value = false
+  }
+}
+
+onMounted(() => {
+  load()
+  loadKinds()
+  loadClasses()
+})
 </script>
 
 <template>
   <div class="coding-view">
-    <el-card shadow="never">
+    <el-tabs v-model="activeTab" class="coding-tabs">
+      <el-tab-pane label="编码规则" name="rules">
+        <el-card shadow="never">
       <template #header>
         <div class="card-header">
           <div>
@@ -270,7 +353,95 @@ onMounted(load)
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
+        </el-card>
+      </el-tab-pane>
+
+      <el-tab-pane label="编码种类" name="kinds">
+        <el-card shadow="never">
+          <template #header>
+            <div class="card-header">
+              <div>
+                <span class="title">编码种类</span>
+                <span class="hint">对应蓝本 CODEKIND：每个种类一条码段规则，分类通过「关联编码」绑定</span>
+              </div>
+              <el-button :icon="Refresh" @click="loadKinds">刷新</el-button>
+            </div>
+          </template>
+          <el-table v-loading="kindsLoading" :data="kinds" size="small" border>
+            <el-table-column prop="name" label="种类名称" min-width="200" />
+            <el-table-column prop="code" label="种类编码" width="250" />
+            <el-table-column prop="ruleCode" label="编码规则" width="250" />
+            <el-table-column prop="valueCount" label="码值数" width="90" align="right" />
+            <el-table-column prop="classCount" label="已绑定分类" width="110" align="right" />
+            <el-table-column label="操作" width="110" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openKindValues(row)">查看码值</el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <span class="hint">尚无编码种类（先执行 060 迁移或在编码管理里维护）</span>
+            </template>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
+
+      <el-tab-pane label="码值" name="values">
+        <el-card shadow="never">
+          <template #header>
+            <div class="card-header">
+              <div>
+                <span class="title">码值树</span>
+                <span class="hint">
+                  {{ currentKind ? `种类：${currentKind.name}（${currentKind.code}）` : '请先在「编码种类」里点「查看码值」' }}
+                </span>
+              </div>
+              <el-button v-if="currentKind" :icon="Refresh" @click="loadValues(currentKind.code)">刷新</el-button>
+            </div>
+          </template>
+          <el-empty v-if="!currentKind" description="在「编码种类」页点「查看码值」" />
+          <el-tree
+            v-else
+            v-loading="valuesLoading"
+            :data="valueTree"
+            node-key="path"
+            :props="{ label: 'label', children: 'children' }"
+            default-expand-all
+            class="value-tree"
+          />
+        </el-card>
+      </el-tab-pane>
+
+      <el-tab-pane label="分类绑定" name="classes">
+        <el-card shadow="never">
+          <template #header>
+            <div class="card-header">
+              <div>
+                <span class="title">分类绑定</span>
+                <span class="hint">蓝本「关联编码」= 种类/码值1/码值2/*；未绑定的分类不自动取号（人工/图号）</span>
+              </div>
+              <el-button :icon="Refresh" @click="loadClasses">刷新</el-button>
+            </div>
+          </template>
+          <el-tree
+            v-loading="classLoading"
+            :data="classTree"
+            node-key="id"
+            :props="{ label: 'name', children: 'children' }"
+            default-expand-all
+            class="class-tree"
+          >
+            <template #default="{ data }">
+              <span class="class-row">
+                <span class="class-code">{{ data.code }}</span>
+                <span class="class-name">{{ data.name }}</span>
+                <el-tag v-if="data.codePath" size="small" type="success" effect="plain">{{ data.codePath }}</el-tag>
+                <el-tag v-else size="small" type="info" effect="plain">未绑定</el-tag>
+              </span>
+            </template>
+          </el-tree>
+        </el-card>
+      </el-tab-pane>
+    </el-tabs>
 
     <!-- 发放流水：蓝本 CODERES 的等价物，回答"这个码是什么时候发给谁的" -->
     <el-drawer
@@ -377,6 +548,33 @@ onMounted(load)
   flex-direction: column;
   gap: 12px;
   padding: 4px;
+}
+
+/* 三层模型（种类 / 码值 / 分类绑定） */
+.coding-tabs :deep(.el-tabs__content) {
+  padding-top: 4px;
+}
+
+.value-tree,
+.class-tree {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.class-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.class-code {
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.class-name {
+  font-size: 13px;
 }
 
 /* 发放流水抽屉：搜索行 + 分页行 */

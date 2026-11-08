@@ -15,10 +15,14 @@ public final class DocClassDtos {
     private DocClassDtos() {
     }
 
-    /** 分类树节点；docCount 为该分类（不含子分类）下的文档数。 */
+    /**
+     * 分类树节点；docCount 为该分类（不含子分类）下的文档数。
+     * <p>{@code codePath} 是蓝本「关联编码」的等价物（`EXP-20261108-44`）：
+     * {@code 种类规则/码值1/码值2/*}，为空表示该分类不自动取号。</p>
+     */
     public record ClassNode(Long id, Long parentId, String code, String name, String path,
                             Integer sort, String status, String remark, String codeRuleCode,
-                            Long docCount, List<ClassNode> children) {
+                            String codePath, Long docCount, List<ClassNode> children) {
     }
 
     public record ClassSaveReq(

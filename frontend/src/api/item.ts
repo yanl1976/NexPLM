@@ -184,6 +184,8 @@ export interface ItemClassNode {
   remark?: string | null
   /** 关联编码规则 code（对齐蓝本分类的「关联编码」）；为空表示不参与按编码自动归类。 */
   codeRuleCode?: string | null
+  /** 编码路径 `种类规则/码值1/码值2/*`（蓝本 CLASSCODEPATH）；为空表示不自动取号。 */
+  codePath?: string | null
   /** 该分类下（不含子分类）的对象数。 */
   docCount: number
   children?: ItemClassNode[]

@@ -50,6 +50,20 @@ public class CodeRuleController {
         return Result.ok(codeRuleService.pageIssues(ruleCode, objectType, code, page, size));
     }
 
+    @Operation(summary = "编码种类列表（对应蓝本 CODEKIND；含码值数与已绑定分类数）")
+    @GetMapping("/kinds")
+    @PreAuthorize("hasAuthority('system.coding.read')")
+    public Result<List<CodeRuleService.KindRow>> kinds() {
+        return Result.ok(codeRuleService.listKinds());
+    }
+
+    @Operation(summary = "某个编码种类下的码值（扁平返回，前端按 valuePath 拼成码值树）")
+    @GetMapping("/kinds/{code}/values")
+    @PreAuthorize("hasAuthority('system.coding.read')")
+    public Result<List<CodeRuleService.ValueRow>> kindValues(@PathVariable String code) {
+        return Result.ok(codeRuleService.listValues(code));
+    }
+
     @Operation(summary = "编码规则列表（含每条规则的下一个编码预览）")
     @GetMapping("/rules")
     @PreAuthorize("hasAuthority('system.coding.read')")

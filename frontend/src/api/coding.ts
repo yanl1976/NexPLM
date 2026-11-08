@@ -40,8 +40,31 @@ export interface CodeIssueRow {
   issuedAt: string
 }
 
+/** 编码种类（对应蓝本 CODEKIND）：每个种类一条码段规则，分类通过 codePath 绑定。 */
+export interface CodeKindRow {
+  code: string
+  name: string
+  ruleCode: string
+  legacyId?: string | null
+  valueCount: number
+  classCount: number
+}
+
+/** 码值（对应蓝本 CODEVALUE）；valuePath 形如 `1001` 或 `1001/02`，前端据此拼树。 */
+export interface CodeValueRow {
+  valuePath: string
+  codeValue: string
+  name?: string | null
+  segment?: string | null
+  sort: number
+}
+
 export const codingApi = {
   rules: () => http.get<CodeRule[]>('/system/coding/rules'),
+  /** 编码种类列表（含码值数、已绑定分类数）。 */
+  kinds: () => http.get<CodeKindRow[]>('/system/coding/kinds'),
+  /** 某个种类下的码值（扁平）。 */
+  kindValues: (code: string) => http.get<CodeValueRow[]>(`/system/coding/kinds/${code}/values`),
   /** 发放流水分页（按规则/类型/编码模糊过滤，倒序）。 */
   issues: (params: {
     ruleCode?: string

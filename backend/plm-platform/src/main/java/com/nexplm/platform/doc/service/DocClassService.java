@@ -80,7 +80,7 @@ public class DocClassService {
         for (DocClass item : all) {
             nodes.put(item.getId(), new DocClassDtos.ClassNode(item.getId(), item.getParentId(),
                     item.getCode(), item.getName(), item.getPath(), item.getSort(), item.getStatus(),
-                    item.getRemark(), item.getCodeRuleCode(),
+                    item.getRemark(), item.getCodeRuleCode(), item.getCodePath(),
                     counts.getOrDefault(item.getId(), 0L), new ArrayList<>()));
         }
         List<DocClassDtos.ClassNode> roots = new ArrayList<>();
@@ -548,6 +548,6 @@ public class DocClassService {
     private DocClassDtos.ClassNode toNode(DocClass clazz, Long docCount, List<DocClassDtos.ClassNode> children) {
         return new DocClassDtos.ClassNode(clazz.getId(), clazz.getParentId(), clazz.getCode(), clazz.getName(),
                 clazz.getPath(), clazz.getSort(), clazz.getStatus(), clazz.getRemark(),
-                clazz.getCodeRuleCode(), docCount, children);
+                clazz.getCodeRuleCode(), clazz.getCodePath(), docCount, children);
     }
 }
