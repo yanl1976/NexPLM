@@ -270,8 +270,22 @@ export interface LogSummary {
   chainMessage: string
 }
 
+/** 审计链校验结果：brokenIds 最多 20 个，用于定位被改/被删的行。 */
+export interface AuditChainResult {
+  checked: number
+  brokenCount: number
+  brokenIds: number[]
+  message: string
+}
+
 export const logApi = {
   summary: () => http.get<LogSummary>('/sys/logs/summary'),
+  /** 立即校验审计链（默认最近 5000 行，可指定 id 区间）。 */
+  verifyChain: (fromId?: number, toId?: number) =>
+    http.get<AuditChainResult>('/sys/logs/audit/verify', {
+      ...(fromId ? { fromId } : {}),
+      ...(toId ? { toId } : {})
+    }),
   login: (params: {
     username?: string
     result?: string

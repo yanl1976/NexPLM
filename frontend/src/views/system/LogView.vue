@@ -14,9 +14,14 @@
         <div class="card-value">{{ summary?.auditCount ?? '-' }}</div>
       </el-card>
       <el-card shadow="never" class="card wide">
-        <div class="card-label">审计哈希链</div>
-        <div class="card-value small" :class="summary?.chainEnabled ? 'ok' : 'warn'">
-          {{ summary?.chainMessage ?? '-' }}
+        <div class="card-label chain-label">
+          审计哈希链
+          <el-button link type="primary" size="small" :loading="verifying" @click="verifyChain">
+            立即校验
+          </el-button>
+        </div>
+        <div class="card-value small" :class="chainOk ? 'ok' : 'warn'">
+          {{ chainText }}
         </div>
       </el-card>
     </div>
@@ -162,9 +167,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { logApi, type AuditLogRow, type LoginLogRow, type LogSummary } from '@/api/system'
+import { logApi, type AuditChainResult, type AuditLogRow, type LoginLogRow, type LogSummary } from '@/api/system'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
@@ -193,6 +198,36 @@ async function loadSummary(): Promise<void> {
     summary.value = await logApi.summary()
   } catch (error) {
     ElMessage.error((error as Error).message)
+  }
+}
+
+// ---------------- 审计链手动校验（docs/07 待整改 ⑤） ----------------
+const verifying = ref(false)
+const chainResult = ref<AuditChainResult | null>(null)
+
+/** 优先显示本次手动校验结果；没有时用概览里的上一次结论。 */
+const chainText = computed(() => chainResult.value?.message ?? summary.value?.chainMessage ?? '-')
+const chainOk = computed(() => {
+  if (chainResult.value) {
+    return chainResult.value.brokenCount === 0
+  }
+  return summary.value?.chainEnabled === true && summary.value?.chainBroken === 0
+})
+
+async function verifyChain(): Promise<void> {
+  verifying.value = true
+  try {
+    const result = await logApi.verifyChain()
+    chainResult.value = result
+    if (result.brokenCount === 0) {
+      ElMessage.success(result.message)
+    } else {
+      ElMessage.warning(`${result.message}（异常行：${result.brokenIds.join(', ')}）`)
+    }
+  } catch (error) {
+    ElMessage.error((error as Error).message)
+  } finally {
+    verifying.value = false
   }
 }
 
@@ -294,6 +329,13 @@ void loadLogin()
 .card-label {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+/* 哈希链卡片：标题与「立即校验」按钮左右分布 */
+.chain-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .card-value {
