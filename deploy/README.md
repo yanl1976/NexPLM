@@ -68,3 +68,21 @@ pwsh deploy/ci/security-scan.ps1 -Target image -Image nexplm:<tag>  # 容器镜�
 - **本机未安装 trivy 时返回 exit 2 并打印安装方式**，不会静默通过；
 - CI 示例：GitLab `script: [ "pwsh deploy/ci/security-scan.ps1" ]`；Jenkins 加一个 `powershell` step；
 - 脚本存在 **不等于**该项已验收：CI 未真正接入前，`docs/07` 里保持"待整改"。
+
+## 旧系统数据迁移脚本（`deploy/migration/`）
+
+脚本由 `tools/` 下的生成器从蓝本库**只读**导出，产物是 SQL 文本，**不会自动执行**：
+
+| 文件 | 生成器 | 内容 |
+|---|---|---|
+| `010-doc_class.sql` | `tools/Gen-DocClassMigration.ps1` | 零部件分类树（305 节点 = 4 根 + 37 分组 + 264 分类），`entity_code=PdmItem`，幂等 INSERT |
+
+```bash
+# 重新生成（需要蓝本库只读账号；脚本只发 SELECT）
+pwsh tools/Gen-DocClassMigration.ps1 -User <user> -Password <pwd>
+```
+
+- 每条 INSERT 都带 `WHERE NOT EXISTS (同 entity_code + code)`，可重复执行；
+- `id` 用固定基址 `9000000000001` 起递增（落在雪花 id 之外），`parent_id` 靠它稳定引用，`path` 按 `/父编码/子编码` 逐层拼；
+- **执行前**必须确认目标库写权限与业务窗口（`docs/03` A3 迁移演练），并先备份（`deploy/backup.sh`）；
+- 分类**属性**（蓝本 `CLASSIFYATTRIBUTE` 120 条）尚未生成，等分类树在目标库验证通过后再补 `020-doc_class_attr.sql`。
