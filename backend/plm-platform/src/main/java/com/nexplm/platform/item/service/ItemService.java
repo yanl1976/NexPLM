@@ -1058,6 +1058,18 @@ public class ItemService {
     }
 
     /** 项目下拉选项（新建物料绑定项目用，V86）。 */
+    /** CODE-05：编码是否已被未删除的零部件占用。 */
+    public boolean codeExists(String code) {
+        if (code == null || code.isBlank()) {
+            return false;
+        }
+        Long count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(1) FROM plm_object
+                 WHERE object_type = ? AND code = ? AND deleted = false
+                """, Long.class, OBJECT_TYPE, code.trim());
+        return count != null && count > 0;
+    }
+
     public List<Map<String, Object>> projectOptions() {
         return jdbcTemplate.queryForList("""
                 SELECT id, code, name FROM prj_project

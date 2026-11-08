@@ -780,6 +780,59 @@ class CodingRuleSmokeTest {
         }
     }
 
+    /** CODE-05 + CODE-06：编码查重与流水起始码。 */
+    @Test
+    void codeExistsAndInitialSequence() throws Exception {
+        String admin = login();
+        JsonNode created = call(post("/api/v1/items"), admin, json(Map.of(
+                "name", "查重测试零件", "itemType", "PART", "sourceType", "MAKE")));
+        String code = created.path("code").asText();
+        long createdId = created.path("id").asLong();
+        JsonNode used = call(get("/api/v1/items/code-exists").param("code", code), admin, null);
+        assertThat(used.asBoolean()).isTrue();
+        JsonNode unused = call(get("/api/v1/items/code-exists")
+                .param("code", "NO_SUCH_CODE_9527"), admin, null);
+        assertThat(unused.asBoolean()).isFalse();
+
+        String rule = "Kind_initest";
+        jdbcTemplate.update("DELETE FROM code_issue WHERE rule_code = ?", rule);
+        jdbcTemplate.update("DELETE FROM code_sequence WHERE rule_code = ?", rule);
+        jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", rule);
+        jdbcTemplate.update("""
+                        INSERT INTO code_rule (id, code, name, segments_json, scope_json, reset_policy, status,
+                                               version_no, created_at, updated_at, current_no, object_type, remark)
+                        VALUES (?, ?, '起始码规则',
+                                '[{"type":"VALUE"},{"type":"VALUE"},{"type":"SEQ","width":5,"radix":"DECIMAL"}]'::jsonb,
+                                '{}'::jsonb, 'NEVER', 'ACTIVE', 1, now(), now(), 0, 'PdmItem', 'EXP-20261108-59')
+                        """, IdWorker.getId(), rule);
+        try {
+            call(put("/api/v1/system/coding/sequences")
+                    .param("ruleCode", rule)
+                    .param("scopeKey", "TINIT")
+                    .param("startNo", "41"), admin, null);
+
+            JsonNode codes = call(post("/api/v1/system/coding/generate")
+                    .param("path", rule + "/7001/01/*")
+                    .param("scopeKey", "TINIT")
+                    .param("count", "2"), admin, null);
+            assertThat(codes.get(0).asText()).isEqualTo("70010100041");
+            assertThat(codes.get(1).asText()).isEqualTo("70010100042");
+
+            mockMvc.perform(put("/api/v1/system/coding/sequences")
+                            .param("ruleCode", rule)
+                            .param("scopeKey", "TINIT")
+                            .param("startNo", "1")
+                            .header("Authorization", "Bearer " + admin))
+                    .andExpect(status().isConflict());
+        } finally {
+            jdbcTemplate.update("DELETE FROM code_issue WHERE rule_code = ?", rule);
+            jdbcTemplate.update("DELETE FROM code_sequence WHERE rule_code = ?", rule);
+            jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", rule);
+            jdbcTemplate.update("DELETE FROM item_master WHERE object_id = ?", createdId);
+            jdbcTemplate.update("DELETE FROM plm_object WHERE id = ?", createdId);
+        }
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {

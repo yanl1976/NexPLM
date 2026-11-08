@@ -69,6 +69,14 @@ public class ItemController {
 
     // ------------------------------------------------------------ 列表与详情
 
+    /** CODE-05：编码占用检查（表单失焦时提示，避免保存撞唯一键）。 */
+    @Operation(summary = "编码占用检查")
+    @GetMapping("/code-exists")
+    @PreAuthorize("hasAuthority('pse.item.read')")
+    public Result<Boolean> codeExists(@RequestParam String code) {
+        return Result.ok(itemService.codeExists(code));
+    }
+
     @Operation(summary = "项目下拉选项（绑定物料用）")
     @GetMapping("/project-options")
     @PreAuthorize("hasAuthority('pse.item.read')")

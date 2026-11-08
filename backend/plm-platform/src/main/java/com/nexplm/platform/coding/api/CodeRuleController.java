@@ -100,6 +100,18 @@ public class CodeRuleController {
                                  String name, Boolean deleted) {
     }
 
+    /** CODE-06：设置流水起始码（蓝本 InitialCode），仅当该序列尚未发号时允许。 */
+    @Operation(summary = "设置流水起始码（仅当前未发号时可用）")
+    @PutMapping("/sequences")
+    @PreAuthorize("hasAuthority('system.coding.manage')")
+    @Audit(module = "SYSTEM", action = "CODING_SEQUENCE_INIT", objectType = "CodeRule")
+    public Result<Void> setInitialSequence(@RequestParam String ruleCode,
+                                           @RequestParam(required = false) String scopeKey,
+                                           @RequestParam long startNo) {
+        codeRuleService.setInitialSequence(ruleCode, scopeKey, startNo);
+        return Result.ok();
+    }
+
     @Operation(summary = "批量取号（按分类编码路径，一次 N 个；逐条落发放流水）")
     @PostMapping("/generate")
     @PreAuthorize("hasAuthority('system.coding.manage')")

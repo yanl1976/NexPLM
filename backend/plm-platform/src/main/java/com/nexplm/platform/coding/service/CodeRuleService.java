@@ -209,6 +209,37 @@ public class CodeRuleService {
         return used == null ? 0 : used;
     }
 
+    /**
+     * CODE-06：设置流水起始码（蓝本 {@code InitialCode}）。
+     *
+     * <p>只允许在该序列尚未发号（无记录或 {@code current_no = 0}）时设置；
+     * 存的是"上一个已用号"，所以 {@code startNo=41} 会让下一个号就是 41。</p>
+     */
+    @Transactional
+    public void setInitialSequence(String ruleCode, String scopeKey, long startNo) {
+        if (ruleCode == null || ruleCode.isBlank()) {
+            throw BizException.of(ErrorCode.CODE_RULE_INVALID, "编码规则不能为空");
+        }
+        if (startNo < 1) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "起始码必须大于 0");
+        }
+        String scope = scopeKey == null || scopeKey.isBlank() ? "DEFAULT" : scopeKey.trim();
+        List<Long> rows = jdbcTemplate.queryForList(
+                "SELECT current_no FROM code_sequence WHERE rule_code = ? AND scope_key = ?",
+                Long.class, ruleCode.trim(), scope);
+        long current = rows.isEmpty() || rows.get(0) == null ? 0 : rows.get(0);
+        if (current > 0) {
+            throw BizException.of(ErrorCode.COMMON_CONFLICT,
+                    "该序列已发号（当前 " + current + "），不能重设起始码");
+        }
+        jdbcTemplate.update("""
+                INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (rule_code, scope_key)
+                DO UPDATE SET current_no = EXCLUDED.current_no, updated_at = now()
+                """, IdWorker.getId(), ruleCode.trim(), scope, startNo - 1);
+    }
+
     /** 编码种类行（对应蓝本 {@code CODEKIND}）。 */
     public record KindRow(String code, String name, String ruleCode, String legacyId,
                           long valueCount, long classCount) {
