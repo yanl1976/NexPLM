@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 图纸管理（DRW-01/02/03）：蓝本 `PSEITEMRELATION(Specification)` → `DOCDATASET(dwg)` 的等价实现。
+ * 图纸关联（DRW-01）：图纸是文档域对象，关联走 `plm_relation(Specification)`。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -66,32 +66,29 @@ class DrawingSmokeTest {
         long itemId = item.path("id").asLong();
         long docId = 0L;
         try {
-            JsonNode created = call(post("/api/v1/drawings"), admin, json(Map.of(
-                    "itemId", String.valueOf(itemId),
-                    "dwgNo", "DRW-TEST-001",
+            JsonNode doc = call(post("/api/v1/docs"), admin, json(Map.of(
+                    "code", "DRW-TEST-001",
                     "name", "测试图纸",
-                    "sheetSize", "3")));
-            assertThat(created.path("item_id").asLong()).isEqualTo(itemId);
-            docId = created.path("doc_id").asLong();
+                    "docType", "DESIGN",
+                    "source", "CAD")));
+            docId = doc.path("id").asLong();
             assertThat(docId).isGreaterThan(0L);
 
-            JsonNode rows = call(get("/api/v1/drawings").param("itemId", String.valueOf(itemId)), admin, null);
+            call(post("/api/v1/drawings/{docId}/link?itemId={itemId}", docId, itemId), admin, null);
+
+            JsonNode rows = call(get("/api/v1/drawings/items/{itemId}", itemId), admin, null);
             assertThat(rows).hasSize(1);
             JsonNode row = rows.get(0);
             assertThat(row.path("dwg_no").asText()).isEqualTo("DRW-TEST-001");
-            assertThat(row.path("sheet_size").asText()).isEqualTo("3");
-            assertThat(row.path("item_type").asText()).isEqualTo("GAUGE");
+            assertThat(row.path("doc_id").asLong()).isEqualTo(docId);
 
-            String ext = jdbcTemplate.queryForObject(
-                    "SELECT file_ext FROM doc_master WHERE object_id = ?", String.class, docId);
-            assertThat(ext).isEqualTo("dwg");
-
-            JsonNode byItem = call(get("/api/v1/drawings/items/{itemId}", itemId), admin, null);
-            assertThat(byItem).hasSize(1);
+            JsonNode items = call(get("/api/v1/drawings/docs/{docId}/items", docId), admin, null);
+            assertThat(items).hasSize(1);
+            assertThat(items.get(0).path("item_id").asLong()).isEqualTo(itemId);
 
             long linkId = row.path("link_id").asLong();
             call(delete("/api/v1/drawings/{linkId}", linkId), admin, null);
-            JsonNode after = call(get("/api/v1/drawings").param("itemId", String.valueOf(itemId)), admin, null);
+            JsonNode after = call(get("/api/v1/drawings/items/{itemId}", itemId), admin, null);
             assertThat(after).isEmpty();
         } finally {
             jdbcTemplate.update("DELETE FROM plm_relation WHERE relation_type = 'Specification' AND src_id = ?", itemId);

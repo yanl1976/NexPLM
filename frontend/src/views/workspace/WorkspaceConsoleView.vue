@@ -84,7 +84,8 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="item">零部件</el-dropdown-item>
-                  <el-dropdown-item command="doc" disabled>文档（待接入）</el-dropdown-item>
+                  <el-dropdown-item command="drawing">图纸</el-dropdown-item>
+              <el-dropdown-item command="doc" disabled>文档（待接入）</el-dropdown-item>
                   <el-dropdown-item command="purchase" disabled>请购单（待接入）</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -183,6 +184,8 @@
       @saved="onFormSaved"
     />
 
+    <DrawingDialog v-model="drawingVisible" :preset-item-id="drawingItemId" @saved="refreshObjects" />
+
     <!-- 添加：把已有对象挂到当前文件夹 -->
     <el-dialog v-model="addVisible" title="添加已有对象" width="560px">
       <el-form label-width="80px">
@@ -255,6 +258,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, Box, Collection, Document, Folder, FolderOpened, HomeFilled, Refresh, Search, Tickets, User } from '@element-plus/icons-vue'
 import { wsConsoleApi, type WsFolder, type WsObject } from '@/api/wsConsole'
 import ItemFormDialog from '@/components/business/ItemFormDialog.vue'
+import DrawingDialog from '@/components/business/DrawingDialog.vue'
 import {
   bomApi,
   itemApi,
@@ -456,9 +460,16 @@ async function onCheckin(): Promise<void> {
 const formVisible = ref(false)
 const formEditingId = ref<string | null>(null)
 const presetProjectId = ref<string | null>(null)
+const drawingVisible = ref(false)
+const drawingItemId = ref<string | null>(null)
 
 /** 新建下拉：每类对象挂各自的公共组件 */
 function onCreateCommand(command: string): void {
+  if (command === 'drawing') {
+    drawingItemId.value = selectedRows.value.find((row) => row.object_type === 'PdmItem')?.id ?? null
+    drawingVisible.value = true
+    return
+  }
   if (command !== 'item') {
     return
   }
