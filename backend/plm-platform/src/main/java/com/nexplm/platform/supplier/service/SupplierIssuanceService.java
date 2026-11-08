@@ -11,6 +11,7 @@ import com.nexplm.platform.notify.service.NotifyService;
 import com.nexplm.platform.supplier.api.SupIssuanceDtos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.nexplm.platform.coding.service.CodeRuleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -70,13 +71,16 @@ public class SupplierIssuanceService {
     private final FileService fileService;
     private final ObjectMapper objectMapper;
     private final NotifyService notifyService;
+    private final CodeRuleService codeRuleService;
 
     public SupplierIssuanceService(JdbcTemplate jdbcTemplate, FileService fileService,
-                                   ObjectMapper objectMapper, NotifyService notifyService) {
+                                   ObjectMapper objectMapper, NotifyService notifyService,
+                                   CodeRuleService codeRuleService) {
         this.jdbcTemplate = jdbcTemplate;
         this.fileService = fileService;
         this.objectMapper = objectMapper;
         this.notifyService = notifyService;
+        this.codeRuleService = codeRuleService;
     }
 
     public PageResult<SupIssuanceDtos.IssuanceRow> page(Long companyId, Long supplierId,
@@ -640,15 +644,9 @@ public class SupplierIssuanceService {
         }
     }
 
+    /** 取号统一走 code_rule（台账 B19）。 */
     private String nextCode() {
-        Long no = jdbcTemplate.queryForObject("""
-                        INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
-                        VALUES (?, 'SupIssuance', 'DEFAULT', 1)
-                        ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
-                        RETURNING current_no
-                        """, Long.class, IdWorker.getId());
-        return String.format("ISS-%06d", no == null ? 1L : no);
+        return codeRuleService.next("SupIssuance");
     }
 
     private static String normalize(String value, Set<String> allowed, String label) {

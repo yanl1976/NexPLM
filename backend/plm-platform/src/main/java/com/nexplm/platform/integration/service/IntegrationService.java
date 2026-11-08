@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
+import com.nexplm.platform.coding.service.CodeRuleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,14 +61,17 @@ public class IntegrationService {
     private final ObjectMapper objectMapper;
     private final ItgHttpSender sender;
     private final int retryBaseSeconds;
+    private final CodeRuleService codeRuleService;
 
     public IntegrationService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                               ItgHttpSender sender,
-                              @Value("${nexplm.integration.retry-base-seconds:30}") int retryBaseSeconds) {
+                              @Value("${nexplm.integration.retry-base-seconds:30}") int retryBaseSeconds,
+                              CodeRuleService codeRuleService) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.sender = sender;
         this.retryBaseSeconds = Math.max(1, retryBaseSeconds);
+        this.codeRuleService = codeRuleService;
     }
 
     /* ================================================================ 端点 */
@@ -663,15 +667,9 @@ public class IntegrationService {
                 """, Long.class, companyId, endpointId, objectCode, direction);
     }
 
+    /** 取号统一走 code_rule（台账 B19）。 */
     private String nextJobNo() {
-        Long no = jdbcTemplate.queryForObject("""
-                        INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
-                        VALUES (?, 'ItgJob', 'DEFAULT', 1)
-                        ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
-                        RETURNING current_no
-                        """, Long.class, IdWorker.getId());
-        return String.format("ITG-%06d", no == null ? 1L : no);
+        return codeRuleService.next("ItgJob");
     }
 
     private String rulesJson(List<IntegrationDtos.MappingRuleReq> rules) {

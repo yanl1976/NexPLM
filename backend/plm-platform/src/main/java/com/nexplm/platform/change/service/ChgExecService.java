@@ -7,6 +7,7 @@ import com.nexplm.platform.change.api.ChgDtos;
 import com.nexplm.platform.lifecycle.service.LifecycleService;
 import com.nexplm.platform.object.event.ChangeExecutedEvent;
 import org.springframework.context.ApplicationEventPublisher;
+import com.nexplm.platform.coding.service.CodeRuleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,14 +41,17 @@ public class ChgExecService {
     private final ChgStateMachine stateMachine;
     private final LifecycleService lifecycleService;
     private final ApplicationEventPublisher eventPublisher;
+    private final CodeRuleService codeRuleService;
 
     public ChgExecService(JdbcTemplate jdbcTemplate, ChgStateMachine stateMachine,
                           LifecycleService lifecycleService,
-                          ApplicationEventPublisher eventPublisher) {
+                          ApplicationEventPublisher eventPublisher,
+                          CodeRuleService codeRuleService) {
         this.jdbcTemplate = jdbcTemplate;
         this.stateMachine = stateMachine;
         this.lifecycleService = lifecycleService;
         this.eventPublisher = eventPublisher;
+        this.codeRuleService = codeRuleService;
     }
 
     // ------------------------------------------------------------------ ECN
@@ -444,14 +448,8 @@ public class ChgExecService {
         return status.get(0);
     }
 
+    /** 取号统一走 code_rule（台账 B19）；{@code prefix} 仅为兼容调用签名。 */
     private String nextCode(String ruleCode, String prefix) {
-        Long no = jdbcTemplate.queryForObject("""
-                        INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
-                        VALUES (?, ?, 'DEFAULT', 1)
-                        ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
-                        RETURNING current_no
-                        """, Long.class, IdWorker.getId(), ruleCode);
-        return String.format("%s-%06d", prefix, no == null ? 1L : no);
+        return codeRuleService.next(ruleCode);
     }
 }

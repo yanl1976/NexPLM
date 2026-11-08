@@ -8,6 +8,7 @@ import com.nexplm.platform.change.api.ChgDtos;
 import com.nexplm.platform.workflow.api.WfDtos;
 import com.nexplm.platform.workflow.service.WorkflowService;
 import org.springframework.dao.DuplicateKeyException;
+import com.nexplm.platform.coding.service.CodeRuleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,12 +40,14 @@ public class ChgService {
     private final JdbcTemplate jdbcTemplate;
     private final WorkflowService workflowService;
     private final ChgStateMachine stateMachine;
+    private final CodeRuleService codeRuleService;
 
     public ChgService(JdbcTemplate jdbcTemplate, WorkflowService workflowService,
-                      ChgStateMachine stateMachine) {
+                      ChgStateMachine stateMachine, CodeRuleService codeRuleService) {
         this.jdbcTemplate = jdbcTemplate;
         this.workflowService = workflowService;
         this.stateMachine = stateMachine;
+        this.codeRuleService = codeRuleService;
     }
 
     // ------------------------------------------------------------------ 查询
@@ -497,15 +500,12 @@ public class ChgService {
         return count == null ? 0 : count;
     }
 
+    /**
+     * 取号统一走 code_rule（台账 B19）：段定义见 V75，流水由同批迁移从 code_sequence 回填。
+     * {@code prefix} 仅保留调用签名兼容，实际前缀在规则段定义里。
+     */
     private String nextCode(String ruleCode, String prefix) {
-        Long no = jdbcTemplate.queryForObject("""
-                        INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
-                        VALUES (?, ?, 'DEFAULT', 1)
-                        ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
-                        RETURNING current_no
-                        """, Long.class, IdWorker.getId(), ruleCode);
-        return String.format("%s-%06d", prefix, no == null ? 1L : no);
+        return codeRuleService.next(ruleCode);
     }
 
     /** 主档可改判定：由元数据状态机推导（= 初始草稿态）。 */

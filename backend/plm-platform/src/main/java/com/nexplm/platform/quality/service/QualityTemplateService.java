@@ -6,6 +6,7 @@ import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.quality.api.QualityIssueDtos;
 import com.nexplm.platform.quality.api.QualityTemplateDtos;
+import com.nexplm.platform.coding.service.CodeRuleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,10 +34,13 @@ public class QualityTemplateService {
 
     private final JdbcTemplate jdbcTemplate;
     private final QualityIssueService issueService;
+    private final CodeRuleService codeRuleService;
 
-    public QualityTemplateService(JdbcTemplate jdbcTemplate, QualityIssueService issueService) {
+    public QualityTemplateService(JdbcTemplate jdbcTemplate, QualityIssueService issueService,
+                                  CodeRuleService codeRuleService) {
         this.jdbcTemplate = jdbcTemplate;
         this.issueService = issueService;
+        this.codeRuleService = codeRuleService;
     }
 
     // ---------------------------------------------------------------- 模板
@@ -248,15 +252,9 @@ public class QualityTemplateService {
         return rows.get(0);
     }
 
+    /** 取号统一走 code_rule（台账 B19）。 */
     private String nextCode() {
-        Long no = jdbcTemplate.queryForObject("""
-                        INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
-                        VALUES (?, 'QltTemplate', 'DEFAULT', 1)
-                        ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
-                        RETURNING current_no
-                        """, Long.class, IdWorker.getId());
-        return String.format("DT-%06d", no == null ? 1L : no);
+        return codeRuleService.next("QltTemplate");
     }
 
     private static String normalizeType(String type) {

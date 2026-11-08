@@ -6,6 +6,7 @@ import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.project.api.ProjectDtos;
 import com.nexplm.platform.project.api.ProjectTemplateDtos;
+import com.nexplm.platform.coding.service.CodeRuleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,10 +41,13 @@ public class ProjectTemplateService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ProjectService projectService;
+    private final CodeRuleService codeRuleService;
 
-    public ProjectTemplateService(JdbcTemplate jdbcTemplate, ProjectService projectService) {
+    public ProjectTemplateService(JdbcTemplate jdbcTemplate, ProjectService projectService,
+                                  CodeRuleService codeRuleService) {
         this.jdbcTemplate = jdbcTemplate;
         this.projectService = projectService;
+        this.codeRuleService = codeRuleService;
     }
 
     // ---------------------------------------------------------------- 查询
@@ -320,15 +324,9 @@ public class ProjectTemplateService {
         return rows.get(0);
     }
 
+    /** 取号统一走 code_rule（台账 B19）；{@code companyId} 仅为兼容调用签名。 */
     private String nextCode(Long companyId) {
-        Long no = jdbcTemplate.queryForObject("""
-                        INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
-                        VALUES (?, 'PrjTemplate', 'DEFAULT', 1)
-                        ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
-                        RETURNING current_no
-                        """, Long.class, IdWorker.getId());
-        return String.format("PT-%06d", no == null ? 1L : no);
+        return codeRuleService.next("PrjTemplate");
     }
 
     private static String normalizeType(String type) {

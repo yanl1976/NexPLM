@@ -5,6 +5,7 @@ import com.nexplm.common.api.PageResult;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.quality.api.QualityIssueDtos;
+import com.nexplm.platform.coding.service.CodeRuleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,9 +57,11 @@ public class QualityIssueService {
             """;
 
     private final JdbcTemplate jdbcTemplate;
+    private final CodeRuleService codeRuleService;
 
-    public QualityIssueService(JdbcTemplate jdbcTemplate) {
+    public QualityIssueService(JdbcTemplate jdbcTemplate, CodeRuleService codeRuleService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.codeRuleService = codeRuleService;
     }
 
     // ---------------------------------------------------------------- 查询
@@ -409,15 +412,9 @@ public class QualityIssueService {
         }
     }
 
+    /** 取号统一走 code_rule（台账 B19）。 */
     private String nextCode() {
-        Long no = jdbcTemplate.queryForObject("""
-                        INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
-                        VALUES (?, 'QltIssue', 'DEFAULT', 1)
-                        ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
-                        RETURNING current_no
-                        """, Long.class, IdWorker.getId());
-        return String.format("QI-%06d", no == null ? 1L : no);
+        return codeRuleService.next("QltIssue");
     }
 
     private static String normalize(String value, Set<String> allowed, String label) {

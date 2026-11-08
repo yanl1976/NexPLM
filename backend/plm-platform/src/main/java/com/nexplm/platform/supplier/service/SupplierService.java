@@ -6,6 +6,7 @@ import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
 import com.nexplm.platform.supplier.api.SupSupplierDtos;
 import org.springframework.dao.DuplicateKeyException;
+import com.nexplm.platform.coding.service.CodeRuleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,9 +58,11 @@ public class SupplierService {
             """;
 
     private final JdbcTemplate jdbcTemplate;
+    private final CodeRuleService codeRuleService;
 
-    public SupplierService(JdbcTemplate jdbcTemplate) {
+    public SupplierService(JdbcTemplate jdbcTemplate, CodeRuleService codeRuleService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.codeRuleService = codeRuleService;
     }
 
     // ---------------------------------------------------------------- 供应商
@@ -358,15 +361,9 @@ public class SupplierService {
         return rows.get(0);
     }
 
+    /** 取号统一走 code_rule（台账 B19）。 */
     private String nextCode() {
-        Long no = jdbcTemplate.queryForObject("""
-                        INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
-                        VALUES (?, 'SupSupplier', 'DEFAULT', 1)
-                        ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
-                        RETURNING current_no
-                        """, Long.class, IdWorker.getId());
-        return String.format("SUP-%06d", no == null ? 1L : no);
+        return codeRuleService.next("SupSupplier");
     }
 
     private static String normalizeObjectType(String objectType) {

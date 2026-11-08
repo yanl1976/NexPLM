@@ -8,6 +8,7 @@ import com.nexplm.common.exception.ErrorCode;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.nexplm.platform.analysis.api.ReportDtos;
 import org.springframework.dao.DuplicateKeyException;
+import com.nexplm.platform.coding.service.CodeRuleService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,10 +43,13 @@ public class ReportService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final CodeRuleService codeRuleService;
 
-    public ReportService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public ReportService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+                         CodeRuleService codeRuleService) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.codeRuleService = codeRuleService;
     }
 
     // ------------------------------------------------------------ 数据集字典
@@ -320,18 +324,13 @@ public class ReportService {
         }
     }
 
-    /** 自建报表取号：RPT-000001（与内置的 RPT-DOC-LEDGER 这类可读编码不冲突）。 */
+    /**
+     * 自建报表取号：RPT-000001（与内置的 RPT-DOC-LEDGER 这类可读编码不冲突）。
+     * 走 code_rule（台账 B19）：原实现的 COUNT(*)+1 在删除模板后会回退重号，
+     * 现在的流水单调递增，迁移已按既有 RPT- 数字最大值回填。
+     */
     private String nextCode(Long companyId) {
-        Long count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(1) FROM rpt_template WHERE code LIKE 'RPT-%'", Long.class);
-        long seq = (count == null ? 0L : count) + 1;
-        String candidate = String.format("RPT-%06d", seq);
-        while (!jdbcTemplate.queryForList(
-                "SELECT id FROM rpt_template WHERE code = ?", candidate).isEmpty()) {
-            seq++;
-            candidate = String.format("RPT-%06d", seq);
-        }
-        return candidate;
+        return codeRuleService.next("ReportTemplate");
     }
 
     // ------------------------------------------------------------ 内部：查询
