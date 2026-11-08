@@ -128,6 +128,37 @@ class SecurityHardeningTest {
         JsonNode byAdmin = call(get("/api/v1/docs?keyword=跨公司机密"), admin, null);
         assertThat(byAdmin.path("total").asLong()).isEqualTo(1);
 
+        // ---- 4b. 其余域按 id 直取同样受公司隔离（变更 / 项目 / 供应商）
+        //    静态审计（docs/07 待整改 ③）显示三域主查询都带 company_id，这里用真实请求复验。
+        jdbcTemplate.update("""
+                        INSERT INTO chg_ecr (id, company_id, code, title, change_type, priority, status,
+                                             requester_id, created_at, updated_at, deleted)
+                        VALUES (?, 999, ?, ?, 'DESIGN', 'NORMAL', 'DRAFT', ?, now(), now(), false)
+                        """, 94_000_000_002L, "ECR-950001", "跨公司机密变更", 1L);
+        jdbcTemplate.update("""
+                        INSERT INTO prj_project (id, company_id, code, name, type, status, priority,
+                                                 progress, created_at, updated_at, deleted)
+                        VALUES (?, 999, ?, ?, 'INTERNAL', 'PLANNING', 0, 0, now(), now(), false)
+                        """, 94_000_000_003L, "PJ-950001", "跨公司机密项目");
+        jdbcTemplate.update("""
+                        INSERT INTO sup_supplier (id, company_id, code, name, category, status, currency,
+                                                  created_at, updated_at, deleted)
+                        VALUES (?, 999, ?, ?, 'MATERIAL', 'QUALIFIED', 'CNY', now(), now(), false)
+                        """, 94_000_000_004L, "SUP-950001", "跨公司机密供应商");
+
+        mockMvc.perform(get("/api/v1/chg/ecrs/{id}", 94_000_000_002L)
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/chg/ecrs/{id}/timeline", 94_000_000_002L)
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/prj/projects/{id}", 94_000_000_003L)
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/sup/suppliers/{id}", 94_000_000_004L)
+                        .header("Authorization", "Bearer " + companyUser))
+                .andExpect(status().isNotFound());
+
         // ---- 5. SQL 注入：关键字里的引号/OR 只是普通字符串，不能把结果集放大成全表
         JsonNode injected = call(get("/api/v1/docs?keyword=%27%20OR%201%3D1--"), admin, null);
         assertThat(injected.path("total").asLong()).isZero();
