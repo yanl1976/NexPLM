@@ -201,6 +201,36 @@ class FileVaultSmokeTest {
 
     // ---------------------------------------------------------------- 测试工具
 
+    /**
+     * 等保自查整改 ①：可执行/服务端脚本类扩展名在上传入口就被拒绝，
+     * 常见 PLM 格式（step/dwg/docx…）不受影响。
+     */
+    @Test
+    void dangerousExtensionsAreRejected() throws Exception {
+        String token = login();
+        createOwnerObject(currentUserId(token));
+        byte[] content = "MZ-test".getBytes(StandardCharsets.UTF_8);
+
+        for (String name : new String[]{"malware.exe", "shell.jsp", "page.html"}) {
+            mockMvc.perform(multipart("/api/v1/files")
+                            .file(new MockMultipartFile("file", name, "application/octet-stream", content))
+                            .param("ownerObjectId", String.valueOf(OWNER_ID))
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isBadRequest());
+        }
+
+        // 分片上传在创建会话时就该被拒（不必等传完）
+        mockMvc.perform(post("/api/v1/files/uploads")
+                        .param("fileName", "payload.ps1")
+                        .param("totalSize", "1024")
+                        .param("ownerObjectId", String.valueOf(OWNER_ID))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest());
+
+        JsonNode ok = upload(token, content, "model.step", OWNER_ID);
+        assertThat(ok.path("fileId").asLong()).isPositive();
+    }
+
     private JsonNode upload(String token, byte[] content, String fileName, long ownerObjectId) throws Exception {
         MvcResult result = mockMvc.perform(multipart("/api/v1/files")
                         .file(new MockMultipartFile("file", fileName, "text/plain", content))

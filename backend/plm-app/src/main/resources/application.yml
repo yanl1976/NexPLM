@@ -98,6 +98,10 @@ nexplm:
     storage: ${NEXPLM_FILE_STORAGE:local}
     # 本地存储根目录；内容寻址布局 {root}/{sha[0:2]}/{sha[2:4]}/{sha}
     root: ${NEXPLM_FILE_ROOT:./data/files}
+    upload:
+      # 上传安全闸门（等保自查整改 ①）：禁止的扩展名，逗号分隔，空串=不拦。
+      # 默认挡可执行/服务端脚本/可挂脚本的标记文件；PLM 常见格式（dwg/docx/pdf/step/zip…）不受影响。
+      blocked-ext: ${NEXPLM_FILE_BLOCKED_EXT:exe,dll,bat,cmd,ps1,scr,msi,com,pif,jsp,jspx,php,asp,aspx,html,htm,svg}
     # storage=minio 时生效；启动时自动创建存储桶
     minio:
       endpoint: ${NEXPLM_MINIO_ENDPOINT:http://localhost:9000}

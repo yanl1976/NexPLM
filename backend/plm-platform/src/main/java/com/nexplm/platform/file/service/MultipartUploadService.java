@@ -78,6 +78,9 @@ public class MultipartUploadService {
             throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "分片数量过多，请增大分片大小");
         }
 
+        // 会话创建时就校验扩展名：避免客户端传完 4GB 才在合并阶段被拒（等保整改 ①）
+        fileService.ensureUploadAllowed(fileName);
+
         FileUploadSession session = new FileUploadSession();
         session.setId(UUID.randomUUID().toString().replace("-", ""));
         session.setFileName(FileService.safeFileName(fileName));

@@ -14,6 +14,7 @@ import com.nexplm.platform.object.service.ObjectAccessGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +29,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
@@ -108,14 +110,45 @@ public class FileService {
     private final ObjectAccessGuard objectAccessGuard;
     private final FileStorage storage;
     private final FileScanHook scanHook;
+    /** 禁止上传的扩展名：可执行、服务端脚本、以及能挂脚本的 html/svg（等保自查整改 ①）。 */
+    private final Set<String> blockedExt;
 
     public FileService(FileObjectMapper fileObjectMapper, FileLinkMapper fileLinkMapper,
-                       ObjectAccessGuard objectAccessGuard, FileStorage storage, FileScanHook scanHook) {
+                       ObjectAccessGuard objectAccessGuard, FileStorage storage, FileScanHook scanHook,
+                       @Value("${nexplm.file.upload.blocked-ext:exe,dll,bat,cmd,ps1,scr,msi,com,pif,"
+                               + "jsp,jspx,php,asp,aspx,html,htm,svg}")
+                       String blockedExtConfig) {
         this.fileObjectMapper = fileObjectMapper;
         this.fileLinkMapper = fileLinkMapper;
         this.objectAccessGuard = objectAccessGuard;
         this.storage = storage;
         this.scanHook = scanHook;
+        Set<String> blocked = new HashSet<>();
+        if (blockedExtConfig != null) {
+            for (String item : blockedExtConfig.split(",")) {
+                String ext = item.trim().toLowerCase(Locale.ROOT);
+                if (!ext.isEmpty()) {
+                    blocked.add(ext.startsWith(".") ? ext.substring(1) : ext);
+                }
+            }
+        }
+        this.blockedExt = Set.copyOf(blocked);
+    }
+
+    /**
+     * 上传扩展名闸门：只挡危险类型（默认清单见构造器），PLM 常见格式（dwg/docx/pdf/step/zip…）不受影响。
+     * <p>清单可通过 {@code nexplm.file.upload.blocked-ext} 覆盖，传空串表示不拦。
+     * 分片上传在创建会话时也会调本方法，避免"传完 4GB 才被拒"。</p>
+     */
+    public void ensureUploadAllowed(String fileName) {
+        if (blockedExt.isEmpty()) {
+            return;
+        }
+        String ext = extOf(safeFileName(fileName));
+        if (ext != null && blockedExt.contains(ext.toLowerCase(Locale.ROOT))) {
+            throw BizException.of(ErrorCode.FILE_EXT_FORBIDDEN,
+                    "不允许上传 ." + ext + " 类型的文件");
+        }
     }
 
     public String storageType() {
@@ -148,6 +181,7 @@ public class FileService {
         }
         String role = normalizeRole(fileRole);
         String safeName = safeFileName(fileName);
+        ensureUploadAllowed(safeName);
         if (ownerObjectId != null) {
             requireObject(ownerObjectId);
         }
