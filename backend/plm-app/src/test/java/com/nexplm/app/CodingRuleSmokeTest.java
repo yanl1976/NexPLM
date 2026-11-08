@@ -203,6 +203,28 @@ class CodingRuleSmokeTest {
                 .andExpect(status().isForbidden());
     }
 
+    /**
+     * T-CORE-02：取号落发放流水（蓝本 `CODERES` 的等价物）。
+     * 断言：创建零部件后能按「规则 + 编码」查回该条流水，且带细分类型与操作人。
+     */
+    @Test
+    void issuedCodesAreRecordedAndQueryable() throws Exception {
+        String admin = login();
+        JsonNode item = call(post("/api/v1/items"), admin, json(Map.of(
+                "name", "流水验证零件", "itemType", "PART", "sourceType", "MAKE")));
+        String code = item.path("code").asText();
+
+        JsonNode issues = call(get("/api/v1/system/coding/issues")
+                .param("ruleCode", "PdmItem")
+                .param("code", code), admin, null);
+        assertThat(issues.path("total").asLong()).isGreaterThanOrEqualTo(1);
+        JsonNode first = issues.path("items").get(0);
+        assertThat(first.path("code").asText()).isEqualTo(code);
+        assertThat(first.path("ruleCode").asText()).isEqualTo("PdmItem");
+        assertThat(first.path("objectType").asText()).isEqualTo("PdmItem:PART");
+        assertThat(first.path("issuedByName").asText()).isNotBlank();
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {

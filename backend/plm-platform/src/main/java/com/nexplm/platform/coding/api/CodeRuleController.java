@@ -1,5 +1,6 @@
 package com.nexplm.platform.coding.api;
 
+import com.nexplm.common.api.PageResult;
 import com.nexplm.common.api.Result;
 import com.nexplm.platform.coding.service.CodeRuleService;
 import com.nexplm.common.audit.Audit;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -35,6 +37,17 @@ public class CodeRuleController {
 
     public CodeRuleController(CodeRuleService codeRuleService) {
         this.codeRuleService = codeRuleService;
+    }
+
+    @Operation(summary = "编码发放流水（谁在什么时候取了什么码；按规则/细分类型/编码过滤）")
+    @GetMapping("/issues")
+    @PreAuthorize("hasAuthority('system.coding.read')")
+    public Result<PageResult<CodeRuleService.IssueRow>> issues(@RequestParam(required = false) String ruleCode,
+                                                               @RequestParam(required = false) String objectType,
+                                                               @RequestParam(required = false) String code,
+                                                               @RequestParam(defaultValue = "1") int page,
+                                                               @RequestParam(defaultValue = "20") int size) {
+        return Result.ok(codeRuleService.pageIssues(ruleCode, objectType, code, page, size));
     }
 
     @Operation(summary = "编码规则列表（含每条规则的下一个编码预览）")

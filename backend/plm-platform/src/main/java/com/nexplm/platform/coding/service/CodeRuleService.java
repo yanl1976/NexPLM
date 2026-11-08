@@ -3,8 +3,10 @@ package com.nexplm.platform.coding.service;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexplm.common.api.PageResult;
 import com.nexplm.common.exception.BizException;
 import com.nexplm.common.exception.ErrorCode;
+import com.nexplm.platform.security.CurrentUser;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -91,6 +93,51 @@ public class CodeRuleService {
      *
      * @param objectType 对象类型（如 {@code PdmItem}）；空表示不限
      */
+    /** 发放流水行（{@code code_issue} + 操作人姓名）。 */
+    public record IssueRow(Long id, String ruleCode, String code, String objectType,
+                           Long issuedBy, String issuedByName, OffsetDateTime issuedAt) {
+    }
+
+    /**
+     * 分页查发放流水（T-CORE-02）：按规则、细分类型、编码模糊过滤，按发放时间倒序。
+     */
+    public PageResult<IssueRow> pageIssues(String ruleCode, String objectType,
+                                           String code, int page, int size) {
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 200);
+        StringBuilder where = new StringBuilder(" WHERE 1 = 1");
+        List<Object> args = new ArrayList<>();
+        if (ruleCode != null && !ruleCode.isBlank()) {
+            where.append(" AND i.rule_code = ?");
+            args.add(ruleCode.trim());
+        }
+        if (objectType != null && !objectType.isBlank()) {
+            where.append(" AND i.object_type = ?");
+            args.add(objectType.trim());
+        }
+        if (code != null && !code.isBlank()) {
+            where.append(" AND i.code ILIKE ?");
+            args.add("%" + code.trim() + "%");
+        }
+        Long total = jdbcTemplate.queryForObject("SELECT COUNT(1) FROM code_issue i" + where,
+                Long.class, args.toArray());
+        List<Object> pageArgs = new ArrayList<>(args);
+        pageArgs.add(safeSize);
+        pageArgs.add((long) (safePage - 1) * safeSize);
+        List<IssueRow> items = jdbcTemplate.query("""
+                        SELECT i.id, i.rule_code, i.code, i.object_type, i.issued_by,
+                               u.display_name AS issued_by_name, i.issued_at
+                          FROM code_issue i
+                          LEFT JOIN sys_user u ON u.id = i.issued_by
+                        """ + where + " ORDER BY i.issued_at DESC, i.id DESC LIMIT ? OFFSET ?",
+                (rs, rowNum) -> new IssueRow(rs.getLong("id"), rs.getString("rule_code"),
+                        rs.getString("code"), rs.getString("object_type"),
+                        (Long) rs.getObject("issued_by"), rs.getString("issued_by_name"),
+                        rs.getObject("issued_at", OffsetDateTime.class)),
+                pageArgs.toArray());
+        return com.nexplm.common.api.PageResult.of(items, total == null ? 0L : total, safePage, safeSize);
+    }
+
     /**
      * 按「细分对象类型」选规则取号（台账 T-CORE-01）。
      *
@@ -106,10 +153,10 @@ public class CodeRuleService {
                     "SELECT code FROM code_rule WHERE object_type = ? AND status = 'ACTIVE' ORDER BY code LIMIT 1",
                     String.class, objectType.trim());
             if (!codes.isEmpty()) {
-                return next(codes.get(0));
+                return next(codes.get(0), objectType);
             }
         }
-        return next(fallbackRuleCode);
+        return next(fallbackRuleCode, objectType);
     }
 
     public java.util.Optional<String> matchRuleCode(String objectType, String code) {
@@ -217,6 +264,16 @@ public class CodeRuleService {
      */
     @Transactional
     public String next(String code) {
+        return next(code, null);
+    }
+
+    /**
+     * 取号并落**发放流水**（{@code code_issue}，蓝本 {@code CODERES} 的等价物）。
+     *
+     * @param objectType 细分对象类型（如 {@code PdmItem:PART}），只用于追溯，可为空
+     */
+    @Transactional
+    public String next(String code, String objectType) {
         List<Map<String, Object>> locked = jdbcTemplate.queryForList("""
                 SELECT segments_json, current_no, last_period, reset_policy, status
                   FROM code_rule WHERE code = ? FOR UPDATE
@@ -238,7 +295,23 @@ public class CodeRuleService {
                 UPDATE code_rule SET current_no = ?, last_period = COALESCE(?, last_period), updated_at = now()
                  WHERE code = ?
                 """, nextNo, period, code);
-        return render(parse(String.valueOf(row.get("segments_json"))), nextNo);
+        String rendered = render(parse(String.valueOf(row.get("segments_json"))), nextNo);
+        recordIssue(code, rendered, objectType);
+        return rendered;
+    }
+
+    /**
+     * 落发放流水。失败直接抛出：宁可不发号，也不要"号发了却查不到"。
+     * 无登录上下文（定时任务/测试直调）时 {@code issued_by} 留空，不阻断。
+     */
+    private void recordIssue(String ruleCode, String issued, String objectType) {
+        var principal = CurrentUser.orNull();
+        Long operatorId = principal == null ? null : principal.userId();
+        jdbcTemplate.update("""
+                INSERT INTO code_issue (id, rule_code, code, object_type, issued_by)
+                VALUES (?, ?, ?, ?, ?)
+                """, IdWorker.getId(), ruleCode, issued,
+                objectType == null || objectType.isBlank() ? null : objectType.trim(), operatorId);
     }
 
     /**
