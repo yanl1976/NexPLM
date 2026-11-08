@@ -45,6 +45,7 @@
             <el-icon><HomeFilled /></el-icon>
             <template #title>个人门户</template>
           </el-menu-item>
+          <el-menu-item index="/drawing">图纸管理</el-menu-item>
           <el-menu-item index="/ws-console">
             <el-icon><Document /></el-icon>
             <template #title>工作空间</template>

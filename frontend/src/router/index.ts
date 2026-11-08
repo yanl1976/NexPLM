@@ -129,6 +129,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '工作空间（列表）' }
       },
       {
+        path: 'drawing',
+        name: 'drawing',
+        component: () => import('@/views/drawing/DrawingView.vue'),
+        meta: { title: '图纸管理' }
+      },
+      {
         path: 'item',
         name: 'item-list',
         component: () => import('@/views/item/ItemListView.vue'),
