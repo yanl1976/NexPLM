@@ -79,13 +79,17 @@ public class ItemService {
     private final DocClassService classService;
     /** 人工编码的可接受形态（蓝本 `Coding.setting` 的 `MaxOrderCodeLength` + `CodeMachineDenyChar` 的等价物）。 */
     private final java.util.regex.Pattern manualCodePattern;
+    /** 图号 → 编号的生成模板（默认 `{DWG}` 原样；可配成 `{DWG}-{SEQ}` 这类规则）。 */
+    private final String drawingCodePattern;
 
     public ItemService(PlmObjectMapper objectMapper, ItemMasterMapper itemMapper, MetaService metaService,
                        LifecycleService lifecycleService, ScopeApplier scopeApplier,
                        CheckoutService checkoutService, JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper,
                        CodeRuleService codeRuleService, DocClassService classService,
                        @org.springframework.beans.factory.annotation.Value(
-                               "${nexplm.coding.manual-pattern:^[A-Za-z0-9._-]{1,64}$}") String manualPattern) {
+                               "${nexplm.coding.manual-pattern:^[A-Za-z0-9._-]{1,64}$}") String manualPattern,
+                       @org.springframework.beans.factory.annotation.Value(
+                               "${nexplm.coding.drawing-pattern:{DWG}}") String drawingPattern) {
         this.objectMapper = objectMapper;
         this.itemMapper = itemMapper;
         this.metaService = metaService;
@@ -98,6 +102,7 @@ public class ItemService {
         this.jsonMapper = jsonMapper;
         this.classService = classService;
         this.manualCodePattern = java.util.regex.Pattern.compile(manualPattern);
+        this.drawingCodePattern = drawingPattern == null || drawingPattern.isBlank() ? "{DWG}" : drawingPattern;
     }
 
     // ------------------------------------------------------------ 列表
@@ -871,7 +876,21 @@ public class ItemService {
      * <p>取号口径与 {@link #resolveCode} 完全一致：分类有 {@code codePath} 按路径预览，
      * 否则按分类编码兜底；没分类按 {@code PdmItem:<类型>} 路由。</p>
      */
-    public ItemDtos.CodePreview previewCode(Long classId, String itemType) {
+    public ItemDtos.CodePreview previewCode(Long classId, String itemType, String dwgNo) {
+        // 图号优先：蓝本里零件常以图号入号（`0CT.325.503` 这类），按模板生成编号
+        if (dwgNo != null && !dwgNo.isBlank()) {
+            String drawing = dwgNo.trim();
+            if (!manualCodePattern.matcher(drawing).matches()) {
+                throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                        "图号格式不合法（仅允许字母、数字、. _ -，长度 1~64）：" + drawing);
+            }
+            String code = drawingCodePattern.replace("{DWG}", drawing);
+            if (!manualCodePattern.matcher(code).matches()) {
+                throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                        "图号生成的编号不合法：" + code + "（检查 nexplm.coding.drawing-pattern）");
+            }
+            return new ItemDtos.CodePreview(code, "DRAWING", "图号规则", "DRAWING");
+        }
         if (classId != null) {
             ensureLeafClass(classId);
             var clazz = classService.requireClass(classId, OBJECT_TYPE);

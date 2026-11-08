@@ -235,6 +235,15 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="图号">
+              <el-input
+                v-model="form.designAttr.dwgNo"
+                placeholder="填图号可自动生成编号，如 0CT.325.503"
+                :disabled="Boolean(editingId)"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
             <el-form-item label="分类">
               <el-tree-select
                 v-model="form.classId"
@@ -294,11 +303,6 @@
           <el-col :span="12">
             <el-form-item label="供应商">
               <el-input v-model="form.designAttr.provider" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="图号">
-              <el-input v-model="form.designAttr.dwgNo" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -835,7 +839,8 @@ async function refreshCodePreview(): Promise<void> {
   try {
     codePreview.value = await itemApi.previewCode({
       classId: form.classId || undefined,
-      itemType: form.itemType
+      itemType: form.itemType,
+      dwgNo: form.designAttr.dwgNo?.trim() || undefined
     })
   } catch {
     codePreview.value = null
@@ -853,7 +858,7 @@ function schedulePreview(): void {
   }, 250)
 }
 
-watch(() => [form.classId, form.itemType], schedulePreview)
+watch(() => [form.classId, form.itemType, form.designAttr.dwgNo], schedulePreview)
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
@@ -1093,7 +1098,10 @@ async function onSave(): Promise<void> {
     } else {
       // 新建：提交用户填写的全部值（布尔仅在显式选择时提交）
       const ext = buildErpValues(customFields.value, extTextForm, extBoolForm)
-      await itemApi.create({ ...form, ext })
+      // 图号生成的编号要随请求提交（后端按人工编码校验后采用），否则留空由分类取号
+      const drawing = form.designAttr.dwgNo?.trim()
+      const code = drawing && codePreview.value ? codePreview.value.code : undefined
+      await itemApi.create({ ...form, code, ext })
       ElMessage.success('已创建')
     }
     dialogVisible.value = false

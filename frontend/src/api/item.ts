@@ -757,7 +757,7 @@ export const itemApi = {
     return http.get<ItemDetail>(`/items/${id}`)
   },
   /** 编码预览（不消耗流水）：选分类后显示将生成的编码。 */
-  previewCode(params: { classId?: string | null; itemType?: string }): Promise<CodePreview> {
+  previewCode(params: { classId?: string | null; itemType?: string; dwgNo?: string }): Promise<CodePreview> {
     return http.get<CodePreview>('/items/code-preview', params)
   },
   create(req: ItemSaveReq): Promise<ItemDetail> {

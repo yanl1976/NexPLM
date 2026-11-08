@@ -574,6 +574,21 @@ class CodingRuleSmokeTest {
         }
     }
 
+    /** T-CORE-14：图号 → 编号（默认原样采用；非法图号 400）。 */
+    @Test
+    void codePreviewFromDrawingNumber() throws Exception {
+        String admin = login();
+        JsonNode byDwg = call(get("/api/v1/items/code-preview")
+                .param("dwgNo", "0CT.325.503"), admin, null);
+        assertThat(byDwg.path("code").asText()).isEqualTo("0CT.325.503");
+        assertThat(byDwg.path("source").asText()).isEqualTo("DRAWING");
+
+        mockMvc.perform(get("/api/v1/items/code-preview")
+                        .param("dwgNo", "bad<>dwg")
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isBadRequest());
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {

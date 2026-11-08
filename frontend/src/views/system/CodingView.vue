@@ -314,6 +314,17 @@ function openKindValues(row: CodeKindRow): void {
   loadValues(row.code)
 }
 
+/** 码值页顶部切换编码种类（不必回「编码种类」页再点查看）。 */
+async function onKindChange(code: string): Promise<void> {
+  const kind = kinds.value.find((item) => item.code === code)
+  if (!kind) {
+    return
+  }
+  currentKind.value = kind
+  currentMajor.value = null
+  await loadValues(code)
+}
+
 async function loadValues(code: string): Promise<void> {
   valuesLoading.value = true
   const keep = currentMajor.value?.valuePath
@@ -616,7 +627,22 @@ onMounted(() => {
                   · 编码 = 大类(2) + 中类(2) + 小类(2) + 流水(5)
                 </span>
               </div>
-              <el-button v-if="currentKind" :icon="Refresh" @click="loadValues(currentKind.code)">刷新</el-button>
+              <div class="value-kind">
+                <el-select
+                  :model-value="currentKind?.code"
+                  placeholder="选择编码种类"
+                  style="width: 260px"
+                  @change="onKindChange"
+                >
+                  <el-option
+                    v-for="k in kinds"
+                    :key="k.code"
+                    :label="`${k.name}（${k.code}）`"
+                    :value="k.code"
+                  />
+                </el-select>
+                <el-button v-if="currentKind" :icon="Refresh" @click="loadValues(currentKind.code)">刷新</el-button>
+              </div>
             </div>
           </template>
           <el-empty v-if="!currentKind" description="在「编码种类」页点「查看码值」" />
@@ -926,6 +952,12 @@ onMounted(() => {
 .class-tree {
   max-height: 60vh;
   overflow: auto;
+}
+
+.value-kind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* 码值两栏：左侧中类（按大类分组），右侧该中类下的小类 */
