@@ -78,15 +78,20 @@ pwsh deploy/ci/security-scan.ps1 -Target image -Image nexplm:<tag>  # 容器镜�
 | `010-doc_class.sql` | `tools/Gen-DocClassMigration.ps1` | 零部件分类树（305 节点 = 4 根 + 37 分组 + 264 分类），`entity_code=PdmItem`，幂等 INSERT |
 | `020-doc_class_attr.sql` | `tools/Gen-DocClassAttrMigration.ps1` | 分类属性 1,287 条（由 1,287 条「属性→分类」关系展开），`value_type` 全 `STRING`，属性编码加 `ATTR` 前缀 |
 | `030-item_sample.sql` | `tools/Gen-ItemMigration.ps1` | 零部件**样例** 139 条（每类 ≤15 条，非全量），`plm_object` + `item_master` 成对插入，单分类口径 |
+| `040-item_bom_parts.sql` | `tools/Gen-BomMigration.ps1` | BOM 迁移的**补件** 113 个（050 引用的父子件中不在 030 的部分），id 基址与 030 不同 |
+| `050-bom_line.sql` | `tools/Gen-BomMigration.ps1` | BOM 行 **100 条**（视图 DESIGN / 类型 QUOTE / `qty=1`），分布 16 个父件 |
 
-**执行顺序**：`010`（分类树）→ `020`（属性）→ `030`（样例零部件，`class_id` 依赖 010）。顺序倒了会挂不上父分类/分类。
+**执行顺序**：`010`（分类树）→ `020`（属性）→ `030`（样例零部件，`class_id` 依赖 010）→ `040`（BOM 补件）→ `050`（BOM 行，依赖 030+040 的 id 映射）。顺序倒了会挂不上父分类/父子件。
 
 ```bash
 # 重新生成（需要蓝本库只读账号；脚本只发 SELECT）
 pwsh tools/Gen-DocClassMigration.ps1 -User <user> -Password <pwd>
 pwsh tools/Gen-DocClassAttrMigration.ps1 -User <user> -Password <pwd>
 pwsh tools/Gen-ItemMigration.ps1 -User <user> -Password <pwd> -PerType 15
+pwsh tools/Gen-BomMigration.ps1 -User <user> -Password <pwd> -Limit 100
 ```
+
+> `040`/`050` 由同一个生成器一次产出（先补件、再 BOM 行）；执行顺序不能颠倒。
 
 **重跑前清空样例数据**（可选；现场确认现有物料都是测试数据时才做）：
 
