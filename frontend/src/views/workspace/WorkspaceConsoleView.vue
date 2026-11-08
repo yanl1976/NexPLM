@@ -32,10 +32,22 @@
             highlight-current
             @node-click="onNodeClick"
           >
-            <template #default="{ data }">
-              <span class="tree-node">
-                <el-icon><FolderOpened v-if="!data.folderId" /><Folder v-else /></el-icon>
+            <template #default="{ node, data }">
+              <span class="tree-node" :class="{ 'tree-root': !data.folderId }">
+                <span
+                  class="tree-icon"
+                  :class="[`space-${String(data.space).toLowerCase()}`, { 'is-root': !data.folderId }]"
+                >
+                  <el-icon>
+                    <HomeFilled v-if="!data.folderId && data.space === 'PUBLIC'" />
+                    <User v-else-if="!data.folderId && data.space === 'MY'" />
+                    <Collection v-else-if="!data.folderId && data.space === 'PROJECT'" />
+                    <FolderOpened v-else-if="node.expanded" />
+                    <Folder v-else />
+                  </el-icon>
+                </span>
                 <span class="tree-label">{{ data.label }}</span>
+                <span v-if="data.children?.length" class="tree-badge">{{ data.children.length }}</span>
               </span>
             </template>
           </el-tree>
@@ -46,7 +58,9 @@
       <section class="main">
         <div class="crumb-bar">
           <el-breadcrumb separator="/">
-            <el-breadcrumb-item>工作空间</el-breadcrumb-item>
+            <el-breadcrumb-item>
+              <span class="crumb-root"><el-icon><HomeFilled /></el-icon>工作空间</span>
+            </el-breadcrumb-item>
             <el-breadcrumb-item>{{ spaceLabel }}</el-breadcrumb-item>
             <el-breadcrumb-item v-if="pathLabel">{{ pathLabel }}</el-breadcrumb-item>
           </el-breadcrumb>
@@ -110,7 +124,7 @@
             <el-table-column type="selection" width="38" />
             <el-table-column label="对象类型" width="110">
               <template #default="{ row }">
-                <span class="type-cell"><el-icon><Document /></el-icon>{{ TYPE_LABEL[row.object_type] || row.object_type }}</span>
+                <span class="type-cell"><el-icon><component :is="typeIcon(row.object_type)" /></el-icon>{{ TYPE_LABEL[row.object_type] || row.object_type }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="code" label="编号" width="150" />
@@ -218,7 +232,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, Document, Folder, FolderOpened, Refresh, Search } from '@element-plus/icons-vue'
+import { ArrowDown, Box, Collection, Document, Folder, FolderOpened, HomeFilled, Refresh, Search, Tickets, User } from '@element-plus/icons-vue'
 import { wsConsoleApi, type WsFolder, type WsObject } from '@/api/wsConsole'
 import ItemFormDialog from '@/components/business/ItemFormDialog.vue'
 import {
@@ -245,6 +259,17 @@ const TYPE_LABEL: Record<string, string> = {
   PdmDoc: '文档',
   PdmCad: '图纸',
   PdmBom: 'BOM'
+}
+
+const TYPE_ICON: Record<string, unknown> = {
+  PdmItem: Box,
+  PdmDoc: Document,
+  PdmCad: Document,
+  PdmBom: Tickets
+}
+
+function typeIcon(objectType: string): unknown {
+  return TYPE_ICON[objectType] ?? Folder
 }
 
 const folders = ref<WsFolder[]>([])
@@ -625,6 +650,80 @@ onMounted(loadTree)
 
 .tree-label {
   white-space: nowrap;
+}
+
+/* 彩色文件夹图标：根节点按空间配色，普通文件夹统一暖黄色 */
+.tree-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #fff7e4, #ffe3a3);
+  color: #c58315;
+  box-shadow: inset 0 0 0 1px rgba(190, 130, 30, 0.28), 0 1px 1px rgba(60, 80, 110, 0.08);
+}
+
+.tree-icon .el-icon {
+  font-size: 14px;
+}
+
+.tree-icon.is-root {
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(40, 70, 110, 0.18);
+}
+
+.tree-icon.is-root.space-public {
+  background: linear-gradient(180deg, #5b9bd5, #2f6db3);
+}
+
+.tree-icon.is-root.space-my {
+  background: linear-gradient(180deg, #5bb98c, #2f8f66);
+}
+
+.tree-icon.is-root.space-project {
+  background: linear-gradient(180deg, #9b8bd6, #6a55b0);
+}
+
+.tree-root .tree-label {
+  font-weight: 600;
+  color: #2c4a6e;
+}
+
+.tree-badge {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #eef3f9;
+  color: #6b7a90;
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+}
+
+.side-tree :deep(.el-tree-node__content) {
+  height: 26px;
+  border-radius: 3px;
+}
+
+.side-tree :deep(.el-tree-node__content:hover) {
+  background: #edf4fc;
+}
+
+.side-tree :deep(.el-tree-node.is-current > .el-tree-node__content) {
+  background: #dbeafe;
+}
+
+.crumb-root {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.type-cell .el-icon {
+  color: #4a76ad;
 }
 
 .crumb-bar {
