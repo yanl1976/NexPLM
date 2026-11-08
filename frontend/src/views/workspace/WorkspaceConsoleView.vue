@@ -30,7 +30,7 @@
         <el-button size="small" :disabled="!selectedRows.length" @click="openEdit">编辑</el-button>
         <el-button size="small" :disabled="!selectedRows.length" @click="onCheckout">检出</el-button>
         <el-button size="small" :disabled="!selectedRows.length" @click="onCheckin">取消检出</el-button>
-        <el-button size="small" disabled>添加</el-button>
+        <el-button size="small" @click="openAdd">添加</el-button>
         <el-button size="small" :disabled="!selectedRows.length" @click="openBom">BOM 管理</el-button>
         <el-button size="small" disabled>产品完整性检查</el-button>
         <el-button size="small" disabled>发起流程</el-button>
@@ -177,6 +177,37 @@
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
         <el-button type="primary" :loading="editSaving" @click="submitEdit">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 添加：把已有对象挂到当前文件夹 -->
+    <el-dialog v-model="addVisible" title="添加已有对象" width="560px">
+      <el-form label-width="80px">
+        <el-form-item label="对象">
+          <el-select
+            v-model="addObjectId"
+            filterable
+            remote
+            :remote-method="searchObjects"
+            :loading="addSearching"
+            placeholder="输入编码或名称搜索"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in addOptions"
+              :key="item.id"
+              :label="`${item.code} ${item.name}`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="目标">
+          <span class="hint">{{ pathLabel || '请先选择文件夹' }}</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="addVisible = false">取消</el-button>
+        <el-button type="primary" :loading="addSaving" :disabled="!addObjectId" @click="submitAdd">添加</el-button>
       </template>
     </el-dialog>
 
@@ -518,6 +549,57 @@ async function submitEdit(): Promise<void> {
     ElMessage.error((error as Error).message || '保存失败')
   } finally {
     editSaving.value = false
+  }
+}
+
+// ---------------- 添加：把已有对象挂进当前文件夹 ----------------
+const addVisible = ref(false)
+const addSaving = ref(false)
+const addSearching = ref(false)
+const addObjectId = ref('')
+const addOptions = ref<Array<{ id: string; code: string; name: string }>>([])
+
+function openAdd(): void {
+  if (!currentFolder.value?.folderId) {
+    ElMessage.warning('请先在左侧选择文件夹')
+    return
+  }
+  addObjectId.value = ''
+  addOptions.value = []
+  addVisible.value = true
+}
+
+async function searchObjects(keyword: string): Promise<void> {
+  if (!keyword || keyword.trim().length < 2) {
+    addOptions.value = []
+    return
+  }
+  addSearching.value = true
+  try {
+    const page = await itemApi.list({ keyword: keyword.trim(), page: 1, size: 20 } as never)
+    addOptions.value = (page.items ?? []).map((row) => ({ id: row.id, code: row.code, name: row.name }))
+  } catch {
+    addOptions.value = []
+  } finally {
+    addSearching.value = false
+  }
+}
+
+async function submitAdd(): Promise<void> {
+  const folder = currentFolder.value
+  if (!folder?.folderId || !addObjectId.value) {
+    return
+  }
+  addSaving.value = true
+  try {
+    await wsConsoleApi.addObject(folder.space, folder.folderId, addObjectId.value)
+    ElMessage.success('已添加')
+    addVisible.value = false
+    await refreshObjects()
+  } catch (error) {
+    ElMessage.error((error as Error).message || '添加失败')
+  } finally {
+    addSaving.value = false
   }
 }
 

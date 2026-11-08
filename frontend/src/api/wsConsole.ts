@@ -33,6 +33,10 @@ export const wsConsoleApi = {
   tree: (space: string) => http.get<WsFolder[]>('/ws-console/tree', { space }),
   objects: (space: string, folderId: string) =>
     http.get<WsObject[]>('/ws-console/objects', { space, folderId }),
+  addObject: (space: string, folderId: string, objectId: string) =>
+    http.post<void>(`/ws-console/objects?space=${encodeURIComponent(space)}&folderId=${encodeURIComponent(folderId)}`, {
+      objectId
+    }),
   checkout: (id: string) => http.post<void>(`/ws-console/objects/${id}/checkout`, {}),
   checkin: (id: string) => http.delete<void>(`/ws-console/objects/${id}/checkout`)
 }

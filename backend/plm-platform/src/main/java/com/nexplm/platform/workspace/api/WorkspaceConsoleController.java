@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -77,6 +78,34 @@ public class WorkspaceConsoleController {
                  WHERE deleted = false AND space_type = ?
                  ORDER BY path
                 """, type));
+    }
+
+    /** 把已有对象挂到当前文件夹（个人侧或项目侧）。 */
+    @Operation(summary = "把已有对象加入文件夹")
+    @PostMapping("/objects")
+    @PreAuthorize("hasAuthority('pse.item.write')")
+    public Result<Void> addObject(@RequestParam String space,
+                                  @RequestParam Long folderId,
+                                  @RequestBody AddObjectReq req) {
+        Long userId = CurrentUser.userId();
+        if ("PROJECT".equalsIgnoreCase(space)) {
+            jdbcTemplate.update("""
+                    INSERT INTO prj_project_content (id, project_folder_id, object_id, created_by)
+                    SELECT ?, ?, o.id, ? FROM plm_object o WHERE o.id = ? AND o.deleted = false
+                    ON CONFLICT DO NOTHING
+                    """, com.baomidou.mybatisplus.core.toolkit.IdWorker.getId(), folderId, userId, req.objectId());
+        } else {
+            jdbcTemplate.update("""
+                    INSERT INTO ws_folder_content (id, folder_id, object_id, sort, created_by)
+                    SELECT ?, ?, o.id, 0, ? FROM plm_object o WHERE o.id = ? AND o.deleted = false
+                    ON CONFLICT DO NOTHING
+                    """, com.baomidou.mybatisplus.core.toolkit.IdWorker.getId(), folderId, userId, req.objectId());
+        }
+        return Result.ok();
+    }
+
+    /** 加入文件夹请求。 */
+    public record AddObjectReq(Long objectId) {
     }
 
     /** 文件夹内容（对象列表，带项目代号 / 规格型号 / 检出信息）。 */
