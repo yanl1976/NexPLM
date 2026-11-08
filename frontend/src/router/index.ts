@@ -52,6 +52,12 @@ const routes: RouteRecordRaw[] = [
     children: [
       {
         path: '',
+        name: 'portal',
+        component: () => import('@/views/PortalView.vue'),
+        meta: { title: '个人门户' }
+      },
+      {
+        path: 'home',
         name: 'home',
         component: () => import('@/views/HomeView.vue'),
         meta: { title: '概览' }
