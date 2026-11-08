@@ -37,6 +37,12 @@ const routes: RouteRecordRaw[] = [
         name: 'm-task',
         component: () => import('@/views/mobile/MobileTaskView.vue'),
         meta: { title: '我的任务' }
+      },
+      {
+        path: 'project',
+        name: 'm-project',
+        component: () => import('@/views/mobile/MobileProjectView.vue'),
+        meta: { title: '我的项目' }
       }
     ]
   },
