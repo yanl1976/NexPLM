@@ -155,7 +155,8 @@ public enum ErrorCode {
     ITG_DELIVERY_STATE_INVALID("ITG.DELIVERY.STATE.INVALID", "当前投递状态不允许该操作", 409),
     OPEN_KEY_INVALID("OPEN.KEY.INVALID", "API Key 无效或已停用", 401),
     OPEN_KEY_EXPIRED("OPEN.KEY.EXPIRED", "API Key 已过期", 401),
-    OPEN_RATE_LIMITED("OPEN.RATE.LIMITED", "请求过于频繁，请稍后重试", 429);
+    OPEN_RATE_LIMITED("OPEN.RATE.LIMITED", "请求过于频繁，请稍后重试", 429),
+    DOC_PREVIEW_RATE_LIMITED("DOC.PREVIEW.RATE.LIMITED", "预览生成过于频繁，请稍后重试", 429);
 
     private final String code;
     private final String message;

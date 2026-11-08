@@ -1,7 +1,9 @@
 package com.nexplm.app;
 
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexplm.platform.doc.service.PreviewService;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,6 +71,9 @@ class DocSmokeTest {
 
     @Autowired
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private PreviewService previewService;
 
     @Test
     void documentLifecycleWithFilesAndCheckin() throws Exception {
@@ -413,6 +418,30 @@ class DocSmokeTest {
     }
 
     // ---------------------------------------------------------------- 工具
+
+    /**
+     * 僵尸 PENDING 回收（台账 B17）：进程重启留下的"转换中"不能永久挂着，
+     * 维护任务把超过 stale-minutes 的 PENDING 转成 FAILED（可重试），且不动原产物指针。
+     */
+    @Test
+    void stalePendingPreviewIsReapedAsFailed() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        long docId = call(post("/api/v1/docs"), admin,
+                json(Map.of("name", "僵尸预览文档", "docType", "DESIGN"))).path("id").asLong();
+        long recordId = IdWorker.getId();
+        jdbcTemplate.update("""
+                INSERT INTO doc_preview(id, object_id, source_file_id, format, status, message, updated_at)
+                VALUES (?, ?, ?, 'PDF', 'PENDING', NULL, now() - interval '10 minutes')
+                """, recordId, docId, 900_000_000_001L);
+
+        int reaped = previewService.reapStalePending();
+
+        assertThat(reaped).isGreaterThanOrEqualTo(1);
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                "SELECT status, message FROM doc_preview WHERE id = ?", recordId);
+        assertThat(row.get("status")).isEqualTo("FAILED");
+        assertThat(String.valueOf(row.get("message"))).contains("转换超时");
+    }
 
     private void uploadFile(String token, long docId, String fileName, String role, String content) throws Exception {
         MvcResult result = mockMvc.perform(multipart("/api/v1/docs/{id}/files", docId)

@@ -17,6 +17,7 @@ import com.nexplm.platform.object.service.ObjectAccessGuard;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
@@ -52,8 +53,6 @@ public class PreviewService {
 
     private static final Logger log = LoggerFactory.getLogger(PreviewService.class);
     private static final int MESSAGE_MAX = 500;
-    /** PENDING 超过该时长视为卡死（进程重启/线程被回收），允许重新触发而不是永久占位。 */
-    private static final int PENDING_STALE_MINUTES = 5;
     /** 转换并发数：外部进程（soffice）吃 CPU/内存，2 路足够，同时充当全局限流。 */
     private static final int CONVERT_THREADS = 2;
     /** 排队上限：满了直接返回「可重试的失败」，不无限堆积、也不阻塞请求线程。 */
@@ -64,6 +63,10 @@ public class PreviewService {
     private final ObjectAccessGuard objectAccessGuard;
     private final FileService fileService;
     private final List<PreviewConverter> converters;
+    /** PENDING 超过该时长视为卡死（进程重启/线程被中断），允许重新触发并被维护任务回收。 */
+    private final int staleMinutes;
+    /** 用户级配额：全局池防总量，这一层防单点刷。 */
+    private final PreviewRateLimiter rateLimiter;
 
     /** 转换线程池：转换要等外部进程（最长 90s），必须离开请求线程；有界队列即资源护栏。 */
     private final ExecutorService converterPool = new ThreadPoolExecutor(
@@ -81,12 +84,17 @@ public class PreviewService {
 
     public PreviewService(DocPreviewMapper previewMapper, DocMasterMapper docMasterMapper,
                           ObjectAccessGuard objectAccessGuard,
-                          FileService fileService, List<PreviewConverter> converters) {
+                          FileService fileService, List<PreviewConverter> converters,
+                          @Value("${nexplm.preview.stale-minutes:5}") int staleMinutes,
+                          @Value("${nexplm.preview.rate-limit-per-minute:10}") int rateLimitPerMinute) {
         this.previewMapper = previewMapper;
         this.docMasterMapper = docMasterMapper;
         this.objectAccessGuard = objectAccessGuard;
         this.fileService = fileService;
         this.converters = converters;
+        // 0/负数会让正在跑的转换被立即判死，下限锁 1 分钟
+        this.staleMinutes = Math.max(1, staleMinutes);
+        this.rateLimiter = new PreviewRateLimiter(rateLimitPerMinute);
     }
 
     @PreDestroy
@@ -126,6 +134,10 @@ public class PreviewService {
      */
     public DocPreviewDtos.PreviewStatus generate(Long objectId, Long fileId, Long userId) {
         objectAccessGuard.requireType(objectId, DocService.OBJECT_TYPE, "文档");
+        if (!rateLimiter.tryAcquire(userId, System.currentTimeMillis())) {
+            throw BizException.of(ErrorCode.DOC_PREVIEW_RATE_LIMITED,
+                    "预览生成过于频繁（每分钟最多 " + rateLimiter.limitPerMinute() + " 次），请稍后重试");
+        }
         FileService.FileView source = resolveSource(objectId, fileId);
         String ext = source.ext() == null ? "" : source.ext().toLowerCase(Locale.ROOT);
         DocPreview record = findOrCreate(objectId, source.fileId(), userId);
@@ -157,6 +169,27 @@ public class PreviewService {
                     "预览转换排队已满，请稍后重试", record.getPreviewFileId(), userId));
         }
         return toStatus(reload(record.getId()));
+    }
+
+    /**
+     * 回收超时未完成的 PENDING（进程重启/线程被中断留下的僵尸记录）→ FAILED（可重试）。
+     * <p>只改状态与原因，不动 {@code previewFileId}：上一份可看的预览仍然保留。</p>
+     *
+     * @return 本轮回收到影响的行数
+     */
+    public int reapStalePending() {
+        OffsetDateTime now = OffsetDateTime.now();
+        return previewMapper.update(null, new LambdaUpdateWrapper<DocPreview>()
+                .eq(DocPreview::getStatus, "PENDING")
+                .lt(DocPreview::getUpdatedAt, now.minusMinutes(staleMinutes))
+                .set(DocPreview::getStatus, "FAILED")
+                .set(DocPreview::getMessage, "转换超时（进程重启或线程被中断），可重试")
+                .set(DocPreview::getUpdatedAt, now));
+    }
+
+    /** 清理限流器里的空窗口（由维护任务周期调用，避免 userId 无限累积）。 */
+    public void evictRateLimitWindows() {
+        rateLimiter.evictIdle();
     }
 
     // ------------------------------------------------------------ 异步转换
@@ -231,7 +264,7 @@ public class PreviewService {
                 .eq(DocPreview::getId, record.getId())
                 .and(w -> w.ne(DocPreview::getStatus, "PENDING")
                         .or()
-                        .lt(DocPreview::getUpdatedAt, now.minusMinutes(PENDING_STALE_MINUTES)))
+                        .lt(DocPreview::getUpdatedAt, now.minusMinutes(staleMinutes)))
                 .set(DocPreview::getStatus, "PENDING")
                 .set(DocPreview::getMessage, null)
                 .set(DocPreview::getConverter, converterName)
