@@ -4,7 +4,7 @@
  * 旧系统 13 个页面维护的其实是同一件事——**编码由哪些段拼成、流水走到几、什么时候归零**。
  * 这里收敛成一张规则表 + 两个对话框（编辑段定义 / 重置跳号）。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Delete } from '@element-plus/icons-vue'
 import { codingApi } from '@/api/coding'
@@ -232,14 +232,20 @@ const classLoading = ref(false)
 
 interface ValueTreeNode {
   path: string
+  codeValue: string
+  name?: string | null
+  deleted: boolean
   label: string
   children: ValueTreeNode[]
 }
 
 /** 码值扁平列表 → 树：valuePath 已含全部祖先（1001、1001/02），按最后一个 / 找父。 */
-const valueTree = computed<ValueTreeNode[]>(() => {
-  const nodes = values.value.map((row) => ({
+function buildValueTree(rows: CodeValueRow[]): ValueTreeNode[] {
+  const nodes = rows.map((row) => ({
     path: row.valuePath,
+    codeValue: row.codeValue,
+    name: row.name,
+    deleted: row.deleted,
     label: `${row.codeValue}  ${row.name ?? ''}`.trim(),
     children: [] as ValueTreeNode[]
   }))
@@ -255,7 +261,9 @@ const valueTree = computed<ValueTreeNode[]>(() => {
     }
   }
   return roots
-})
+}
+
+const valueTree = computed<ValueTreeNode[]>(() => buildValueTree(values.value))
 
 async function loadKinds(): Promise<void> {
   kindsLoading.value = true
@@ -293,6 +301,154 @@ async function loadClasses(): Promise<void> {
     ElMessage.error((error as Error).message || '加载分类树失败')
   } finally {
     classLoading.value = false
+  }
+}
+
+// ---------------- 码值维护（只增不改值 / 改名 / 停用） ----------------
+const valueDialogVisible = ref(false)
+const valueSaving = ref(false)
+const valueForm = reactive({ parentPath: '', codeValue: '', name: '' })
+
+const renameVisible = ref(false)
+const renameSaving = ref(false)
+const renameForm = reactive({ valuePath: '', name: '', deleted: false })
+
+function openCreateValue(): void {
+  valueForm.parentPath = ''
+  valueForm.codeValue = ''
+  valueForm.name = ''
+  valueDialogVisible.value = true
+}
+
+async function submitValue(): Promise<void> {
+  if (!currentKind.value) {
+    return
+  }
+  const codeValue = valueForm.codeValue.trim()
+  if (!codeValue) {
+    ElMessage.warning('请填写码值')
+    return
+  }
+  valueSaving.value = true
+  try {
+    await codingApi.createValue(currentKind.value.code, {
+      codeValue,
+      name: valueForm.name.trim() || undefined,
+      parentPath: valueForm.parentPath.trim() || undefined
+    })
+    ElMessage.success('已新增码值')
+    valueDialogVisible.value = false
+    await loadValues(currentKind.value.code)
+    await loadKinds()
+  } catch (error) {
+    ElMessage.error((error as Error).message || '新增码值失败')
+  } finally {
+    valueSaving.value = false
+  }
+}
+
+function openRenameValue(node: ValueTreeNode): void {
+  renameForm.valuePath = node.path
+  renameForm.name = node.name ?? ''
+  renameForm.deleted = node.deleted
+  renameVisible.value = true
+}
+
+async function submitRenameValue(): Promise<void> {
+  if (!currentKind.value) {
+    return
+  }
+  renameSaving.value = true
+  try {
+    await codingApi.updateValue(currentKind.value.code, {
+      valuePath: renameForm.valuePath,
+      name: renameForm.name.trim(),
+      deleted: renameForm.deleted
+    })
+    ElMessage.success('已保存')
+    renameVisible.value = false
+    await loadValues(currentKind.value.code)
+  } catch (error) {
+    ElMessage.error((error as Error).message || '保存失败')
+  } finally {
+    renameSaving.value = false
+  }
+}
+
+// ---------------- 分类绑定（种类 + 码值 → 路径） ----------------
+const bindVisible = ref(false)
+const bindSaving = ref(false)
+const bindClass = ref<ItemClassNode | null>(null)
+const bindKind = ref('')
+const bindValuePath = ref('')
+const bindingValues = ref<CodeValueRow[]>([])
+
+const bindValueTree = computed<ValueTreeNode[]>(() => buildValueTree(bindingValues.value))
+
+const bindPreview = computed(() =>
+  bindKind.value && bindValuePath.value ? `${bindKind.value}/${bindValuePath.value}/*` : ''
+)
+
+function openBinding(node: ItemClassNode): void {
+  bindClass.value = node
+  bindKind.value = ''
+  bindValuePath.value = ''
+  bindingValues.value = []
+  if (node.codePath) {
+    const parts = node.codePath.split('/').filter((part) => part && part !== '*')
+    bindKind.value = parts[0] ?? ''
+    bindValuePath.value = parts.slice(1).join('/')
+    if (bindKind.value) {
+      loadBindingValues(bindKind.value)
+    }
+  }
+  bindVisible.value = true
+}
+
+async function onBindKindChange(code: string): Promise<void> {
+  bindValuePath.value = ''
+  bindingValues.value = []
+  if (code) {
+    await loadBindingValues(code)
+  }
+}
+
+async function loadBindingValues(code: string): Promise<void> {
+  try {
+    bindingValues.value = await codingApi.kindValues(code)
+  } catch (error) {
+    ElMessage.error((error as Error).message || '加载码值失败')
+  }
+}
+
+async function submitBinding(): Promise<void> {
+  const node = bindClass.value
+  if (!node) {
+    return
+  }
+  if (!bindPreview.value) {
+    ElMessage.warning('请选择编码种类与码值')
+    return
+  }
+  bindSaving.value = true
+  try {
+    await itemClassApi.update(node.id, {
+      code: node.code,
+      name: node.name,
+      parentId: node.parentId ?? null,
+      sort: node.sort,
+      status: node.status,
+      remark: node.remark ?? null,
+      codeRuleCode: node.codeRuleCode ?? null,
+      codePath: bindPreview.value
+    })
+    ElMessage.success('已绑定编码路径')
+    bindVisible.value = false
+    await loadClasses()
+  } catch (error) {
+    ElMessage.error((error as Error).message || '绑定失败')
+  } finally {
+    bindSaving.value = false
   }
 }
 
@@ -398,6 +554,12 @@ onMounted(() => {
               <el-button v-if="currentKind" :icon="Refresh" @click="loadValues(currentKind.code)">刷新</el-button>
             </div>
           </template>
+          <div class="value-toolbar">
+            <el-button type="primary" plain :icon="Plus" :disabled="!currentKind" @click="openCreateValue">
+              新增码值
+            </el-button>
+            <span class="hint">码值只增不改值；停用后不再允许新绑定，历史编码仍引用</span>
+          </div>
           <el-empty v-if="!currentKind" description="在「编码种类」页点「查看码值」" />
           <el-tree
             v-else
@@ -407,7 +569,16 @@ onMounted(() => {
             :props="{ label: 'label', children: 'children' }"
             default-expand-all
             class="value-tree"
-          />
+          >
+            <template #default="{ data }">
+              <span class="value-row" :class="{ 'is-disabled': data.deleted }">
+                <span class="value-code">{{ data.codeValue }}</span>
+                <span class="value-name">{{ data.name || '-' }}</span>
+                <el-tag v-if="data.deleted" size="small" type="info" effect="plain">已停用</el-tag>
+                <el-button link type="primary" size="small" @click.stop="openRenameValue(data)">改名/停用</el-button>
+              </span>
+            </template>
+          </el-tree>
         </el-card>
       </el-tab-pane>
 
@@ -436,6 +607,7 @@ onMounted(() => {
                 <span class="class-name">{{ data.name }}</span>
                 <el-tag v-if="data.codePath" size="small" type="success" effect="plain">{{ data.codePath }}</el-tag>
                 <el-tag v-else size="small" type="info" effect="plain">未绑定</el-tag>
+                <el-button link type="primary" size="small" @click.stop="openBinding(data)">绑定编码</el-button>
               </span>
             </template>
           </el-tree>
@@ -539,6 +711,91 @@ onMounted(() => {
         <el-button type="primary" :loading="saving" @click="save">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 新增码值（只增不改值） -->
+    <el-dialog v-model="valueDialogVisible" title="新增码值" width="520px">
+      <el-form label-width="90px">
+        <el-form-item label="所属种类">
+          <span class="hint">{{ currentKind ? `${currentKind.name}（${currentKind.code}）` : '-' }}</span>
+        </el-form-item>
+        <el-form-item label="父码值">
+          <el-tree-select
+            v-model="valueForm.parentPath"
+            :data="valueTree"
+            node-key="path"
+            :props="{ value: 'path', label: 'label', children: 'children' }"
+            check-strictly
+            clearable
+            placeholder="不选 = 大类"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="码值">
+          <el-input v-model="valueForm.codeValue" placeholder="如 1001 / 02" />
+        </el-form-item>
+        <el-form-item label="名称">
+          <el-input v-model="valueForm.name" placeholder="如 断路器 / 抽出式框架断路器" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="valueDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="valueSaving" @click="submitValue">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 改名 / 停用（不允许改值） -->
+    <el-dialog v-model="renameVisible" title="改名 / 停用码值" width="480px">
+      <el-form label-width="90px">
+        <el-form-item label="码值路径">
+          <span class="hint">{{ renameForm.valuePath }}</span>
+        </el-form-item>
+        <el-form-item label="名称">
+          <el-input v-model="renameForm.name" />
+        </el-form-item>
+        <el-form-item label="停用">
+          <el-switch v-model="renameForm.deleted" active-text="已停用" />
+          <span class="hint form-tip">码值不允许改值；需要换值请停用后新增</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="renameVisible = false">取消</el-button>
+        <el-button type="primary" :loading="renameSaving" @click="submitRenameValue">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 分类绑定编码路径 -->
+    <el-dialog v-model="bindVisible" title="绑定编码路径" width="600px">
+      <el-form label-width="110px">
+        <el-form-item label="分类">
+          <span class="hint">{{ bindClass?.code }} {{ bindClass?.name }}</span>
+        </el-form-item>
+        <el-form-item label="编码种类">
+          <el-select v-model="bindKind" style="width: 100%" @change="onBindKindChange">
+            <el-option v-for="k in kinds" :key="k.code" :label="`${k.name}（${k.code}）`" :value="k.code" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="码值">
+          <el-tree-select
+            v-model="bindValuePath"
+            :data="bindValueTree"
+            node-key="path"
+            :props="{ value: 'path', label: 'label', children: 'children' }"
+            check-strictly
+            clearable
+            placeholder="选到最末级码值（如 1001/02）"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="路径预览">
+          <el-tag v-if="bindPreview" type="success" effect="plain">{{ bindPreview }}</el-tag>
+          <span v-else class="hint">选择种类与码值后显示</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="bindVisible = false">取消</el-button>
+        <el-button type="success" :loading="bindSaving" :disabled="!bindPreview" @click="submitBinding">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -559,6 +816,38 @@ onMounted(() => {
 .class-tree {
   max-height: 60vh;
   overflow: auto;
+}
+
+.value-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.value-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.value-row.is-disabled {
+  color: var(--el-text-color-disabled);
+  text-decoration: line-through;
+}
+
+.value-code {
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 13px;
+}
+
+.value-name {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.form-tip {
+  margin-left: 12px;
 }
 
 .class-row {

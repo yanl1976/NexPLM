@@ -184,6 +184,7 @@ public class DocClassService {
         clazz.setStatus(normalizeStatus(req.status()));
         clazz.setRemark(req.remark());
         clazz.setCodeRuleCode(normalizeCodeRuleCode(entity, req.codeRuleCode(), null));
+        clazz.setCodePath(normalizeCodePath(entity, req.codePath()));
         clazz.setVersion(0);
         clazz.setDeleted(false);
         clazz.setCreatedBy(userId);
@@ -228,6 +229,10 @@ public class DocClassService {
         existing.setCodeRuleCode(req.codeRuleCode() == null
                 ? existing.getCodeRuleCode()
                 : normalizeCodeRuleCode(existing.getEntityCode(), req.codeRuleCode(), id));
+        // 编码路径同理：null=不改，空串=解除绑定（EXP-20261108-46）
+        if (req.codePath() != null) {
+            existing.setCodePath(normalizeCodePath(existing.getEntityCode(), req.codePath()));
+        }
         existing.setUpdatedBy(userId);
         existing.setUpdatedAt(OffsetDateTime.now());
         classMapper.updateById(existing);
@@ -506,6 +511,91 @@ public class DocClassService {
      *
      * @param excludeClassId 更新时排除自身
      */
+    /**
+     * 校验并归一编码路径（蓝本 {@code CLASSCODEPATH}，`EXP-20261108-46`）：
+     * {@code 种类/码值1/码值2/*}。
+     *
+     * <p>校验四条：种类必须存在；每个码值必须存在于该种类的码值树；{@code *} 只能在末尾；
+     * 码值个数必须等于该种类规则里 {@code VALUE} 段的个数（否则取号必然失败）。</p>
+     *
+     * @param raw null=不改；空串=解除绑定
+     */
+    private String normalizeCodePath(String entityCode, String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String value = raw.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        if (!ENTITY_ITEM.equals(entityCode)) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "只有零部件分类支持编码路径");
+        }
+        if (value.length() > 500) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "编码路径不能超过 500 个字符");
+        }
+        String[] parts = value.split("/");
+        String kindCode = parts[0].trim();
+        Long kindExists = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM code_kind WHERE code = ?", Long.class, kindCode);
+        if (kindExists == null || kindExists == 0) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "编码种类不存在：" + kindCode);
+        }
+        StringBuilder path = new StringBuilder();
+        int valueCount = 0;
+        for (int i = 1; i < parts.length; i++) {
+            String token = parts[i].trim();
+            if (token.isEmpty()) {
+                continue;
+            }
+            if ("*".equals(token)) {
+                if (i != parts.length - 1) {
+                    throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "流水占位 * 只能放在末尾");
+                }
+                continue;
+            }
+            if (path.length() > 0) {
+                path.append('/');
+            }
+            path.append(token);
+            Long exists = jdbcTemplate.queryForObject("""
+                    SELECT COUNT(1) FROM code_segment_value
+                     WHERE kind_code = ? AND value_path = ? AND deleted = false
+                    """, Long.class, kindCode, path.toString());
+            if (exists == null || exists == 0) {
+                throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "码值不存在：" + path);
+            }
+            valueCount++;
+        }
+        if (valueCount == 0) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "编码路径至少要包含一个码值");
+        }
+        String segmentsJson = jdbcTemplate.queryForObject("""
+                SELECT r.segments_json::text FROM code_kind k
+                  JOIN code_rule r ON r.code = k.rule_code
+                 WHERE k.code = ?
+                """, String.class, kindCode);
+        int needed = countOccurrences(segmentsJson, "\"VALUE\"");
+        if (needed != valueCount) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "该种类需要 " + needed + " 个码值，当前路径给了 " + valueCount + " 个");
+        }
+        return kindCode + "/" + path + "/*";
+    }
+
+    private static int countOccurrences(String text, String token) {
+        if (text == null || token == null || token.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        int index = text.indexOf(token);
+        while (index >= 0) {
+            count++;
+            index = text.indexOf(token, index + token.length());
+        }
+        return count;
+    }
+
     private String normalizeCodeRuleCode(String entityCode, String raw, Long excludeClassId) {
         if (raw == null || raw.isBlank()) {
             return null;

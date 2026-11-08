@@ -98,8 +98,12 @@ public class CodeRuleService {
                           long valueCount, long classCount) {
     }
 
-    /** 码值行（对应蓝本 {@code CODEVALUE}）；{@code valuePath} 形如 {@code 1001} 或 {@code 1001/02}。 */
-    public record ValueRow(String valuePath, String codeValue, String name, String segment, int sort) {
+    /**
+     * 码值行（对应蓝本 {@code CODEVALUE}）；{@code valuePath} 形如 {@code 1001} 或 {@code 1001/02}。
+     * <p>{@code deleted=true} 表示已停用：不再允许新绑定，但历史编码仍引用它。</p>
+     */
+    public record ValueRow(String valuePath, String codeValue, String name, String segment, int sort,
+                           boolean deleted) {
     }
 
     /** 编码种类列表（含码值数与已绑定分类数）。 */
@@ -119,19 +123,103 @@ public class CodeRuleService {
                         rs.getLong("value_count"), rs.getLong("class_count")));
     }
 
+    /**
+     * 新增码值（种类下）。{@code parentPath} 为空表示大类，否则挂在该父码值下。
+     *
+     * <p>码值只增不改值（改值等于换语义），重复的 {@code valuePath} 直接拒绝。</p>
+     */
+    @Transactional
+    public ValueRow createValue(String kindCode, String codeValue, String name, String parentPath) {
+        String kind = requireKind(kindCode);
+        String value = normalizeValueToken(codeValue);
+        String parent = parentPath == null ? "" : parentPath.trim();
+        if (!parent.isEmpty()) {
+            Long exists = jdbcTemplate.queryForObject("""
+                    SELECT COUNT(1) FROM code_segment_value
+                     WHERE kind_code = ? AND value_path = ? AND deleted = false
+                    """, Long.class, kind, parent);
+            if (exists == null || exists == 0) {
+                throw BizException.of(ErrorCode.CODE_RULE_INVALID, "父码值不存在：" + parent);
+            }
+        }
+        String path = parent.isEmpty() ? value : parent + "/" + value;
+        Long dup = jdbcTemplate.queryForObject("""
+                SELECT COUNT(1) FROM code_segment_value WHERE kind_code = ? AND value_path = ?
+                """, Long.class, kind, path);
+        if (dup != null && dup > 0) {
+            throw BizException.of(ErrorCode.COMMON_CONFLICT, "码值已存在：" + path);
+        }
+        Integer maxSort = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(MAX(sort), 0) FROM code_segment_value WHERE kind_code = ?
+                """, Integer.class, kind);
+        int sort = (maxSort == null ? 0 : maxSort) + 1;
+        String segment = parent.isEmpty() ? "大类" : "小类";
+        jdbcTemplate.update("""
+                INSERT INTO code_segment_value (id, kind_code, segment, value_path, code_value, name, sort)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, IdWorker.getId(), kind, segment, path, value,
+                name == null || name.isBlank() ? null : name.trim(), sort);
+        return new ValueRow(path, value, name, segment, sort, false);
+    }
+
+    /**
+     * 改码值：**只允许改名与停用/启用，不允许改 {@code code_value}**（改值等于换语义）。
+     * 需要换值的场景是"停用旧值 + 新增新值"，历史编码引用旧值仍然成立。
+     */
+    @Transactional
+    public void updateValue(String kindCode, String valuePath, String name, Boolean deleted) {
+        String kind = requireKind(kindCode);
+        Long exists = jdbcTemplate.queryForObject("""
+                SELECT COUNT(1) FROM code_segment_value
+                 WHERE kind_code = ? AND value_path = ?
+                """, Long.class, kind, valuePath == null ? "" : valuePath.trim());
+        if (exists == null || exists == 0) {
+            throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "码值不存在：" + valuePath);
+        }
+        jdbcTemplate.update("""
+                UPDATE code_segment_value
+                   SET name = COALESCE(?, name), deleted = COALESCE(?, deleted), updated_at = now()
+                 WHERE kind_code = ? AND value_path = ?
+                """, name == null || name.isBlank() ? null : name.trim(), deleted,
+                kind, valuePath.trim());
+    }
+
+    private String requireKind(String kindCode) {
+        if (kindCode == null || kindCode.isBlank()) {
+            throw BizException.of(ErrorCode.CODE_RULE_INVALID, "编码种类不能为空");
+        }
+        Long exists = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM code_kind WHERE code = ?", Long.class, kindCode.trim());
+        if (exists == null || exists == 0) {
+            throw BizException.of(ErrorCode.COMMON_NOT_FOUND, "编码种类不存在：" + kindCode);
+        }
+        return kindCode.trim();
+    }
+
+    private static String normalizeValueToken(String codeValue) {
+        String value = codeValue == null ? "" : codeValue.trim();
+        if (!value.matches("[A-Za-z0-9._-]{1,32}")) {
+            throw BizException.of(ErrorCode.CODE_RULE_INVALID,
+                    "码值只能是字母/数字/._-，长度 1~32");
+        }
+        return value;
+    }
+
     /** 某个种类下的全部码值（扁平，前端按 {@code valuePath} 拼成树）。 */
     public List<ValueRow> listValues(String kindCode) {
         if (kindCode == null || kindCode.isBlank()) {
             return List.of();
         }
+        // 停用的码值也要返回（前端才能"启用"），用 deleted 标记区分
         return jdbcTemplate.query("""
-                SELECT value_path, code_value, name, segment, sort
+                SELECT value_path, code_value, name, segment, sort, deleted
                   FROM code_segment_value
-                 WHERE kind_code = ? AND deleted = false
+                 WHERE kind_code = ?
                  ORDER BY sort, code_value
                 """,
                 (rs, rowNum) -> new ValueRow(rs.getString("value_path"), rs.getString("code_value"),
-                        rs.getString("name"), rs.getString("segment"), rs.getInt("sort")),
+                        rs.getString("name"), rs.getString("segment"), rs.getInt("sort"),
+                        rs.getBoolean("deleted")),
                 kindCode.trim());
     }
 
@@ -364,7 +452,7 @@ public class CodeRuleService {
                     """, nextNo, period, code);
         }
         String rendered = render(segments, nextNo, classCode);
-        recordIssue(code, rendered, objectType);
+        recordIssue(code, rendered, objectType, null);
         return rendered;
     }
 
@@ -406,7 +494,8 @@ public class CodeRuleService {
         long nextNo = nextClassSeq(ruleCode,
                 scopeKey == null || scopeKey.isBlank() ? "DEFAULT" : scopeKey.trim());
         String rendered = renderByPath(segments, values, nextNo);
-        recordIssue(ruleCode, rendered, null);
+        // 留路径快照：分类绑定后续变更不影响已发编码的追溯（T-CORE-10）
+        recordIssue(ruleCode, rendered, null, fullPath);
         return rendered;
     }
 
@@ -450,14 +539,15 @@ public class CodeRuleService {
      * 落发放流水。失败直接抛出：宁可不发号，也不要"号发了却查不到"。
      * 无登录上下文（定时任务/测试直调）时 {@code issued_by} 留空，不阻断。
      */
-    private void recordIssue(String ruleCode, String issued, String objectType) {
+    private void recordIssue(String ruleCode, String issued, String objectType, String generatorPath) {
         var principal = CurrentUser.orNull();
         Long operatorId = principal == null ? null : principal.userId();
         jdbcTemplate.update("""
-                INSERT INTO code_issue (id, rule_code, code, object_type, issued_by)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO code_issue (id, rule_code, code, object_type, issued_by, generator_path)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """, IdWorker.getId(), ruleCode, issued,
-                objectType == null || objectType.isBlank() ? null : objectType.trim(), operatorId);
+                objectType == null || objectType.isBlank() ? null : objectType.trim(), operatorId,
+                generatorPath == null || generatorPath.isBlank() ? null : generatorPath.trim());
     }
 
     /**

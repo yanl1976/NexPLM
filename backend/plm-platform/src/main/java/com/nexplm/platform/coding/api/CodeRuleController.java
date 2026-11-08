@@ -8,6 +8,7 @@ import com.nexplm.platform.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -62,6 +63,34 @@ public class CodeRuleController {
     @PreAuthorize("hasAuthority('system.coding.read')")
     public Result<List<CodeRuleService.ValueRow>> kindValues(@PathVariable String code) {
         return Result.ok(codeRuleService.listValues(code));
+    }
+
+    @Operation(summary = "新增码值（种类下；parentPath 为空表示大类）")
+    @PostMapping("/kinds/{code}/values")
+    @PreAuthorize("hasAuthority('system.coding.manage')")
+    @Audit(module = "SYSTEM", action = "CODING_VALUE_CREATE", objectType = "CodeRule")
+    public Result<CodeRuleService.ValueRow> createValue(@PathVariable String code,
+                                                        @Valid @RequestBody ValueCreateReq req) {
+        return Result.ok(codeRuleService.createValue(code, req.codeValue(), req.name(), req.parentPath()));
+    }
+
+    @Operation(summary = "改码值（只允许改名与停用/启用，不允许改值）")
+    @PutMapping("/kinds/{code}/values")
+    @PreAuthorize("hasAuthority('system.coding.manage')")
+    @Audit(module = "SYSTEM", action = "CODING_VALUE_UPDATE", objectType = "CodeRule")
+    public Result<Void> updateValue(@PathVariable String code, @Valid @RequestBody ValueUpdateReq req) {
+        codeRuleService.updateValue(code, req.valuePath(), req.name(), req.deleted());
+        return Result.ok();
+    }
+
+    /** 新增码值请求；{@code parentPath} 形如 {@code 1001}，为空表示大类。 */
+    public record ValueCreateReq(@NotBlank(message = "码值不能为空") String codeValue,
+                                 String name, String parentPath) {
+    }
+
+    /** 改码值请求：只有名称与停用标记，**没有 codeValue**（结构上禁止改值）。 */
+    public record ValueUpdateReq(@NotBlank(message = "码值路径不能为空") String valuePath,
+                                 String name, Boolean deleted) {
     }
 
     @Operation(summary = "编码规则列表（含每条规则的下一个编码预览）")

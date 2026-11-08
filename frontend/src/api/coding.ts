@@ -57,14 +57,36 @@ export interface CodeValueRow {
   name?: string | null
   segment?: string | null
   sort: number
+  /** 已停用：不允许新绑定，历史编码仍引用。 */
+  deleted: boolean
+}
+
+/** 新增码值请求；parentPath 为空表示大类。 */
+export interface CodeValueCreateReq {
+  codeValue: string
+  name?: string
+  parentPath?: string
+}
+
+/** 改码值请求：只有名称与停用标记，**没有 codeValue**（结构上禁止改值）。 */
+export interface CodeValueUpdateReq {
+  valuePath: string
+  name?: string
+  deleted?: boolean
 }
 
 export const codingApi = {
   rules: () => http.get<CodeRule[]>('/system/coding/rules'),
   /** 编码种类列表（含码值数、已绑定分类数）。 */
   kinds: () => http.get<CodeKindRow[]>('/system/coding/kinds'),
-  /** 某个种类下的码值（扁平）。 */
+  /** 某个种类下的码值（扁平；含已停用，用 deleted 区分）。 */
   kindValues: (code: string) => http.get<CodeValueRow[]>(`/system/coding/kinds/${code}/values`),
+  /** 新增码值（只增不改值）。 */
+  createValue: (kindCode: string, req: CodeValueCreateReq) =>
+    http.post<CodeValueRow>(`/system/coding/kinds/${kindCode}/values`, req),
+  /** 改码值：只允许改名/停用（不允许改值）。 */
+  updateValue: (kindCode: string, req: CodeValueUpdateReq) =>
+    http.put<void>(`/system/coding/kinds/${kindCode}/values`, req),
   /** 发放流水分页（按规则/类型/编码模糊过滤，倒序）。 */
   issues: (params: {
     ruleCode?: string

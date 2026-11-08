@@ -33,7 +33,12 @@ public final class DocClassDtos {
             String status,
             @Size(max = 500) String remark,
             /** 关联编码规则 code；传空串表示解除关联。 */
-            @Size(max = 64, message = "关联编码不能超过 64 个字符") String codeRuleCode) {
+            @Size(max = 64, message = "关联编码不能超过 64 个字符") String codeRuleCode,
+            /**
+             * 编码路径 {@code 种类/码值1/码值2/*}（蓝本 CLASSCODEPATH）；
+             * {@code null}=不修改，空串=解除绑定。只有零部件分类支持。
+             */
+            @Size(max = 500, message = "编码路径不能超过 500 个字符") String codePath) {
     }
 
     /** 生效属性：自身属性 + 祖先可继承属性；inherited=true 表示来自祖先分类。 */

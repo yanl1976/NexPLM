@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -360,6 +361,117 @@ class CodingRuleSmokeTest {
             jdbcTemplate.update("DELETE FROM code_segment_value WHERE kind_code = 'Kind_test02'");
             jdbcTemplate.update("DELETE FROM code_kind WHERE code = 'Kind_test02'");
             jdbcTemplate.update("DELETE FROM code_rule WHERE code = 'Kind_test02'");
+        }
+    }
+
+    /**
+     * 码值只增不改值 + 分类绑定 + `code_issue` 路径快照（T-CORE-10）。
+     *
+     * <p>覆盖：新增子码值 → 改名/停用 → 绑定合法路径 → 建零件取号 → 流水里留路径快照；
+     * 另断言"码值数量与规则不符"的路径被拒。</p>
+     */
+    @Test
+    void valueCrudBindingAndIssuePathSnapshot() throws Exception {
+        String admin = login();
+        String kind = "Kind_test03";
+        jdbcTemplate.update("DELETE FROM code_segment_value WHERE kind_code = ?", kind);
+        jdbcTemplate.update("DELETE FROM code_kind WHERE code = ?", kind);
+        jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", kind);
+        jdbcTemplate.update("DELETE FROM code_issue WHERE rule_code = ?", kind);
+        jdbcTemplate.update("""
+                        INSERT INTO code_rule (id, code, name, segments_json, scope_json, reset_policy, status,
+                                               version_no, created_at, updated_at, current_no, object_type, remark)
+                        VALUES (?, ?, '测试种类3',
+                                '[{"type":"VALUE"},{"type":"VALUE"},{"type":"SEQ","width":5,"radix":"DECIMAL"}]'::jsonb,
+                                '{}'::jsonb, 'NEVER', 'ACTIVE', 1, now(), now(), 0, 'PdmItem', 'EXP-20261108-46')
+                        """, IdWorker.getId(), kind);
+        jdbcTemplate.update("""
+                        INSERT INTO code_kind (code, name, legacy_id, rule_code, sort)
+                        VALUES (?, '测试种类3', 'LEGACY3', ?, 11)
+                        """, kind, kind);
+        jdbcTemplate.update("""
+                        INSERT INTO code_segment_value (id, kind_code, segment, value_path, code_value, name, sort)
+                        VALUES (?, ?, '大类', '3001', '3001', '测试大类', 1)
+                        """, IdWorker.getId(), kind);
+        long classId = 94_300_000_001L;
+        jdbcTemplate.update("DELETE FROM doc_class WHERE id = ?", classId);
+        jdbcTemplate.update("""
+                        INSERT INTO doc_class (id, parent_id, entity_code, code, name, path, sort, status,
+                                               deleted, version, created_at, updated_at)
+                        VALUES (?, NULL, 'PdmItem', 'T9601', '绑定测试分类', '/T9601', 0, 'ACTIVE', false, 0, now(), now())
+                        """, classId);
+        try {
+            // 1) 新增子码值
+            call(post("/api/v1/system/coding/kinds/{code}/values", kind), admin,
+                    json(Map.of("codeValue", "02", "name", "测试小类", "parentPath", "3001")));
+            JsonNode values = call(get("/api/v1/system/coding/kinds/{code}/values", kind), admin, null);
+            assertThat(values).hasSize(2);
+
+            // 2) 改名（没有 codeValue 字段，结构上不能改值）
+            call(put("/api/v1/system/coding/kinds/{code}/values", kind), admin,
+                    json(Map.of("valuePath", "3001/02", "name", "改名后")));
+            JsonNode afterRename = call(get("/api/v1/system/coding/kinds/{code}/values", kind), admin, null);
+            JsonNode child = null;
+            for (JsonNode row : afterRename) {
+                if ("3001/02".equals(row.path("valuePath").asText())) {
+                    child = row;
+                }
+            }
+            assertThat(child).isNotNull();
+            assertThat(child.path("deleted").asBoolean()).isFalse();
+            assertThat(child.path("name").asText()).isEqualTo("改名后");
+
+            // 3) 码值数量与规则不符 → 400
+            Map<String, Object> badBind = new java.util.HashMap<>();
+            badBind.put("code", "T9601");
+            badBind.put("name", "绑定测试分类");
+            badBind.put("codePath", kind + "/3001/*");
+            mockMvc.perform(put("/api/v1/item-classes/{id}", classId)
+                            .header("Authorization", "Bearer " + admin)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(badBind)))
+                    .andExpect(status().isBadRequest());
+
+            // 4) 合法路径绑定（2 个码值），返回 codePath
+            Map<String, Object> bind = new java.util.HashMap<>();
+            bind.put("code", "T9601");
+            bind.put("name", "绑定测试分类");
+            bind.put("codePath", kind + "/3001/02/*");
+            JsonNode bound = call(put("/api/v1/item-classes/{id}", classId), admin, json(bind));
+            assertThat(bound.path("codePath").asText()).isEqualTo(kind + "/3001/02/*");
+
+            // 5) 建零件取号，流水留路径快照
+            JsonNode item = call(post("/api/v1/items"), admin, json(Map.of(
+                    "name", "快照验证零件", "itemType", "PART", "sourceType", "MAKE",
+                    "classId", String.valueOf(classId))));
+            String code = item.path("code").asText();
+            assertThat(code).isEqualTo("30010200001");
+            String snapshot = jdbcTemplate.queryForObject(
+                    "SELECT generator_path FROM code_issue WHERE rule_code = ? AND code = ?",
+                    String.class, kind, code);
+            assertThat(snapshot).isEqualTo(kind + "/3001/02/*");
+
+            // 6) 停用（停用后不再允许新绑定；历史编码与快照不受影响）
+            call(put("/api/v1/system/coding/kinds/{code}/values", kind), admin,
+                    json(Map.of("valuePath", "3001/02", "deleted", true)));
+            JsonNode afterDisable = call(get("/api/v1/system/coding/kinds/{code}/values", kind), admin, null);
+            boolean disabled = false;
+            for (JsonNode row : afterDisable) {
+                if ("3001/02".equals(row.path("valuePath").asText())) {
+                    disabled = row.path("deleted").asBoolean();
+                }
+            }
+            assertThat(disabled).isTrue();
+        } finally {
+            jdbcTemplate.update("DELETE FROM code_issue WHERE rule_code = ?", kind);
+            jdbcTemplate.update("DELETE FROM item_master WHERE class_id = ?", classId);
+            jdbcTemplate.update("DELETE FROM plm_object WHERE object_type = 'PdmItem'"
+                    + " AND id NOT IN (SELECT object_id FROM item_master)");
+            jdbcTemplate.update("DELETE FROM doc_class WHERE id = ?", classId);
+            jdbcTemplate.update("DELETE FROM code_sequence WHERE rule_code = ?", kind);
+            jdbcTemplate.update("DELETE FROM code_segment_value WHERE kind_code = ?", kind);
+            jdbcTemplate.update("DELETE FROM code_kind WHERE code = ?", kind);
+            jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", kind);
         }
     }
 

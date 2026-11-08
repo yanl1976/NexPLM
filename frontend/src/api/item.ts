@@ -216,6 +216,8 @@ export interface ItemClassSaveReq {
   remark?: string | null
   /** 关联编码规则 code；空串表示解除关联（null 表示不修改）。 */
   codeRuleCode?: string | null
+  /** 编码路径 `种类/码值1/码值2/*`；空串表示解除绑定（null 表示不修改）。 */
+  codePath?: string | null
 }
 
 /** 按编码自动匹配分类的建议（仅零件未归类时给出）。 */
