@@ -127,15 +127,69 @@ class CodingRuleSmokeTest {
                 .andExpect(status().isBadRequest());
     }
 
+    /**
+     * 编码规则接口必须带权限（`EXP-20261108-15`）：普通业务用户既不能看规则，
+     * 也不能改段定义或重置流水（原实现无任何 `@PreAuthorize`）。
+     */
+    @Test
+    void codingRulesRequirePrivilege() throws Exception {
+        String admin = login();
+        createUser(admin, "coder", "编码普通用户");
+        String business = loginAs("coder", "Passw0rd!");
+
+        mockMvc.perform(get("/api/v1/system/coding/rules")
+                        .header("Authorization", "Bearer " + business))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/v1/system/coding/rules/PdmItem")
+                        .header("Authorization", "Bearer " + business)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("name", "越权改规则"))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/system/coding/rules/PdmItem/reset")
+                        .header("Authorization", "Bearer " + business)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("toNo", 1, "reason", "越权跳号"))))
+                .andExpect(status().isForbidden());
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {
+        return loginAs("admin", "Admin@12345");
+    }
+
+    private String loginAs(String username, String password) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("username", "admin", "password", "Admin@12345"))))
+                        .content(json(Map.of("username", username, "password", password))))
                 .andExpect(status().isOk())
                 .andReturn();
         return body(result).path("data").path("accessToken").asText();
+    }
+
+    private long createUser(String adminToken, String username, String displayName) throws Exception {
+        call(post("/api/v1/system/users"), adminToken, json(Map.of(
+                "username", username,
+                "password", "Passw0rd!",
+                "displayName", displayName,
+                "securityLevel", 1,
+                "roleIds", new long[]{businessRoleId(adminToken)})));
+        JsonNode users = call(get("/api/v1/system/users?page=1&size=100"), adminToken, null).path("items");
+        for (JsonNode user : users) {
+            if (username.equals(user.path("username").asText())) {
+                return user.path("id").asLong();
+            }
+        }
+        throw new IllegalStateException("用户创建失败：" + username);
+    }
+
+    private long businessRoleId(String adminToken) throws Exception {
+        for (JsonNode role : call(get("/api/v1/system/roles"), adminToken, null)) {
+            if ("BUSINESS".equals(role.path("code").asText())) {
+                return role.path("id").asLong();
+            }
+        }
+        throw new IllegalStateException("内置 BUSINESS 角色不存在");
     }
 
     private JsonNode call(MockHttpServletRequestBuilder builder, String token, String payload)
