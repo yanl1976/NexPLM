@@ -560,11 +560,58 @@ public class BomService {
         return raw.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
+    /**
+     * BOM-01：对齐蓝本 `PSEBOMLINEEDITCHECKNEW`。
+     *
+     * <p>蓝本做「正向展开（待加子件向下）+ 反向展开（当前父件向上）」，两个集合
+     * union 后按节点计数，出现两次（即两边都有）就判成环；本方法用交集等价表达。
+     * 两个方向都受 {@link #MAX_DEPTH}（蓝本 {@code @MAXLEVEL}）限制，避免脏数据
+     * 导致递归失控。</p>
+     *
+     * <p>蓝本 {@code @ISCONTAIMSELF=1} 可放行自包含；我们默认禁止自引用
+     *（`add()` 里拦 {@code parentId == childId}），开关登记为待业务。</p>
+     */
     private void ensureNoCycle(Long parentId, Long childId, String view) {
-        Set<Long> ancestors = ancestorsOf(parentId, view);
-        if (ancestors.contains(childId)) {
+        Set<Long> forward = descendantsOfBounded(childId, view);
+        Set<Long> backward = ancestorsOfBounded(parentId, view);
+        forward.retainAll(backward);
+        if (!forward.isEmpty()) {
             throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "会形成循环引用：目标子件是当前件的上级");
         }
+    }
+
+    /** 反向展开：从当前父件向上找祖先（含起点），受 MAX_DEPTH 限制。 */
+    private Set<Long> ancestorsOfBounded(Long itemId, String view) {
+        Set<Long> nodes = new HashSet<>();
+        jdbcTemplate.query("""
+                        WITH RECURSIVE anc(node, lvl) AS (
+                            SELECT ?, 0
+                            UNION
+                            SELECT b.parent_object_id, a.lvl + 1
+                              FROM bom_line b JOIN anc a ON b.child_object_id = a.node
+                             WHERE b.view_type = ? AND b.deleted = false AND a.lvl < ?
+                        )
+                        SELECT node FROM anc
+                        """,
+                rs -> { nodes.add(rs.getLong(1)); }, itemId, view, MAX_DEPTH);
+        return nodes;
+    }
+
+    /** 正向展开：从待加子件向下找后代（排除自身，对应蓝本 CITEMUID != @ADDITEMMASTERID_TEMP）。 */
+    private Set<Long> descendantsOfBounded(Long itemId, String view) {
+        Set<Long> nodes = new HashSet<>();
+        jdbcTemplate.query("""
+                        WITH RECURSIVE des(node, lvl) AS (
+                            SELECT ?, 0
+                            UNION
+                            SELECT b.child_object_id, d.lvl + 1
+                              FROM bom_line b JOIN des d ON b.parent_object_id = d.node
+                             WHERE b.view_type = ? AND b.deleted = false AND d.lvl < ?
+                        )
+                        SELECT node FROM des WHERE node <> ?
+                        """,
+                rs -> { nodes.add(rs.getLong(1)); }, itemId, view, MAX_DEPTH, itemId);
+        return nodes;
     }
 
     private Set<Long> ancestorsOf(Long itemId, String view) {

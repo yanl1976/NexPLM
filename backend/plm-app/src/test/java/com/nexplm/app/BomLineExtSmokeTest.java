@@ -140,6 +140,36 @@ class BomLineExtSmokeTest {
         }
     }
 
+    /** BOM-01：双向展开判环——快捷方式（不成环）放行，跨级成环拒绝。 */
+    @Test
+    void bomCycleCheckIsBidirectional() throws Exception {
+        String admin = login();
+        long a = createItem(admin, "双向A");
+        long b = createItem(admin, "双向B");
+        long c = createItem(admin, "双向C");
+        long x = createItem(admin, "双向X");
+        try {
+            call(post("/api/v1/items/{id}/bom", a), admin, body("childId", String.valueOf(b), "qty", 1));
+            call(post("/api/v1/items/{id}/bom", b), admin, body("childId", String.valueOf(c), "qty", 1));
+            call(post("/api/v1/items/{id}/bom", x), admin, body("childId", String.valueOf(a), "qty", 1));
+
+            // A -> C 是快捷方式，不是环
+            call(post("/api/v1/items/{id}/bom", a), admin, body("childId", String.valueOf(c), "qty", 1));
+
+            // C -> X 会形成 X -> A -> B -> C -> X
+            mockMvc.perform(post("/api/v1/items/{id}/bom", c)
+                            .header("Authorization", "Bearer " + admin)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body("childId", String.valueOf(x), "qty", 1)))
+                    .andExpect(status().isBadRequest());
+        } finally {
+            jdbcTemplate.update("DELETE FROM bom_line WHERE parent_object_id IN (?, ?, ?, ?)"
+                    + " OR child_object_id IN (?, ?, ?, ?)", a, b, c, x, a, b, c, x);
+            jdbcTemplate.update("DELETE FROM item_master WHERE object_id IN (?, ?, ?, ?)", a, b, c, x);
+            jdbcTemplate.update("DELETE FROM plm_object WHERE id IN (?, ?, ?, ?)", a, b, c, x);
+        }
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {
