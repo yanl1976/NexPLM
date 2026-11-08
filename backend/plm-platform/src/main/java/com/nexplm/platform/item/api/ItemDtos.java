@@ -74,6 +74,15 @@ public final class ItemDtos {
             java.util.Map<String, Object> ext) {
     }
 
+    /**
+     * 编码预览（不消耗流水）：新建表单选完分类后实时显示"将生成的编码"。
+     *
+     * @param source {@code CLASS_PATH}（分类绑定路径）/ {@code CLASS_CODE}（分类编码兜底）/
+     *               {@code TYPE_RULE}（按物料类型的规则）
+     */
+    public record CodePreview(String code, String ruleCode, String ruleName, String source) {
+    }
+
     /** 使用状态迁移（旧系统 STATEID：Using / StopUsing / GiveUp）。 */
     public record UsingStateReq(@NotBlank(message = "使用状态不能为空") String usingState) {
     }

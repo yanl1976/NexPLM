@@ -69,6 +69,14 @@ public class ItemController {
 
     // ------------------------------------------------------------ 列表与详情
 
+    @Operation(summary = "编码预览（不消耗流水）：新建表单选完分类后显示将生成的编码")
+    @GetMapping("/code-preview")
+    @PreAuthorize("hasAuthority('pse.item.read')")
+    public Result<ItemDtos.CodePreview> codePreview(@RequestParam(value = "classId", required = false) Long classId,
+                                                    @RequestParam(value = "itemType", required = false) String itemType) {
+        return Result.ok(itemService.previewCode(classId, itemType));
+    }
+
     @Operation(summary = "零部件列表（名称/编号/类型/使用状态/生命周期/流程状态/创建人/创建与发布时间区间/材料/规格）")
     @GetMapping
     @PreAuthorize("hasAuthority('pse.item.read')")

@@ -93,6 +93,99 @@ public class CodeRuleService {
      *
      * @param objectType 对象类型（如 {@code PdmItem}）；空表示不限
      */
+    /** 取号预览结果（不消耗流水，供新建表单实时显示"将生成的编码"）。 */
+    public record Preview(String code, String ruleCode, String ruleName, String source) {
+    }
+
+    /**
+     * 预览某条规则的下一个编码（不写流水、不动计数器）。
+     *
+     * @param classCode 规则含 {@code CLASS} 段时必填
+     */
+    public Preview preview(String ruleCode, String classCode) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT name, segments_json, current_no, last_period, reset_policy, status
+                  FROM code_rule WHERE code = ?
+                """, ruleCode);
+        if (rows.isEmpty()) {
+            throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "编码规则不存在：" + ruleCode);
+        }
+        Map<String, Object> row = rows.get(0);
+        if (!"ACTIVE".equals(String.valueOf(row.get("status")))) {
+            throw BizException.of(ErrorCode.CODE_RULE_INVALID, "编码规则已停用：" + ruleCode);
+        }
+        List<Segment> segments = parse(String.valueOf(row.get("segments_json")));
+        boolean byClass = segments.stream().anyMatch(s -> "CLASS".equalsIgnoreCase(s.type()));
+        long nextNo;
+        if (byClass) {
+            nextNo = peekClassSeq(ruleCode, classCode);
+        } else {
+            String policy = normalizePolicy(String.valueOf(row.get("reset_policy")));
+            String period = period(policy);
+            String lastPeriod = row.get("last_period") == null ? null : String.valueOf(row.get("last_period"));
+            long current = ((Number) row.get("current_no")).longValue();
+            boolean newPeriod = period != null && lastPeriod != null && !period.equals(lastPeriod);
+            nextNo = newPeriod ? 1 : current + 1;
+        }
+        return new Preview(render(segments, nextNo, classCode), ruleCode,
+                row.get("name") == null ? ruleCode : String.valueOf(row.get("name")), "CLASS_CODE");
+    }
+
+    /** 预览按分类编码路径取号的下一个编码（不动 {@code code_sequence}）。 */
+    public Preview previewByPath(String fullPath, String scopeKey) {
+        if (fullPath == null || fullPath.isBlank()) {
+            throw BizException.of(ErrorCode.CODE_RULE_INVALID, "分类未绑定编码路径");
+        }
+        String[] parts = fullPath.split("/");
+        String ruleCode = parts[0].trim();
+        List<String> values = new ArrayList<>();
+        for (int i = 1; i < parts.length; i++) {
+            String part = parts[i].trim();
+            if (part.isEmpty() || "*".equals(part)) {
+                continue;
+            }
+            values.add(part);
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT name, segments_json, status FROM code_rule WHERE code = ?
+                """, ruleCode);
+        if (rows.isEmpty()) {
+            throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "编码规则不存在：" + ruleCode);
+        }
+        if (!"ACTIVE".equals(String.valueOf(rows.get(0).get("status")))) {
+            throw BizException.of(ErrorCode.CODE_RULE_INVALID, "编码规则已停用：" + ruleCode);
+        }
+        List<Segment> segments = parse(String.valueOf(rows.get(0).get("segments_json")));
+        long nextNo = peekClassSeq(ruleCode, scopeKey);
+        return new Preview(renderByPath(segments, values, nextNo), ruleCode,
+                rows.get(0).get("name") == null ? ruleCode : String.valueOf(rows.get(0).get("name")),
+                "CLASS_PATH");
+    }
+
+    /** 按细分对象类型预览（命中专属规则用它，否则回退）。 */
+    public Preview previewForObjectType(String objectType, String fallbackRuleCode) {
+        if (objectType != null && !objectType.isBlank()) {
+            List<String> codes = jdbcTemplate.queryForList(
+                    "SELECT code FROM code_rule WHERE object_type = ? AND status = 'ACTIVE' ORDER BY code LIMIT 1",
+                    String.class, objectType.trim());
+            if (!codes.isEmpty()) {
+                Preview hit = preview(codes.get(0), null);
+                return new Preview(hit.code(), hit.ruleCode(), hit.ruleName(), "TYPE_RULE");
+            }
+        }
+        Preview fallback = preview(fallbackRuleCode, null);
+        return new Preview(fallback.code(), fallback.ruleCode(), fallback.ruleName(), "TYPE_RULE");
+    }
+
+    /** 只读下一个分类流水（不占用）。 */
+    private long peekClassSeq(String ruleCode, String scopeKey) {
+        String key = scopeKey == null || scopeKey.isBlank() ? "DEFAULT" : scopeKey.trim();
+        List<Long> rows = jdbcTemplate.queryForList(
+                "SELECT current_no FROM code_sequence WHERE rule_code = ? AND scope_key = ?",
+                Long.class, ruleCode, key);
+        return rows.isEmpty() || rows.get(0) == null ? 1 : rows.get(0) + 1;
+    }
+
     /** 编码种类行（对应蓝本 {@code CODEKIND}）。 */
     public record KindRow(String code, String name, String ruleCode, String legacyId,
                           long valueCount, long classCount) {

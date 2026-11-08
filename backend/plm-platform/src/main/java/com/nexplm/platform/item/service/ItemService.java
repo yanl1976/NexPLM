@@ -865,6 +865,28 @@ public class ItemService {
      *   <li>没传 → 按物料类型选规则（{@code PdmItem:<itemType>}），无规则回退 {@code PdmItem}。</li>
      * </ul>
      */
+    /**
+     * 编码预览（T-CORE-12）：新建表单选完分类后，显示"将生成的编码"，**不消耗流水**。
+     *
+     * <p>取号口径与 {@link #resolveCode} 完全一致：分类有 {@code codePath} 按路径预览，
+     * 否则按分类编码兜底；没分类按 {@code PdmItem:<类型>} 路由。</p>
+     */
+    public ItemDtos.CodePreview previewCode(Long classId, String itemType) {
+        if (classId != null) {
+            var clazz = classService.requireClass(classId, OBJECT_TYPE);
+            String codePath = clazz.getCodePath();
+            var preview = codePath != null && !codePath.isBlank()
+                    ? codeRuleService.previewByPath(codePath, clazz.getCode())
+                    : codeRuleService.preview("PdmItemByClass", clazz.getCode());
+            return new ItemDtos.CodePreview(preview.code(), preview.ruleCode(),
+                    preview.ruleName(), preview.source());
+        }
+        var preview = codeRuleService.previewForObjectType(
+                OBJECT_TYPE + ":" + (itemType == null || itemType.isBlank() ? "PART" : itemType), "PdmItem");
+        return new ItemDtos.CodePreview(preview.code(), preview.ruleCode(),
+                preview.ruleName(), preview.source());
+    }
+
     private String resolveCode(String code, String itemType, Long classId) {
         if (code != null && !code.isBlank()) {
             String trimmed = code.trim();
