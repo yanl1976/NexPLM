@@ -41,3 +41,4 @@ data/files/
 backend/plm-app/data/
 backend/data/
 frontend/tsconfig.tsbuildinfo
+frontend/dist_new/
