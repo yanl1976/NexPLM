@@ -19,6 +19,8 @@ public class ItemMaster {
     private Long objectId;
     /** 分类（doc_class.id）：蓝本编码 = 分类码 + 分类内流水，创建时即可归类（EXP-20261108-43）。 */
     private Long classId;
+    /** 位置（工作区/目录路径，自由文本；与组织/权限无关，V85）。 */
+    private String location;
     private String itemType;
     private String specification;
     private String material;
