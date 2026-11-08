@@ -112,7 +112,9 @@ DRW-01 状态：**已对齐**；DRW-02 状态：**已对齐（复用文档域）
 | 状态/检出 | `STATEID` / `CHECKOUT*` | 生命周期 + `plm_checkout` | 已复用 |
 | 图幅 `TUFU1` | `PSEBASEFORM`（物料） | 未落 | 待加到物料设计属性 |
 
-## DRW-05 图文档文件夹（EXP-20261108-66）
+## DRW-05 图文档文件夹（已作废，EXP-20261108-68）
+
+> 用户确认由「图纸库」统一管理，不再需要文档文件夹；`DocFolderController`、前端文件夹树与归档入口已回滚。以下仅保留取证记录。
 
 **证据**：蓝本 `WSFOLDERCONTENT` 列 `LID/PEID/CEID/LQUALITY/LSEQUENCE/CETYPE`，
 `InforCenter/PDM/CAD/CADService/Config/Model/Cad.cmdsql:185-193` 用

@@ -82,11 +82,10 @@ public class DocController {
             @RequestParam(value = "docType", required = false) String docType,
             @RequestParam(value = "lifecycleState", required = false) String lifecycleState,
             @RequestParam(value = "classId", required = false) Long classId,
-            @RequestParam(value = "folderId", required = false) Long folderId,
             @RequestParam(value = "fileExt", required = false) String fileExt,
             @RequestParam(value = "q", required = false) String fullText) {
         return Result.ok(docService.page(page, size, keyword, docType, lifecycleState, classId,
-                fullText, folderId, fileExt));
+                fullText, fileExt));
     }
 
     @Operation(summary = "版本历史")
