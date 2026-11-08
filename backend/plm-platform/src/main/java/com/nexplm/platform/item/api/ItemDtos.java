@@ -64,6 +64,8 @@ public final class ItemDtos {
             @Size(max = 500) String remark,
             Long orgId,
             Integer securityLevel,
+            // 创建时即归类：蓝本编码 = 分类码 + 分类内流水（EXP-20261108-43）；为空则用通用 PN 规则
+            Long classId,
             ItemDesignAttr designAttr,
             /**
              * 客制字段（批次 G·方案 A）：键必须是 PdmItem 已发布的元数据字段码，

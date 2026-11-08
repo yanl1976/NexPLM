@@ -404,7 +404,7 @@ public class ItemService {
         object.setId(id);
         object.setObjectType(OBJECT_TYPE);
         object.setMasterId(id);
-        object.setCode(resolveCode(req.code(), itemType));
+        object.setCode(resolveCode(req.code(), itemType, req.classId()));
         object.setName(req.name().trim());
         object.setCompanyId(requireCompanyId(userId));
         object.setOrgId(resolveOrgId(userId, req.orgId()));
@@ -427,6 +427,7 @@ public class ItemService {
 
         ItemMaster master = new ItemMaster();
         master.setObjectId(id);
+        master.setClassId(req.classId());
         master.setItemType(itemType);
         master.setSpecification(trimToNull(req.specification()));
         master.setMaterial(trimToNull(req.material()));
@@ -864,7 +865,7 @@ public class ItemService {
      *   <li>没传 → 按物料类型选规则（{@code PdmItem:<itemType>}），无规则回退 {@code PdmItem}。</li>
      * </ul>
      */
-    private String resolveCode(String code, String itemType) {
+    private String resolveCode(String code, String itemType, Long classId) {
         if (code != null && !code.isBlank()) {
             String trimmed = code.trim();
             if (!manualCodePattern.matcher(trimmed).matches()) {
@@ -872,6 +873,11 @@ public class ItemService {
                         "编码格式不合法（仅允许字母、数字、. _ -，长度 1~64）：" + trimmed);
             }
             return trimmed;
+        }
+        // 蓝本编码 = 分类码 + 分类内流水（EXP-20261108-43）：创建时给了分类就走分类规则
+        if (classId != null) {
+            String classCode = classService.requireClass(classId, OBJECT_TYPE).getCode();
+            return codeRuleService.next("PdmItemByClass", OBJECT_TYPE, classCode);
         }
         return codeRuleService.nextForObjectType(OBJECT_TYPE + ":" + itemType, "PdmItem");
     }

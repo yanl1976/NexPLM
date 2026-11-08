@@ -17,6 +17,8 @@ public class ItemMaster {
 
     @TableId(type = IdType.INPUT)
     private Long objectId;
+    /** 分类（doc_class.id）：蓝本编码 = 分类码 + 分类内流水，创建时即可归类（EXP-20261108-43）。 */
+    private Long classId;
     private String itemType;
     private String specification;
     private String material;

@@ -172,6 +172,8 @@ public class ItemBatchService {
                 pick(patch.remark(), current.remark()),
                 current.orgId(),
                 patch.securityLevel() != null ? patch.securityLevel() : current.securityLevel(),
+                // 批量补丁不改分类（归类走 PUT /items/{id}/classify），传 null 保留原值
+                null,
                 mergeDesignAttr(current.designAttr(), patch.designAttr()),
                 // 批量改属性不碰客制字段：传 null 让服务端保留 ext_json 里既有值
                 null);

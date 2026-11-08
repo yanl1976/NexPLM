@@ -264,7 +264,7 @@ public class CodeRuleService {
      */
     @Transactional
     public String next(String code) {
-        return next(code, null);
+        return next(code, null, null);
     }
 
     /**
@@ -274,6 +274,20 @@ public class CodeRuleService {
      */
     @Transactional
     public String next(String code, String objectType) {
+        return next(code, objectType, null);
+    }
+
+    /**
+     * 取号（支持「按分类独立流水」）。
+     *
+     * <p>规则含 {@code CLASS} 段时，流水**按分类分别计数**（用 {@code code_sequence} 的
+     * {@code scope_key=分类编码}），复刻蓝本「`10010100001`、`10010100002`… 每个分类各自从 1 起」；
+     * 不含 {@code CLASS} 段时沿用 {@code code_rule.current_no} 的单一计数。</p>
+     *
+     * @param classCode 对象所属分类编码；规则含 {@code CLASS} 段时必填
+     */
+    @Transactional
+    public String next(String code, String objectType, String classCode) {
         List<Map<String, Object>> locked = jdbcTemplate.queryForList("""
                 SELECT segments_json, current_no, last_period, reset_policy, status
                   FROM code_rule WHERE code = ? FOR UPDATE
@@ -285,19 +299,43 @@ public class CodeRuleService {
         if (!"ACTIVE".equals(String.valueOf(row.get("status")))) {
             throw BizException.of(ErrorCode.CODE_RULE_INVALID, "编码规则已停用：" + code);
         }
-        String policy = normalizePolicy(String.valueOf(row.get("reset_policy")));
-        String period = period(policy);
-        String lastPeriod = row.get("last_period") == null ? null : String.valueOf(row.get("last_period"));
-        long current = ((Number) row.get("current_no")).longValue();
-        boolean newPeriod = period != null && lastPeriod != null && !period.equals(lastPeriod);
-        long nextNo = newPeriod ? 1 : current + 1;
-        jdbcTemplate.update("""
-                UPDATE code_rule SET current_no = ?, last_period = COALESCE(?, last_period), updated_at = now()
-                 WHERE code = ?
-                """, nextNo, period, code);
-        String rendered = render(parse(String.valueOf(row.get("segments_json"))), nextNo);
+        List<Segment> segments = parse(String.valueOf(row.get("segments_json")));
+        boolean byClass = segments.stream()
+                .anyMatch(s -> "CLASS".equalsIgnoreCase(s.type()));
+        long nextNo;
+        if (byClass) {
+            if (classCode == null || classCode.isBlank()) {
+                throw BizException.of(ErrorCode.CODE_RULE_INVALID,
+                        "编码规则 " + code + " 含分类段，但对象尚未归类，无法取号");
+            }
+            nextNo = nextClassSeq(code, classCode.trim());
+        } else {
+            String policy = normalizePolicy(String.valueOf(row.get("reset_policy")));
+            String period = period(policy);
+            String lastPeriod = row.get("last_period") == null ? null : String.valueOf(row.get("last_period"));
+            long current = ((Number) row.get("current_no")).longValue();
+            boolean newPeriod = period != null && lastPeriod != null && !period.equals(lastPeriod);
+            nextNo = newPeriod ? 1 : current + 1;
+            jdbcTemplate.update("""
+                    UPDATE code_rule SET current_no = ?, last_period = COALESCE(?, last_period), updated_at = now()
+                     WHERE code = ?
+                    """, nextNo, period, code);
+        }
+        String rendered = render(segments, nextNo, classCode);
         recordIssue(code, rendered, objectType);
         return rendered;
+    }
+
+    /** 分类内独立流水：{@code (rule_code, scope_key=分类编码)} 原子自增。 */
+    private long nextClassSeq(String ruleCode, String classCode) {
+        Long no = jdbcTemplate.queryForObject("""
+                        INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
+                        VALUES (?, ?, ?, 1)
+                        ON CONFLICT (rule_code, scope_key)
+                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
+                        RETURNING current_no
+                        """, Long.class, IdWorker.getId(), ruleCode, classCode);
+        return no == null ? 1L : no;
     }
 
     /**
@@ -329,14 +367,30 @@ public class CodeRuleService {
     // ------------------------------------------------------------ 渲染
 
     public String render(List<Segment> segments, long no) {
+        return render(segments, no, null);
+    }
+
+    /**
+     * 渲染编码。
+     *
+     * <p>{@code CLASS} 段渲染为「对象所属分类的编码」——这是蓝本编码体系的核心：
+     * 实测 `CODERES` 里 `CODES` 形如 `10010100001` = 分类码 `100101` + 该分类内 5 位流水，
+     * 16,343 条零件-分类关系中 **15,476 条（94.7%）的零件编码以分类码开头**
+     * （见 `docs/06` `EXP-20261108-43`）。</p>
+     *
+     * <p>预览/校验时没有分类，{@code CLASS} 段渲染为字面量 {@code {CLASS}}，便于人读；
+     * 真正取号时若仍未归类会抛错（不猜）。</p>
+     */
+    public String render(List<Segment> segments, long no, String classCode) {
         StringBuilder sb = new StringBuilder();
         for (Segment segment : segments) {
             switch (segment.type() == null ? "" : segment.type().toUpperCase()) {
                 case "TEXT" -> sb.append(segment.value() == null ? "" : segment.value());
                 case "DATE" -> sb.append(datePart(segment.format()));
+                case "CLASS" -> sb.append(classCode == null || classCode.isBlank() ? "{CLASS}" : classCode);
                 case "SEQ" -> sb.append(seqPart(no, segment));
                 default -> throw BizException.of(ErrorCode.CODE_RULE_INVALID,
-                        "未知段类型：" + segment.type() + "（只支持 TEXT/DATE/SEQ）");
+                        "未知段类型：" + segment.type() + "（只支持 TEXT/DATE/CLASS/SEQ）");
             }
         }
         return sb.toString();

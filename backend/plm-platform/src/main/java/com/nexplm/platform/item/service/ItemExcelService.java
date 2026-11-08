@@ -317,7 +317,7 @@ public class ItemExcelService {
                     specification, material, unit, null,
                     sourceType == null ? null : ("外购".equals(sourceType) || "外购件".equals(sourceType)
                             || "BUY".equalsIgnoreCase(sourceType) ? "BUY" : "MAKE"),
-                    null, remark, null, null,
+                    null, remark, null, null, null,
                     new ItemDtos.ItemDesignAttr(provider, dwgNo, productCategory, productModel, productSpec,
                             materialType, null, surfaceTreatment, tooling, weightUnit, montage, colorItem),
                     // Excel 导入不含客制字段（模板列固定），保留既有 ext_json
