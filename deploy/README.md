@@ -76,10 +76,14 @@ pwsh deploy/ci/security-scan.ps1 -Target image -Image nexplm:<tag>  # 容器镜�
 | 文件 | 生成器 | 内容 |
 |---|---|---|
 | `010-doc_class.sql` | `tools/Gen-DocClassMigration.ps1` | 零部件分类树（305 节点 = 4 根 + 37 分组 + 264 分类），`entity_code=PdmItem`，幂等 INSERT |
+| `020-doc_class_attr.sql` | `tools/Gen-DocClassAttrMigration.ps1` | 分类属性 1,287 条（由 1,287 条「属性→分类」关系展开），`value_type` 全 `STRING`，属性编码加 `ATTR` 前缀 |
+
+**执行顺序**：`010`（分类树）→ `020`（属性）。`020` 的 `class_id` 从 `010` 解析而来，顺序倒了会挂不上父分类。
 
 ```bash
 # 重新生成（需要蓝本库只读账号；脚本只发 SELECT）
 pwsh tools/Gen-DocClassMigration.ps1 -User <user> -Password <pwd>
+pwsh tools/Gen-DocClassAttrMigration.ps1 -User <user> -Password <pwd>
 ```
 
 - 每条 INSERT 都带 `WHERE NOT EXISTS (同 entity_code + code)`，可重复执行；
