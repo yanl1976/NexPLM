@@ -88,108 +88,12 @@
       </el-table>
     </section>
 
-    <!-- 新建：就地弹窗，不跳页 -->
-    <el-dialog v-model="createVisible" title="新建零部件" width="720px">
-      <el-form :model="createForm" label-width="90px">
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item label="名称" required>
-              <el-input v-model="createForm.name" placeholder="零部件名称" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="类型">
-              <el-select v-model="createForm.itemType" style="width: 100%">
-                <el-option label="零件" value="PART" />
-                <el-option label="标准件" value="STANDARD" />
-                <el-option label="外购件" value="OUTSOURCE" />
-                <el-option label="成品" value="PRODUCT" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="分类">
-              <el-cascader
-                v-model="createForm.classId"
-                :options="classTree"
-                :props="{ value: 'id', label: 'name', children: 'children', emitPath: false }"
-                clearable
-                filterable
-                placeholder="只能选最末级（小类）"
-                style="width: 100%"
-                @change="refreshPreview"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="项目" required>
-              <el-select v-model="createForm.projectId" filterable clearable style="width: 100%">
-                <el-option
-                  v-for="project in projects"
-                  :key="project.id"
-                  :label="`${project.code} ${project.name}`"
-                  :value="String(project.id)"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="图号">
-              <el-input v-model="createForm.dwgNo" placeholder="填图号可自动生成编号" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="位置">
-              <el-input v-model="createForm.location" placeholder="绑定项目后自动生成" disabled />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="规格型号">
-              <el-input v-model="createForm.specification" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="计量单位">
-              <el-input v-model="createForm.unit" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="24">
-            <el-form-item label="编码">
-              <el-input :model-value="previewCode" readonly class="code-readonly" placeholder="选择分类后自动生成" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-      </el-form>
-      <template #footer>
-        <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" :loading="createSaving" @click="submitCreate">保存</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 编辑：就地弹窗 -->
-    <el-dialog v-model="editVisible" title="编辑零部件" width="640px">
-      <el-form :model="editForm" label-width="90px">
-        <el-form-item label="名称">
-          <el-input v-model="editForm.name" />
-        </el-form-item>
-        <el-form-item label="规格型号">
-          <el-input v-model="editForm.specification" />
-        </el-form-item>
-        <el-form-item label="计量单位">
-          <el-input v-model="editForm.unit" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="editForm.remark" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-form-item label="位置">
-          <el-input v-model="editForm.location" disabled />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="editVisible = false">取消</el-button>
-        <el-button type="primary" :loading="editSaving" @click="submitEdit">保存</el-button>
-      </template>
-    </el-dialog>
+    <ItemFormDialog
+      v-model="formVisible"
+      :editing-id="formEditingId"
+      :preset-project-id="presetProjectId"
+      @saved="onFormSaved"
+    />
 
     <!-- 添加：把已有对象挂到当前文件夹 -->
     <el-dialog v-model="addVisible" title="添加已有对象" width="560px">
@@ -242,6 +146,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, Refresh } from '@element-plus/icons-vue'
 import { wsConsoleApi, type WsFolder, type WsObject } from '@/api/wsConsole'
+import ItemFormDialog from '@/components/business/ItemFormDialog.vue'
 import {
   bomApi,
   itemApi,
@@ -393,140 +298,28 @@ async function onCheckin(): Promise<void> {
   }
 }
 
-// ---------------- 新建（就地弹窗） ----------------
-const EXCLUDED_ROOTS = ['80', 'CH']
+// ---------------- 新建 / 编辑：共用 ItemFormDialog ----------------
+const formVisible = ref(false)
+const formEditingId = ref<string | null>(null)
+const presetProjectId = ref<string | null>(null)
 
-interface SelectableClass extends ItemClassNode {
-  selectDisabled: boolean
-}
-
-function toSelectable(nodes: ItemClassNode[]): SelectableClass[] {
-  return nodes
-    .filter((node) => !EXCLUDED_ROOTS.includes(node.code))
-    .map((node) => ({
-      ...node,
-      selectDisabled: (node.children?.length ?? 0) > 0,
-      children: toSelectable(node.children ?? [])
-    }))
-}
-
-const classTree = ref<SelectableClass[]>([])
-const projects = ref<Array<{ id: string; code: string; name: string }>>([])
-const createVisible = ref(false)
-const createSaving = ref(false)
-const createPreview = ref<CodePreview | null>(null)
-const previewCode = computed(() => createPreview.value?.code ?? '')
-const createForm = reactive({
-  name: '',
-  itemType: 'PART',
-  classId: null as string | null,
-  projectId: '' as string,
-  dwgNo: '',
-  location: '',
-  specification: '',
-  unit: 'EA'
-})
-
-async function loadBasics(): Promise<void> {
-  try {
-    const [tree, projectList] = await Promise.all([itemClassApi.tree(), itemApi.projectOptions()])
-    classTree.value = toSelectable(tree)
-    projects.value = projectList
-  } catch {
-    classTree.value = []
-    projects.value = []
-  }
-}
-
-async function refreshPreview(): Promise<void> {
-  createPreview.value = null
-  try {
-    createPreview.value = await itemApi.previewCode({
-      classId: createForm.classId ?? undefined,
-      itemType: createForm.itemType,
-      dwgNo: createForm.dwgNo.trim() || undefined
-    })
-  } catch {
-    createPreview.value = null
-  }
-}
-
-/** 新建下拉：以后每类对象各自挂一个公共组件（请购单/文档…） */
+/** 新建下拉：每类对象挂各自的公共组件 */
 function onCreateCommand(command: string): void {
-  if (command === 'item') {
-    openCreate()
+  if (command !== 'item') {
+    return
   }
-}
-
-function openCreate(): void {
   if (!currentFolder.value?.folderId) {
     ElMessage.warning('请先在左侧选择文件夹')
     return
   }
-  createForm.name = ''
-  createForm.itemType = 'PART'
-  createForm.classId = null
-  createForm.projectId =
-    currentFolder.value.space === 'PROJECT' && currentFolder.value.projectId
-      ? String(currentFolder.value.projectId)
-      : ''
-  createForm.dwgNo = ''
-  createForm.location = ''
-  createForm.specification = ''
-  createForm.unit = 'EA'
-  createPreview.value = null
-  refreshPreview()
-  createVisible.value = true
+  formEditingId.value = null
+  presetProjectId.value = currentFolder.value.space === 'PROJECT'
+    ? currentFolder.value.projectId ?? null
+    : null
+  formVisible.value = true
 }
 
-async function submitCreate(): Promise<void> {
-  if (!createForm.name.trim()) {
-    ElMessage.warning('请填写名称')
-    return
-  }
-  if (!createForm.projectId) {
-    ElMessage.warning('请选择项目')
-    return
-  }
-  createSaving.value = true
-  try {
-    const designAttr = { dwgNo: createForm.dwgNo.trim() || null } as unknown as ItemDesignAttr
-    const project = projects.value.find((p) => String(p.id) === String(createForm.projectId))
-    await itemApi.create({
-      name: createForm.name.trim(),
-      itemType: createForm.itemType,
-      sourceType: 'MAKE',
-      classId: createForm.classId,
-      projectId: createForm.projectId,
-      location: createForm.location || (project ? `个人空间/${project.code}/物料` : null),
-      specification: createForm.specification,
-      unit: createForm.unit,
-      designAttr
-    })
-    ElMessage.success('已创建')
-    createVisible.value = false
-    await loadTree()
-    await refreshObjects()
-  } catch (error) {
-    ElMessage.error((error as Error).message || '创建失败')
-  } finally {
-    createSaving.value = false
-  }
-}
-
-// ---------------- 编辑（就地弹窗） ----------------
-const editVisible = ref(false)
-const editSaving = ref(false)
-const editForm = reactive({
-  id: '',
-  name: '',
-  specification: '',
-  unit: '',
-  remark: '',
-  location: ''
-})
-
-async function openEdit(): Promise<void> {
+function openEdit(): void {
   const row = selectedRows.value[0]
   if (!row) {
     ElMessage.warning('请先选择一行')
@@ -536,38 +329,14 @@ async function openEdit(): Promise<void> {
     ElMessage.info('当前仅支持零部件')
     return
   }
-  try {
-    const detail = await itemApi.detail(row.id)
-    editForm.id = row.id
-    editForm.name = detail.name ?? ''
-    editForm.specification = detail.specification ?? ''
-    editForm.unit = detail.unit ?? ''
-    editForm.remark = detail.remark ?? ''
-    editForm.location = (detail as unknown as { location?: string }).location ?? ''
-    editVisible.value = true
-  } catch (error) {
-    ElMessage.error((error as Error).message || '加载详情失败')
-  }
+  formEditingId.value = row.id
+  presetProjectId.value = null
+  formVisible.value = true
 }
 
-async function submitEdit(): Promise<void> {
-  editSaving.value = true
-  try {
-    await itemApi.update(editForm.id, {
-      name: editForm.name,
-      itemType: 'PART',
-      specification: editForm.specification,
-      unit: editForm.unit,
-      remark: editForm.remark
-    })
-    ElMessage.success('已保存')
-    editVisible.value = false
-    await refreshObjects()
-  } catch (error) {
-    ElMessage.error((error as Error).message || '保存失败')
-  } finally {
-    editSaving.value = false
-  }
+async function onFormSaved(): Promise<void> {
+  await loadTree()
+  await refreshObjects()
 }
 
 // ---------------- 添加：把已有对象挂进当前文件夹 ----------------
@@ -644,10 +413,7 @@ async function openBom(): Promise<void> {
   }
 }
 
-onMounted(() => {
-  loadTree()
-  loadBasics()
-})
+onMounted(loadTree)
 </script>
 
 <style scoped>
