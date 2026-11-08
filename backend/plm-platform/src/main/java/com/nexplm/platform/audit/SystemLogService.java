@@ -25,13 +25,12 @@ import java.util.List;
 @Service
 public class SystemLogService {
 
-    /** 哈希链体检一次最多回溯的条数（够发现近期删改，又不至于拖慢页面）。 */
-    private static final int CHAIN_SCAN_LIMIT = 2000;
-
     private final JdbcTemplate jdbcTemplate;
+    private final AuditChainService chainService;
 
-    public SystemLogService(JdbcTemplate jdbcTemplate) {
+    public SystemLogService(JdbcTemplate jdbcTemplate, AuditChainService chainService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.chainService = chainService;
     }
 
     public PageResult<SystemLogDtos.LoginLogRow> pageLoginLogs(Long companyId, String username,
@@ -177,36 +176,16 @@ public class SystemLogService {
     }
 
     /**
-     * 哈希链体检：按 id 升序回看最近的日志，逐条比对 {@code prev_hash} 是否等于上一条的 {@code hash}。
+     * 哈希链体检：交给 {@link AuditChainService} **重算内容哈希**（不只是比对 prev_hash）。
      *
-     * <p>当前 {@link AuditAspect} 并不写入这两个字段（V1 只建了列），所以正常结果是
-     * {@code enabled=false / message="哈希链未启用"}——如实告知，不把空值报成"校验通过"。</p>
+     * <p>`AuditAspect` 自 2026-11-08 起写入 {@code prev_hash/hash}（docs/07 待整改 ⑤），
+     * 因此这里能真正发现"某行内容被改"与"中间行被删"；历史行（hash 为空）按未纳入链跳过，
+     * 不误报。没有任何非空 hash 时如实返回"未启用"，不伪造"校验通过"。</p>
      */
     private ChainCheck checkChain() {
-        List<Object[]> rows = jdbcTemplate.query("""
-                        SELECT id, prev_hash, hash
-                          FROM sys_audit_log
-                         WHERE hash IS NOT NULL
-                         ORDER BY id DESC
-                         LIMIT ?
-                        """,
-                (rs, rowNum) -> new Object[]{rs.getLong("id"), rs.getString("prev_hash"),
-                        rs.getString("hash")},
-                CHAIN_SCAN_LIMIT);
-        if (rows.isEmpty()) {
-            return new ChainCheck(false, 0, 0, "哈希链未启用（sys_audit_log.prev_hash/hash 无写入点，属预留字段）");
-        }
-        int broken = 0;
-        // rows 是倒序，从末尾（最早）往前比对
-        for (int i = rows.size() - 1; i > 0; i--) {
-            String previousHash = (String) rows.get(i)[2];
-            String currentPrev = (String) rows.get(i - 1)[1];
-            if (previousHash == null || !previousHash.equals(currentPrev)) {
-                broken++;
-            }
-        }
-        return new ChainCheck(true, rows.size(),
-                broken, broken == 0 ? "链连续" : "存在 " + broken + " 处断链（可能有日志被删改）");
+        AuditChainService.VerifyResult result = chainService.verify(null, null);
+        return new ChainCheck(result.checked() > 0, (int) Math.min(result.checked(), Integer.MAX_VALUE),
+                result.brokenCount(), result.message());
     }
 
     private record ChainCheck(boolean enabled, int checked, int broken, String message) {

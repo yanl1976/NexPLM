@@ -308,6 +308,26 @@ class SecurityHardeningTest {
                 "SELECT COUNT(1) FROM sys_user_pwd_history WHERE user_id = "
                         + "(SELECT id FROM sys_user WHERE username = 'pwd_user')", Long.class))
                 .isGreaterThanOrEqualTo(2);
+
+        // ---- 12. 审计防篡改：内容被改后链校验必须报出该行，改回后恢复一致
+        JsonNode chainOk = call(get("/api/v1/sys/logs/audit/verify"), admin, null);
+        assertThat(chainOk.path("brokenCount").asInt()).isZero();
+        assertThat(chainOk.path("checked").asLong()).isPositive();
+
+        Long tamperId = jdbcTemplate.queryForObject(
+                "SELECT id FROM sys_audit_log WHERE hash IS NOT NULL ORDER BY id DESC LIMIT 1", Long.class);
+        String originalDetail = jdbcTemplate.queryForObject(
+                "SELECT detail FROM sys_audit_log WHERE id = ?", String.class, tamperId);
+        jdbcTemplate.update("UPDATE sys_audit_log SET detail = ? WHERE id = ?",
+                "tampered-by-test", tamperId);
+
+        JsonNode chainBroken = call(get("/api/v1/sys/logs/audit/verify"), admin, null);
+        assertThat(chainBroken.path("brokenCount").asInt()).isEqualTo(1);
+        assertThat(chainBroken.path("brokenIds").get(0).asLong()).isEqualTo(tamperId);
+
+        jdbcTemplate.update("UPDATE sys_audit_log SET detail = ? WHERE id = ?", originalDetail, tamperId);
+        JsonNode chainRestored = call(get("/api/v1/sys/logs/audit/verify"), admin, null);
+        assertThat(chainRestored.path("brokenCount").asInt()).isZero();
     }
 
     // ------------------------------------------------------------------ 工具

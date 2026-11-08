@@ -87,11 +87,12 @@ class SysAdminSmokeTest {
         assertThat(failed.path("total").asLong()).isGreaterThanOrEqualTo(1);
         assertThat(failed.path("items").get(0).path("failReason").asText()).contains("密码");
 
-        // 概览：哈希链未启用（AuditAspect 不写 prev_hash/hash）必须如实返回 false，不能伪装"校验通过"
+        // 概览：哈希链已启用（AuditAspect 写 prev_hash/hash），体检应报"一致"且无断链
         JsonNode summary = call(get("/api/v1/sys/logs/summary"), token);
         assertThat(summary.path("loginSuccess").asLong()).isGreaterThanOrEqualTo(1);
-        assertThat(summary.path("chainEnabled").asBoolean()).isFalse();
-        assertThat(summary.path("chainMessage").asText()).contains("未启用");
+        assertThat(summary.path("chainEnabled").asBoolean()).isTrue();
+        assertThat(summary.path("chainBroken").asInt()).isZero();
+        assertThat(summary.path("chainMessage").asText()).contains("一致");
 
         // 操作日志：模块/关键词过滤可用（登录本身不会写审计，这里只断言接口通且结构正确）
         JsonNode auditPage = call(get("/api/v1/sys/logs/audit").queryParam("module", "IAM"), token);

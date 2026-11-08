@@ -30,9 +30,11 @@ import java.time.ZoneId;
 public class SystemLogController {
 
     private final SystemLogService logService;
+    private final AuditChainService chainService;
 
-    public SystemLogController(SystemLogService logService) {
+    public SystemLogController(SystemLogService logService, AuditChainService chainService) {
         this.logService = logService;
+        this.chainService = chainService;
     }
 
     @Operation(summary = "今日概览 + 审计哈希链体检")
@@ -71,6 +73,15 @@ public class SystemLogController {
             @RequestParam(required = false) Integer size) {
         return Result.ok(logService.pageAuditLogs(CurrentUser.companyId(), module, action, result,
                 keyword, userId, parseFrom(from), parseTo(to), page, size));
+    }
+
+    @Operation(summary = "审计链完整性校验（可指定 id 区间，默认最近 5000 行）")
+    @GetMapping("/audit/verify")
+    @PreAuthorize("hasAuthority('sys.log.read')")
+    public Result<AuditChainService.VerifyResult> verifyAuditChain(
+            @RequestParam(required = false) Long fromId,
+            @RequestParam(required = false) Long toId) {
+        return Result.ok(chainService.verify(fromId, toId));
     }
 
     /** 支持 {@code 2026-11-07} 与 {@code 2026-11-07T09:30:00} 两种写法（前端日期选择器给的是前者）。 */

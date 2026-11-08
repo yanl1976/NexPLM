@@ -31,6 +31,8 @@ public class AuditAspect {
 
     private static final Logger log = LoggerFactory.getLogger(AuditAspect.class);
     private static final int MAX_DETAIL = 3800;
+    /** 链式哈希的写入串行化（进程内）；多实例需换数据库行锁，见 docs/03 B22。 */
+    private static final Object CHAIN_LOCK = new Object();
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -65,26 +67,41 @@ public class AuditAspect {
     private void write(Audit audit, ProceedingJoinPoint joinPoint, Object result,
                        boolean success, String error, long costMs) {
         UserPrincipal principal = CurrentUser.orNull();
-        String detail = buildDetail(joinPoint, audit.recordArgs(), error, costMs);
+        String detail = truncate(buildDetail(joinPoint, audit.recordArgs(), error, costMs));
         HttpServletRequest request = currentRequest();
-        jdbcTemplate.update("""
-                        INSERT INTO sys_audit_log
-                          (trace_id, user_id, org_id, module, action, object_type, object_id,
-                           result, detail, ip, ua, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                MDC.get("traceId"),
-                principal == null ? null : principal.userId(),
-                principal == null ? null : principal.companyId(),
-                audit.module(),
-                audit.action(),
-                audit.objectType().isBlank() ? null : audit.objectType(),
-                audit.objectType().isBlank() ? null : resolveObjectId(joinPoint, result),
-                success ? "SUCCESS" : "FAIL",
-                truncate(detail),
-                request == null ? null : clientIp(request),
-                request == null ? null : truncate(request.getHeader("User-Agent")),
-                OffsetDateTime.now());
+        String module = audit.module();
+        String action = audit.action();
+        String objectType = audit.objectType().isBlank() ? null : audit.objectType();
+        Long objectId = objectType == null ? null : resolveObjectId(joinPoint, result);
+        String rowResult = success ? "SUCCESS" : "FAIL";
+        Long userId = principal == null ? null : principal.userId();
+        String payload = AuditChain.payload(module, action, objectType, objectId, rowResult, userId, detail);
+
+        // 链式哈希（docs/07 待整改 ⑤）：本行 hash = sha256(上一行 hash + 本行内容)。
+        // 取"上一行"与插入必须在同一把锁里，否则并发写会取到同一个 prev 导致链分叉；
+        // 多实例部署时这把进程内锁不够，需改用数据库行锁/advisory lock（见 03 B22）。
+        synchronized (CHAIN_LOCK) {
+            String prevHash = jdbcTemplate.query("""
+                            SELECT hash FROM sys_audit_log
+                             WHERE hash IS NOT NULL
+                             ORDER BY id DESC
+                             LIMIT 1
+                            """,
+                    rs -> rs.next() ? rs.getString(1) : null);
+            String hash = AuditChain.hash(prevHash, payload);
+            jdbcTemplate.update("""
+                            INSERT INTO sys_audit_log
+                              (trace_id, user_id, org_id, module, action, object_type, object_id,
+                               result, detail, ip, ua, prev_hash, hash, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                    MDC.get("traceId"), userId,
+                    principal == null ? null : principal.companyId(),
+                    module, action, objectType, objectId, rowResult, detail,
+                    request == null ? null : clientIp(request),
+                    request == null ? null : truncate(request.getHeader("User-Agent")),
+                    prevHash, hash, OffsetDateTime.now());
+        }
     }
 
     /** 对象 ID：优先取返回值 DTO 的 id，其次取方法第一个 Long 参数。 */
