@@ -589,6 +589,45 @@ class CodingRuleSmokeTest {
                 .andExpect(status().isBadRequest());
     }
 
+    /** T-CORE-15：码段（蓝本 CODERULE）按段序返回，父段用于表达码段树。 */
+    @Test
+    void kindSegmentsAreExposed() throws Exception {
+        String admin = login();
+        String rule = "Kind_segtest";
+        jdbcTemplate.update("DELETE FROM code_segment WHERE rule_code = ?", rule);
+        jdbcTemplate.update("DELETE FROM code_kind WHERE code = ?", rule);
+        jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", rule);
+        jdbcTemplate.update("""
+                        INSERT INTO code_rule (id, code, name, segments_json, scope_json, reset_policy, status,
+                                               version_no, created_at, updated_at, current_no, object_type, remark)
+                        VALUES (?, ?, '码段测试规则',
+                                '[{"type":"VALUE"},{"type":"VALUE"},{"type":"SEQ","width":5,"radix":"DECIMAL"}]'::jsonb,
+                                '{}'::jsonb, 'NEVER', 'ACTIVE', 1, now(), now(), 0, 'PdmItem', 'EXP-20261108-54')
+                        """, IdWorker.getId(), rule);
+        jdbcTemplate.update("""
+                        INSERT INTO code_kind (code, name, legacy_id, rule_code, sort)
+                        VALUES (?, '码段测试规则', 'LEGACY_SEG', ?, 90)
+                        """, rule, rule);
+        jdbcTemplate.update("""
+                        INSERT INTO code_segment (id, rule_code, code, name, order_no, length, parent_code, drop_mode)
+                        VALUES (?, ?, 'SEG01', '大类', 1, 0, NULL, 'DROPDOWN'),
+                               (?, ?, 'SEG02', '小类', 2, 0, 'SEG01', 'DROPDOWN'),
+                               (?, ?, 'SEG03', '流水码', 3, 5, NULL, 'DROPDOWN')
+                        """, IdWorker.getId(), rule, IdWorker.getId(), rule, IdWorker.getId(), rule);
+        try {
+            JsonNode segs = call(get("/api/v1/system/coding/kinds/{code}/segments", rule), admin, null);
+            assertThat(segs).hasSize(3);
+            assertThat(segs.get(0).path("name").asText()).isEqualTo("大类");
+            assertThat(segs.get(0).path("orderNo").asInt()).isEqualTo(1);
+            assertThat(segs.get(1).path("parentCode").asText()).isEqualTo("SEG01");
+            assertThat(segs.get(2).path("length").asInt()).isEqualTo(5);
+        } finally {
+            jdbcTemplate.update("DELETE FROM code_segment WHERE rule_code = ?", rule);
+            jdbcTemplate.update("DELETE FROM code_kind WHERE code = ?", rule);
+            jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", rule);
+        }
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {

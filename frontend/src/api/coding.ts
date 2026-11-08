@@ -63,6 +63,18 @@ export interface CodeValueRow {
   majorName?: string | null
 }
 
+/** 码段（对应蓝本 CODERULE）：大类 ord1 / 小类 ord2（父=大类）/ 流水码 ord3。 */
+export interface CodeSegmentRow {
+  code: string
+  name: string
+  orderNo: number
+  /** 段长；0 或 null 表示不定长（枚举型码值）。 */
+  length?: number | null
+  parentCode?: string | null
+  dropMode?: string | null
+  status: string
+}
+
 /** 新增码值请求；parentPath 为空表示大类。 */
 export interface CodeValueCreateReq {
   codeValue: string
@@ -81,6 +93,8 @@ export const codingApi = {
   rules: () => http.get<CodeRule[]>('/system/coding/rules'),
   /** 编码种类列表（含码值数、已绑定分类数）。 */
   kinds: () => http.get<CodeKindRow[]>('/system/coding/kinds'),
+  /** 某个种类的码段（大类/小类/流水码，含段长与父段）。 */
+  kindSegments: (code: string) => http.get<CodeSegmentRow[]>(`/system/coding/kinds/${code}/segments`),
   /** 某个种类下的码值（扁平；含已停用，用 deleted 区分）。 */
   kindValues: (code: string) => http.get<CodeValueRow[]>(`/system/coding/kinds/${code}/values`),
   /** 新增码值（只增不改值）。 */

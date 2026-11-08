@@ -58,6 +58,13 @@ public class CodeRuleController {
         return Result.ok(codeRuleService.listKinds());
     }
 
+    @Operation(summary = "某个编码种类的码段（大类/小类/流水码，含段长与父段）")
+    @GetMapping("/kinds/{code}/segments")
+    @PreAuthorize("hasAuthority('system.coding.read')")
+    public Result<List<CodeRuleService.SegmentRow>> kindSegments(@PathVariable String code) {
+        return Result.ok(codeRuleService.listSegments(code));
+    }
+
     @Operation(summary = "某个编码种类下的码值（扁平返回，前端按 valuePath 拼成码值树）")
     @GetMapping("/kinds/{code}/values")
     @PreAuthorize("hasAuthority('system.coding.read')")

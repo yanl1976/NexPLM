@@ -81,8 +81,9 @@ pwsh deploy/ci/security-scan.ps1 -Target image -Image nexplm:<tag>  # 容器镜�
 | `040-item_bom_parts.sql` | `tools/Gen-BomMigration.ps1` | BOM 迁移的**补件** 113 个（050 引用的父子件中不在 030 的部分），id 基址与 030 不同 |
 | `050-bom_line.sql` | `tools/Gen-BomMigration.ps1` | BOM 行 **100 条**（视图 DESIGN / 类型 QUOTE / `qty=1`），分布 16 个父件 |
 | `060-code_kind_value.sql` | `tools/Gen-CodeKindMigration.ps1` | 编码种类 **4** + 码值 **292** + 分类编码路径 **258**（`Kind_xxx/1001/02/*`），对应蓝本 `CODEKIND`/`CODEVALUE`/`CLASSCODEPATH` |
+| `071-code_segment.sql` | 手工整理（蓝本 `CODEKINDTORULE`+`CODERULE` 只读导出） | 码段 **12 条**（4 种类 × 3 段：大类/小类/流水码），`V83` 建表后执行 |
 
-**执行顺序**：`010`（分类树）→ `020`（属性）→ `030`（样例零部件，`class_id` 依赖 010）→ `040`（BOM 补件）→ `050`（BOM 行，依赖 030+040 的 id 映射）→ `060`（编码种类/码值/分类路径，`UPDATE doc_class.code_path`，依赖 010 与 `V81`）。顺序倒了会挂不上父分类/父子件/分类路径。
+**执行顺序**：`010`（分类树）→ `020`（属性）→ `030`（样例零部件，`class_id` 依赖 010）→ `040`（BOM 补件）→ `050`（BOM 行，依赖 030+040 的 id 映射）→ `060`（编码种类/码值/分类路径，依赖 010）→ `071`（码段，依赖 060 的 `code_kind`）。顺序倒了会挂不上父分类/父子件/分类路径/码段。
 
 ```bash
 # 重新生成（需要蓝本库只读账号；脚本只发 SELECT）

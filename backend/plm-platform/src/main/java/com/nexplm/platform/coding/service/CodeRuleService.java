@@ -298,6 +298,30 @@ public class CodeRuleService {
         return value;
     }
 
+    /** 码段行（对应蓝本 {@code CODERULE}）：段名/段序/段长/父段。 */
+    public record SegmentRow(String code, String name, int orderNo, Integer length,
+                             String parentCode, String dropMode, String status) {
+    }
+
+    /** 某个编码种类的码段（按段序升序，{@code parentCode} 表达码段树）。 */
+    public List<SegmentRow> listSegments(String kindCode) {
+        if (kindCode == null || kindCode.isBlank()) {
+            return List.of();
+        }
+        return jdbcTemplate.query("""
+                SELECT s.code, s.name, s.order_no, s.length, s.parent_code, s.drop_mode, s.status
+                  FROM code_segment s
+                  JOIN code_kind k ON k.rule_code = s.rule_code
+                 WHERE k.code = ?
+                 ORDER BY s.order_no, s.code
+                """,
+                (rs, rowNum) -> new SegmentRow(rs.getString("code"), rs.getString("name"),
+                        rs.getInt("order_no"), (Integer) rs.getObject("length"),
+                        rs.getString("parent_code"), rs.getString("drop_mode"),
+                        rs.getString("status")),
+                kindCode.trim());
+    }
+
     /** 某个种类下的全部码值（扁平，前端按 {@code valuePath} 拼成树）。 */
     public List<ValueRow> listValues(String kindCode) {
         if (kindCode == null || kindCode.isBlank()) {

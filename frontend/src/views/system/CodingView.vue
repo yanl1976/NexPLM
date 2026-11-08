@@ -8,7 +8,14 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Delete } from '@element-plus/icons-vue'
 import { codingApi } from '@/api/coding'
-import type { CodeIssueRow, CodeKindRow, CodeRule, CodeSegment, CodeValueRow } from '@/api/coding'
+import type {
+  CodeIssueRow,
+  CodeKindRow,
+  CodeRule,
+  CodeSegment,
+  CodeSegmentRow,
+  CodeValueRow
+} from '@/api/coding'
 import { itemClassApi, type ItemClassNode } from '@/api/item'
 
 const loading = ref(false)
@@ -297,6 +304,21 @@ function selectMajor(row: CodeValueRow): void {
   currentMajor.value = row
 }
 
+// ---------------- 码段（蓝本 CODERULE：大类 / 小类 / 流水码） ----------------
+const segments = ref<CodeSegmentRow[]>([])
+const segmentsLoading = ref(false)
+
+async function loadSegments(code: string): Promise<void> {
+  segmentsLoading.value = true
+  try {
+    segments.value = await codingApi.kindSegments(code)
+  } catch (error) {
+    ElMessage.error((error as Error).message || '加载码段失败')
+  } finally {
+    segmentsLoading.value = false
+  }
+}
+
 async function loadKinds(): Promise<void> {
   kindsLoading.value = true
   try {
@@ -323,6 +345,7 @@ async function onKindChange(code: string): Promise<void> {
   currentKind.value = kind
   currentMajor.value = null
   await loadValues(code)
+  await loadSegments(code)
 }
 
 async function loadValues(code: string): Promise<void> {
@@ -511,6 +534,15 @@ async function submitBinding(): Promise<void> {
 
 // 直接点「码值」页签（未从种类页跳转）时，自动选中第一个种类并加载，避免"没数据"
 watch(activeTab, (tab) => {
+  if (tab === 'segments') {
+    if (!currentKind.value && kinds.value[0]) {
+      currentKind.value = kinds.value[0]
+    }
+    if (currentKind.value && !segments.value.length) {
+      loadSegments(currentKind.value.code)
+    }
+    return
+  }
   if (tab !== 'values') {
     return
   }
@@ -611,6 +643,58 @@ onMounted(() => {
             </el-table-column>
             <template #empty>
               <span class="hint">尚无编码种类（先执行 060 迁移或在编码管理里维护）</span>
+            </template>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
+
+      <el-tab-pane label="码段" name="segments">
+        <el-card shadow="never">
+          <template #header>
+            <div class="card-header">
+              <div>
+                <span class="title">码段</span>
+                <span class="hint">对应蓝本 CODERULE：大类 / 小类（父=大类）/ 流水码；段长决定位数</span>
+              </div>
+              <div class="value-kind">
+                <el-select
+                  :model-value="currentKind?.code"
+                  placeholder="选择编码种类"
+                  style="width: 260px"
+                  @change="onKindChange"
+                >
+                  <el-option
+                    v-for="k in kinds"
+                    :key="k.code"
+                    :label="`${k.name}（${k.code}）`"
+                    :value="k.code"
+                  />
+                </el-select>
+                <el-button v-if="currentKind" :icon="Refresh" @click="loadSegments(currentKind.code)">刷新</el-button>
+              </div>
+            </div>
+          </template>
+          <el-table v-loading="segmentsLoading" :data="segments" size="small" border>
+            <el-table-column prop="orderNo" label="段序" width="80" align="right" />
+            <el-table-column prop="name" label="段名" min-width="160" />
+            <el-table-column label="段长" width="100" align="right">
+              <template #default="{ row }">{{ row.length ? `${row.length} 位` : '不定长' }}</template>
+            </el-table-column>
+            <el-table-column label="父段" width="120">
+              <template #default="{ row }">{{ row.parentCode || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="取值方式" width="120">
+              <template #default="{ row }">{{ row.dropMode || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="状态" width="90">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.status === 'ACTIVE' ? 'success' : 'info'">
+                  {{ row.status === 'ACTIVE' ? '启用' : '停用' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <span class="hint">该种类暂无码段（先执行 071 迁移）</span>
             </template>
           </el-table>
         </el-card>
