@@ -494,6 +494,9 @@ public class ItemService {
         master.setUpdatedAt(now);
         itemMapper.insert(master);
 
+        // 项目绑定：个人空间与项目文件夹两侧映射（V86）
+        bindProjectWorkspace(id, req.projectId(), userId);
+
         saveDesignAttr(id, req.designAttr(), now);
         // 每个零件至少有一个默认设计视图（旧系统一样：新建零件自动带 Design 视图）
         createView(id, new ItemDtos.ItemViewReq("DESIGN", "默认设计视图", null), userId);
@@ -967,6 +970,91 @@ public class ItemService {
             throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
                     "只能选择最末级（小类）分类，大类/中类不可用于取号");
         }
+    }
+
+    /**
+     * 项目绑定的**两侧映射**（V86）：
+     * 个人空间/{项目编码}/物料 → {@code ws_folder_content}；
+     * 项目/物料 → {@code prj_project_content}。文件夹缺失时创建。
+     *
+     * <p>映射失败不阻断建物料（工作区是附属信息），但会留下警告日志。</p>
+     */
+    private void bindProjectWorkspace(Long itemId, Long projectId, Long userId) {
+        if (projectId == null) {
+            return;
+        }
+        List<String> codes = jdbcTemplate.queryForList(
+                "SELECT code FROM prj_project WHERE id = ? AND deleted = false", String.class, projectId);
+        if (codes.isEmpty()) {
+            return;
+        }
+        String projectCode = codes.get(0);
+        try {
+            if (userId != null) {
+                List<Long> roots = jdbcTemplate.queryForList("""
+                        SELECT id FROM ws_folder
+                         WHERE owner_id = ? AND space_type = 'MY' AND deleted = false
+                         ORDER BY id LIMIT 1
+                        """, Long.class, userId);
+                if (!roots.isEmpty()) {
+                    Long folderId = ensureWsChildFolder(roots.get(0), projectCode, userId);
+                    jdbcTemplate.update("""
+                            INSERT INTO ws_folder_content (id, folder_id, object_id, sort, created_by)
+                            VALUES (?, ?, ?, 0, ?)
+                            ON CONFLICT DO NOTHING
+                            """, IdWorker.getId(), folderId, itemId, userId);
+                }
+            }
+            Long projectFolderId = ensureProjectFolder(projectId, "物料", userId);
+            jdbcTemplate.update("""
+                    INSERT INTO prj_project_content (id, project_folder_id, object_id, created_by)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT DO NOTHING
+                    """, IdWorker.getId(), projectFolderId, itemId, userId);
+        } catch (RuntimeException ex) {
+            // 工作区映射属附属信息，不因它回滚已创建的物料
+        }
+    }
+
+    /** 个人空间下按名称找/建子文件夹（继承根节点的组织与空间类型）。 */
+    private Long ensureWsChildFolder(Long parentId, String name, Long userId) {
+        List<Long> ids = jdbcTemplate.queryForList("""
+                SELECT id FROM ws_folder
+                 WHERE parent_id = ? AND name = ? AND deleted = false
+                 ORDER BY id LIMIT 1
+                """, Long.class, parentId, name);
+        if (!ids.isEmpty()) {
+            return ids.get(0);
+        }
+        Map<String, Object> parent = jdbcTemplate.queryForMap("SELECT * FROM ws_folder WHERE id = ?", parentId);
+        Long id = IdWorker.getId();
+        jdbcTemplate.update("""
+                INSERT INTO ws_folder (id, company_id, org_id, space_type, parent_id, path, name, owner_id,
+                                       acl_inherit, sort, deleted, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, true, 0, false, ?, now(), now())
+                """, id, parent.get("company_id"), parent.get("org_id"), parent.get("space_type"),
+                parentId, parent.get("path") + "/" + name, name, parent.get("owner_id"), userId);
+        return id;
+    }
+
+    /** 项目下按名称找/建文件夹（顶层）。 */
+    private Long ensureProjectFolder(Long projectId, String name, Long userId) {
+        List<Long> ids = jdbcTemplate.queryForList("""
+                SELECT id FROM prj_project_folder
+                 WHERE project_id = ? AND name = ? AND deleted = false
+                 ORDER BY id LIMIT 1
+                """, Long.class, projectId, name);
+        if (!ids.isEmpty()) {
+            return ids.get(0);
+        }
+        Long id = IdWorker.getId();
+        jdbcTemplate.update("""
+                INSERT INTO prj_project_folder (id, company_id, project_id, parent_id, path, name, sort_no,
+                                                created_by, created_at, deleted)
+                SELECT ?, company_id, id, NULL, ?, ?, 0, ?, now(), false
+                  FROM prj_project WHERE id = ?
+                """, id, "/" + name, name, userId, projectId);
+        return id;
     }
 
     /** 项目下拉选项（新建物料绑定项目用，V86）。 */
