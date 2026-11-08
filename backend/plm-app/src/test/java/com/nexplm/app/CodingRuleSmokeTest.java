@@ -1,5 +1,6 @@
 package com.nexplm.app;
 
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
@@ -8,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -58,23 +60,72 @@ class CodingRuleSmokeTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    /**
+     * T-CORE-01：编码规则按物料类型路由 + 人工编码校验。
+     * 覆盖：配了 `PdmItem:PART` → PART 走 `PRT-`；无专属规则的 ASSEMBLY 回退 `PN-`；
+     * 非法人工编码 400；图号式人工编码（`0CT.325.503`）被采用。
+     */
+    @Test
+    void itemCodeRoutesByItemTypeAndValidatesManualInput() throws Exception {
+        String admin = login();
+        jdbcTemplate.update("DELETE FROM code_rule WHERE code = 'PdmItem:PART'");
+        jdbcTemplate.update("""
+                        INSERT INTO code_rule (id, code, name, segments_json, scope_json, reset_policy,
+                                               status, version_no, created_at, updated_at, current_no,
+                                               object_type, remark)
+                        VALUES (?, 'PdmItem:PART', '零件专用编码',
+                                '[{"type":"TEXT","value":"PRT-"},{"type":"SEQ","width":6,"radix":"DECIMAL"}]'::jsonb,
+                                '{}'::jsonb, 'NEVER', 'ACTIVE', 1, now(), now(), 0,
+                                'PdmItem:PART', 'T-CORE-01 测试')
+                        """, IdWorker.getId());
+        try {
+            JsonNode part = call(post("/api/v1/items"), admin, json(Map.of(
+                    "name", "类型路由零件", "itemType", "PART", "sourceType", "MAKE")));
+            assertThat(part.path("code").asText()).startsWith("PRT-");
+
+            JsonNode assembly = call(post("/api/v1/items"), admin, json(Map.of(
+                    "name", "回退编码部件", "itemType", "ASSEMBLY", "sourceType", "MAKE")));
+            assertThat(assembly.path("code").asText()).startsWith("PN-");
+
+            mockMvc.perform(post("/api/v1/items")
+                            .header("Authorization", "Bearer " + admin)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(Map.of("name", "非法编码零件", "itemType", "PART",
+                                    "sourceType", "MAKE", "code", "非法<>编码"))))
+                    .andExpect(status().isBadRequest());
+
+            JsonNode manual = call(post("/api/v1/items"), admin, json(Map.of(
+                    "name", "图号式手工编码", "itemType", "PART", "sourceType", "MAKE",
+                    "code", "0CT.325.503")));
+            assertThat(manual.path("code").asText()).isEqualTo("0CT.325.503");
+        } finally {
+            jdbcTemplate.update("DELETE FROM code_rule WHERE code = 'PdmItem:PART'");
+        }
+    }
+
     @Test
     void presetRulesPreviewMatchesLegacyFormat() throws Exception {
         String admin = login();
         JsonNode rules = call(get("/api/v1/system/coding/rules"), admin, null);
         assertThat(rules.size()).isGreaterThanOrEqualTo(10);
 
-        Map<String, String> expected = Map.of(
-                "PdmDoc", "DOC-000001",
-                "PdmItem", "PN-000001",
-                "CappRouting", "RT-000001",
-                "CappCardVolume", "CV-000001");
+        // 只断言"不会被其它用例改段定义/消耗流水"的规则，且比对格式而非固定流水：
+        // 同类的其它用例会创建零部件（消耗 PdmItem 流水）或改 CappRouting 段定义，
+        // 固定值断言会因执行顺序而红（T-CORE-01 新增用例后暴露）。
+        Map<String, String> expectedPrefix = Map.of(
+                "PdmDoc", "DOC-",
+                "PdmItem", "PN-",
+                "CappCardVolume", "CV-");
         for (JsonNode rule : rules) {
             String code = rule.path("code").asText();
-            if (expected.containsKey(code)) {
+            if (expectedPrefix.containsKey(code)) {
                 assertThat(rule.path("preview").asText())
-                        .as("规则 %s 的预览应与既有生成格式一致", code)
-                        .isEqualTo(expected.get(code));
+                        .as("规则 %s 的预览应与既有生成格式一致（前缀 %s + 6 位流水）",
+                                code, expectedPrefix.get(code))
+                        .matches(java.util.regex.Pattern.quote(expectedPrefix.get(code)) + "\\d{6}");
             }
         }
     }

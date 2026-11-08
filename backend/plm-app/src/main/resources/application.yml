@@ -77,6 +77,10 @@ nexplm:
       # 多账套时指定 itg_endpoint.code（测试/生产）；留空取 id 最小的启用端点。
       # 配置后找不到该端点会跳过下发，不会静默改用其它账套。
       endpoint-code: ${NEXPLM_WF_ERP_PUBLISH_ENDPOINT_CODE:}
+  # 编码管理（T-CORE-01）：人工填写编码的形态约束（蓝本 Coding.setting 的等价物）
+  coding:
+    # 默认允许字母/数字/._-，1~64 位；现场若用图号（如 0CT.325.503）保持默认即可
+    manual-pattern: '${NEXPLM_CODING_MANUAL_PATTERN:^[A-Za-z0-9._-]{1,64}$}'
   # 文档预览（异步转换）：僵尸状态回收 + 用户级配额
   preview:
     # PENDING 超过该分钟数视为僵尸（进程重启/线程被中断），维护任务转 FAILED 可重试

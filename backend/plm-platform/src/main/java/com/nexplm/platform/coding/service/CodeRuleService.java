@@ -91,6 +91,27 @@ public class CodeRuleService {
      *
      * @param objectType 对象类型（如 {@code PdmItem}）；空表示不限
      */
+    /**
+     * 按「细分对象类型」选规则取号（台账 T-CORE-01）。
+     *
+     * <p>命中 {@code code_rule.object_type = objectType} 的启用规则就用它，否则回退
+     * {@code fallbackRuleCode}。调用方传 {@code PdmItem:PART} 这类细分类型，
+     * 规则由编码管理页维护——11 类物料可以各配一套，不必改代码。</p>
+     *
+     * <p>多条命中时取 {@code code} 最小的那条，保证同一环境行为稳定（不随机）。</p>
+     */
+    public String nextForObjectType(String objectType, String fallbackRuleCode) {
+        if (objectType != null && !objectType.isBlank()) {
+            List<String> codes = jdbcTemplate.queryForList(
+                    "SELECT code FROM code_rule WHERE object_type = ? AND status = 'ACTIVE' ORDER BY code LIMIT 1",
+                    String.class, objectType.trim());
+            if (!codes.isEmpty()) {
+                return next(codes.get(0));
+            }
+        }
+        return next(fallbackRuleCode);
+    }
+
     public java.util.Optional<String> matchRuleCode(String objectType, String code) {
         if (code == null || code.isBlank()) {
             return java.util.Optional.empty();

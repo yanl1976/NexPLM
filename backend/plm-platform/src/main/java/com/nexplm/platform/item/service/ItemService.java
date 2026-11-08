@@ -77,11 +77,15 @@ public class ItemService {
     private final ObjectMapper jsonMapper;
     /** 分类表（doc_class/doc_class_attr）的唯一写入口，零件分类复用文档分类能力（ADR-0001）。 */
     private final DocClassService classService;
+    /** 人工编码的可接受形态（蓝本 `Coding.setting` 的 `MaxOrderCodeLength` + `CodeMachineDenyChar` 的等价物）。 */
+    private final java.util.regex.Pattern manualCodePattern;
 
     public ItemService(PlmObjectMapper objectMapper, ItemMasterMapper itemMapper, MetaService metaService,
                        LifecycleService lifecycleService, ScopeApplier scopeApplier,
                        CheckoutService checkoutService, JdbcTemplate jdbcTemplate, ObjectMapper jsonMapper,
-                       CodeRuleService codeRuleService, DocClassService classService) {
+                       CodeRuleService codeRuleService, DocClassService classService,
+                       @org.springframework.beans.factory.annotation.Value(
+                               "${nexplm.coding.manual-pattern:^[A-Za-z0-9._-]{1,64}$}") String manualPattern) {
         this.objectMapper = objectMapper;
         this.itemMapper = itemMapper;
         this.metaService = metaService;
@@ -93,6 +97,7 @@ public class ItemService {
         this.codeRuleService = codeRuleService;
         this.jsonMapper = jsonMapper;
         this.classService = classService;
+        this.manualCodePattern = java.util.regex.Pattern.compile(manualPattern);
     }
 
     // ------------------------------------------------------------ 列表
@@ -399,7 +404,7 @@ public class ItemService {
         object.setId(id);
         object.setObjectType(OBJECT_TYPE);
         object.setMasterId(id);
-        object.setCode(resolveCode(req.code()));
+        object.setCode(resolveCode(req.code(), itemType));
         object.setName(req.name().trim());
         object.setCompanyId(requireCompanyId(userId));
         object.setOrgId(resolveOrgId(userId, req.orgId()));
@@ -850,12 +855,23 @@ public class ItemService {
         }
     }
 
-    /** 取号统一走编码规则引擎（批次 B2）：规则 PdmItem 的段定义可配、可归零。 */
-    private String resolveCode(String code) {
+    /**
+     * 编码解析（T-CORE-01）：
+     * <ul>
+     *   <li>调用方传了编码 → 按 {@code nexplm.coding.manual-pattern} 校验后采用（蓝本大量物料是人工/图号编码）；</li>
+     *   <li>没传 → 按物料类型选规则（{@code PdmItem:<itemType>}），无规则回退 {@code PdmItem}。</li>
+     * </ul>
+     */
+    private String resolveCode(String code, String itemType) {
         if (code != null && !code.isBlank()) {
-            return code.trim();
+            String trimmed = code.trim();
+            if (!manualCodePattern.matcher(trimmed).matches()) {
+                throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                        "编码格式不合法（仅允许字母、数字、. _ -，长度 1~64）：" + trimmed);
+            }
+            return trimmed;
         }
-        return codeRuleService.next("PdmItem");
+        return codeRuleService.nextForObjectType(OBJECT_TYPE + ":" + itemType, "PdmItem");
     }
 
     private String normalizeItemType(String itemType) {
