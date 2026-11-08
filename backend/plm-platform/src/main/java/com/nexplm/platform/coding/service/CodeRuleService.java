@@ -177,13 +177,36 @@ public class CodeRuleService {
         return new Preview(fallback.code(), fallback.ruleCode(), fallback.ruleName(), "TYPE_RULE");
     }
 
-    /** 只读下一个分类流水（不占用）。 */
+    /** 只读下一个分类流水（不占用）；已迁移的历史编码也算进去。 */
     private long peekClassSeq(String ruleCode, String scopeKey) {
         String key = scopeKey == null || scopeKey.isBlank() ? "DEFAULT" : scopeKey.trim();
+        long used = maxUsedNo(key);
         List<Long> rows = jdbcTemplate.queryForList(
                 "SELECT current_no FROM code_sequence WHERE rule_code = ? AND scope_key = ?",
                 Long.class, ruleCode, key);
-        return rows.isEmpty() || rows.get(0) == null ? 1 : rows.get(0) + 1;
+        long current = rows.isEmpty() || rows.get(0) == null ? 0 : rows.get(0);
+        return Math.max(current, used) + 1;
+    }
+
+    /**
+     * 该分类前缀下**实际已存在**的最大流水号。
+     *
+     * <p>迁移进来的零件编码是蓝本原值（如 {@code 10010100001}），但
+     * {@code code_sequence} 是空的；若只按计数器从 1 起，就会撞上历史编码
+     * （`uk_plm_object_code`）。取号与预览都必须以两者较大者为基准。</p>
+     */
+    private long maxUsedNo(String scopeKey) {
+        if (scopeKey == null || scopeKey.isBlank() || "DEFAULT".equals(scopeKey)) {
+            return 0;
+        }
+        Long used = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(MAX(CAST(RIGHT(o.code, 5) AS BIGINT)), 0)
+                  FROM plm_object o
+                 WHERE o.object_type = 'PdmItem' AND o.deleted = false
+                   AND o.code ~ '^[0-9]{11}$'
+                   AND LEFT(o.code, LENGTH(?)) = ?
+                """, Long.class, scopeKey, scopeKey);
+        return used == null ? 0 : used;
     }
 
     /** 编码种类行（对应蓝本 {@code CODEKIND}）。 */
@@ -693,15 +716,17 @@ public class CodeRuleService {
     }
 
     private long nextClassSeq(String ruleCode, String scopeKey, int count) {
+        long used = maxUsedNo(scopeKey);
         Long no = jdbcTemplate.queryForObject("""
                         INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
                         VALUES (?, ?, ?, ?)
                         ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + EXCLUDED.current_no,
+                        DO UPDATE SET current_no = GREATEST(code_sequence.current_no, ?) + ?,
                                       updated_at = now()
                         RETURNING current_no
-                        """, Long.class, IdWorker.getId(), ruleCode, scopeKey, count);
-        return no == null ? count : no;
+                        """, Long.class, IdWorker.getId(), ruleCode, scopeKey,
+                used + count, used, count);
+        return no == null ? used + count : no;
     }
 
     /**
