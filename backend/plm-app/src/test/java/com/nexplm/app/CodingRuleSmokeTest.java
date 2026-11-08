@@ -628,6 +628,158 @@ class CodingRuleSmokeTest {
         }
     }
 
+    /** CODE-01：批量取号一次生成 N 个连续码，且逐条落流水。 */
+    @Test
+    void batchGenerateProducesConsecutiveCodes() throws Exception {
+        String admin = login();
+        String rule = "Kind_batchtest";
+        jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", rule);
+        jdbcTemplate.update("DELETE FROM code_sequence WHERE rule_code = ?", rule);
+        jdbcTemplate.update("DELETE FROM code_issue WHERE rule_code = ?", rule);
+        jdbcTemplate.update("""
+                        INSERT INTO code_rule (id, code, name, segments_json, scope_json, reset_policy, status,
+                                               version_no, created_at, updated_at, current_no, object_type, remark)
+                        VALUES (?, ?, '批量取号规则',
+                                '[{"type":"VALUE"},{"type":"VALUE"},{"type":"SEQ","width":5,"radix":"DECIMAL"}]'::jsonb,
+                                '{}'::jsonb, 'NEVER', 'ACTIVE', 1, now(), now(), 0, 'PdmItem', 'EXP-20261108-56')
+                        """, IdWorker.getId(), rule);
+        try {
+            JsonNode codes = call(post("/api/v1/system/coding/generate")
+                    .param("path", rule + "/8001/01/*")
+                    .param("scopeKey", "T8001")
+                    .param("count", "3"), admin, null);
+            assertThat(codes).hasSize(3);
+            assertThat(codes.get(0).asText()).isEqualTo("80010100001");
+            assertThat(codes.get(1).asText()).isEqualTo("80010100002");
+            assertThat(codes.get(2).asText()).isEqualTo("80010100003");
+
+            Integer issued = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(1) FROM code_issue WHERE rule_code = ? AND state = 'ACTIVE'",
+                    Integer.class, rule);
+            assertThat(issued).isEqualTo(3);
+        } finally {
+            jdbcTemplate.update("DELETE FROM code_issue WHERE rule_code = ?", rule);
+            jdbcTemplate.update("DELETE FROM code_sequence WHERE rule_code = ?", rule);
+            jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", rule);
+        }
+    }
+
+    /** CODE-03：同一编码路径不能被两个分类占用。 */
+    @Test
+    void codePathCannotBeSharedByTwoClasses() throws Exception {
+        String admin = login();
+        String rule = "Kind_clashtest";
+        long classA = 94_600_000_001L;
+        long classB = 94_600_000_002L;
+        jdbcTemplate.update("DELETE FROM doc_class WHERE id IN (?, ?)", classA, classB);
+        jdbcTemplate.update("DELETE FROM code_segment_value WHERE kind_code = ?", rule);
+        jdbcTemplate.update("DELETE FROM code_kind WHERE code = ?", rule);
+        jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", rule);
+        jdbcTemplate.update("""
+                        INSERT INTO code_rule (id, code, name, segments_json, scope_json, reset_policy, status,
+                                               version_no, created_at, updated_at, current_no, object_type, remark)
+                        VALUES (?, ?, '路径占用规则',
+                                '[{"type":"VALUE"},{"type":"VALUE"},{"type":"SEQ","width":5,"radix":"DECIMAL"}]'::jsonb,
+                                '{}'::jsonb, 'NEVER', 'ACTIVE', 1, now(), now(), 0, 'PdmItem', 'EXP-20261108-56')
+                        """, IdWorker.getId(), rule);
+        jdbcTemplate.update("""
+                        INSERT INTO code_kind (code, name, legacy_id, rule_code, sort)
+                        VALUES (?, '路径占用规则', 'LEGACY_CLASH', ?, 91)
+                        """, rule, rule);
+        jdbcTemplate.update("""
+                        INSERT INTO code_segment_value (id, kind_code, segment, value_path, code_value, name, sort)
+                        VALUES (?, ?, '大类', '5001', '5001', '占用大类', 1),
+                               (?, ?, '小类', '5001/01', '01', '占用小类', 2)
+                        """, IdWorker.getId(), rule, IdWorker.getId(), rule);
+        jdbcTemplate.update("""
+                        INSERT INTO doc_class (id, parent_id, entity_code, code, name, path, sort, status,
+                                               deleted, version, created_at, updated_at)
+                        VALUES (?, NULL, 'PdmItem', 'T9A01', '占用分类A', '/T9A01', 0, 'ACTIVE', false, 0, now(), now()),
+                               (?, NULL, 'PdmItem', 'T9A02', '占用分类B', '/T9A02', 0, 'ACTIVE', false, 0, now(), now())
+                        """, classA, classB);
+        try {
+            Map<String, Object> first = new java.util.HashMap<>();
+            first.put("code", "T9A01");
+            first.put("name", "占用分类A");
+            first.put("codePath", rule + "/5001/01/*");
+            call(put("/api/v1/item-classes/{id}", classA), admin, json(first));
+
+            Map<String, Object> second = new java.util.HashMap<>();
+            second.put("code", "T9A02");
+            second.put("name", "占用分类B");
+            second.put("codePath", rule + "/5001/01/*");
+            mockMvc.perform(put("/api/v1/item-classes/{id}", classB)
+                            .header("Authorization", "Bearer " + admin)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(second)))
+                    .andExpect(status().isConflict());
+        } finally {
+            jdbcTemplate.update("DELETE FROM doc_class WHERE id IN (?, ?)", classA, classB);
+            jdbcTemplate.update("DELETE FROM code_segment_value WHERE kind_code = ?", rule);
+            jdbcTemplate.update("DELETE FROM code_kind WHERE code = ?", rule);
+            jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", rule);
+        }
+    }
+
+    /** CODE-04：换编码后旧码的流水置为失效。 */
+    @Test
+    void changingItemCodeMarksOldCodeLost() throws Exception {
+        String admin = login();
+        String rule = "Kind_statetest";
+        long classId = 94_700_000_001L;
+        jdbcTemplate.update("DELETE FROM doc_class WHERE id = ?", classId);
+        jdbcTemplate.update("DELETE FROM code_segment_value WHERE kind_code = ?", rule);
+        jdbcTemplate.update("DELETE FROM code_kind WHERE code = ?", rule);
+        jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", rule);
+        jdbcTemplate.update("DELETE FROM code_issue WHERE rule_code = ?", rule);
+        jdbcTemplate.update("""
+                        INSERT INTO code_rule (id, code, name, segments_json, scope_json, reset_policy, status,
+                                               version_no, created_at, updated_at, current_no, object_type, remark)
+                        VALUES (?, ?, '换码状态规则',
+                                '[{"type":"VALUE"},{"type":"VALUE"},{"type":"SEQ","width":5,"radix":"DECIMAL"}]'::jsonb,
+                                '{}'::jsonb, 'NEVER', 'ACTIVE', 1, now(), now(), 0, 'PdmItem', 'EXP-20261108-56')
+                        """, IdWorker.getId(), rule);
+        jdbcTemplate.update("""
+                        INSERT INTO code_kind (code, name, legacy_id, rule_code, sort)
+                        VALUES (?, '换码状态规则', 'LEGACY_STATE', ?, 92)
+                        """, rule, rule);
+        jdbcTemplate.update("""
+                        INSERT INTO code_segment_value (id, kind_code, segment, value_path, code_value, name, sort)
+                        VALUES (?, ?, '大类', '6001', '6001', '状态大类', 1),
+                               (?, ?, '小类', '6001/01', '01', '状态小类', 2)
+                        """, IdWorker.getId(), rule, IdWorker.getId(), rule);
+        jdbcTemplate.update("""
+                        INSERT INTO doc_class (id, parent_id, entity_code, code, name, path, sort, status,
+                                               code_path, deleted, version, created_at, updated_at)
+                        VALUES (?, NULL, 'PdmItem', 'T9B01', '换码分类', '/T9B01', 0, 'ACTIVE', ?, false, 0, now(), now())
+                        """, classId, rule + "/6001/01/*");
+        try {
+            JsonNode item = call(post("/api/v1/items"), admin, json(Map.of(
+                    "name", "换码测试零件", "itemType", "PART", "sourceType", "MAKE",
+                    "classId", String.valueOf(classId))));
+            String oldCode = item.path("code").asText();
+            long id = item.path("id").asLong();
+
+            JsonNode changed = call(put("/api/v1/items/{id}/code", id), admin, json(Map.of("code", "NEWCODE-001")));
+            assertThat(changed.path("code").asText()).isEqualTo("NEWCODE-001");
+
+            String state = jdbcTemplate.queryForObject(
+                    "SELECT state FROM code_issue WHERE rule_code = ? AND code = ? ORDER BY issued_at DESC LIMIT 1",
+                    String.class, rule, oldCode);
+            assertThat(state).isEqualTo("LOSE_EFFICACY");
+        } finally {
+            jdbcTemplate.update("DELETE FROM item_master WHERE class_id = ?", classId);
+            jdbcTemplate.update("DELETE FROM plm_object WHERE object_type = 'PdmItem'"
+                    + " AND id NOT IN (SELECT object_id FROM item_master)");
+            jdbcTemplate.update("DELETE FROM doc_class WHERE id = ?", classId);
+            jdbcTemplate.update("DELETE FROM code_issue WHERE rule_code = ?", rule);
+            jdbcTemplate.update("DELETE FROM code_sequence WHERE rule_code = ?", rule);
+            jdbcTemplate.update("DELETE FROM code_segment_value WHERE kind_code = ?", rule);
+            jdbcTemplate.update("DELETE FROM code_kind WHERE code = ?", rule);
+            jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", rule);
+        }
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {

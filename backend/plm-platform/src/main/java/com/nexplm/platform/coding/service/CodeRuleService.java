@@ -595,8 +595,22 @@ public class CodeRuleService {
      */
     @Transactional
     public String nextByPath(String fullPath, String scopeKey) {
+        return nextByPath(fullPath, scopeKey, 1).get(0);
+    }
+
+    /**
+     * 按分类编码路径**批量**取号（蓝本 {@code GeneratorCount}，CODE-01）。
+     *
+     * <p>一次把 {@code code_sequence} 推进 {@code count}，返回连续 {@code count} 个码；
+     * 每条都落发放流水（与单条取号一致）。</p>
+     */
+    @Transactional
+    public List<String> nextByPath(String fullPath, String scopeKey, int count) {
         if (fullPath == null || fullPath.isBlank()) {
             throw BizException.of(ErrorCode.CODE_RULE_INVALID, "分类未绑定编码路径，不能自动取号");
+        }
+        if (count < 1 || count > 100) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "批量取号数量必须在 1~100 之间");
         }
         String[] parts = fullPath.split("/");
         String ruleCode = parts[0].trim();
@@ -618,12 +632,17 @@ public class CodeRuleService {
             throw BizException.of(ErrorCode.CODE_RULE_INVALID, "编码规则已停用：" + ruleCode);
         }
         List<Segment> segments = parse(String.valueOf(locked.get(0).get("segments_json")));
-        long nextNo = nextClassSeq(ruleCode,
-                scopeKey == null || scopeKey.isBlank() ? "DEFAULT" : scopeKey.trim());
-        String rendered = renderByPath(segments, values, nextNo);
-        // 留路径快照：分类绑定后续变更不影响已发编码的追溯（T-CORE-10）
-        recordIssue(ruleCode, rendered, null, fullPath);
-        return rendered;
+        String scope = scopeKey == null || scopeKey.isBlank() ? "DEFAULT" : scopeKey.trim();
+        long last = nextClassSeq(ruleCode, scope, count);
+        long base = last - count + 1;
+        List<String> codes = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            String rendered = renderByPath(segments, values, base + i);
+            // 留路径快照：分类绑定后续变更不影响已发编码的追溯（T-CORE-10）
+            recordIssue(ruleCode, rendered, null, fullPath);
+            codes.add(rendered);
+        }
+        return codes;
     }
 
     /** 按「路径码值 + 流水」渲染；{@code VALUE} 段依次消费 {@code values}。 */
@@ -650,16 +669,39 @@ public class CodeRuleService {
         return sb.toString();
     }
 
-    /** 分类内独立流水：{@code (rule_code, scope_key=分类编码)} 原子自增。 */
+    /**
+     * 把某个编码的发放流水置为**失效**（蓝本 `SetCodeState('LoseEfficacy')`，CODE-04）。
+     *
+     * <p>只改状态，不删记录——历史仍可追溯"这个码曾经发过、后来被换掉了"。</p>
+     *
+     * @return 受影响的流水条数（同一编码可能发放过多次）
+     */
+    @Transactional
+    public int markLost(String code) {
+        if (code == null || code.isBlank()) {
+            return 0;
+        }
+        return jdbcTemplate.update("""
+                UPDATE code_issue SET state = 'LOSE_EFFICACY'
+                 WHERE code = ? AND state = 'ACTIVE'
+                """, code.trim());
+    }
+
+    /** 分类内独立流水：{@code (rule_code, scope_key)} 原子自增，返回本次分配到的**最后一个**号。 */
     private long nextClassSeq(String ruleCode, String classCode) {
+        return nextClassSeq(ruleCode, classCode, 1);
+    }
+
+    private long nextClassSeq(String ruleCode, String scopeKey, int count) {
         Long no = jdbcTemplate.queryForObject("""
                         INSERT INTO code_sequence (id, rule_code, scope_key, current_no)
-                        VALUES (?, ?, ?, 1)
+                        VALUES (?, ?, ?, ?)
                         ON CONFLICT (rule_code, scope_key)
-                        DO UPDATE SET current_no = code_sequence.current_no + 1, updated_at = now()
+                        DO UPDATE SET current_no = code_sequence.current_no + EXCLUDED.current_no,
+                                      updated_at = now()
                         RETURNING current_no
-                        """, Long.class, IdWorker.getId(), ruleCode, classCode);
-        return no == null ? 1L : no;
+                        """, Long.class, IdWorker.getId(), ruleCode, scopeKey, count);
+        return no == null ? count : no;
     }
 
     /**

@@ -100,6 +100,16 @@ public class CodeRuleController {
                                  String name, Boolean deleted) {
     }
 
+    @Operation(summary = "批量取号（按分类编码路径，一次 N 个；逐条落发放流水）")
+    @PostMapping("/generate")
+    @PreAuthorize("hasAuthority('system.coding.manage')")
+    @Audit(module = "SYSTEM", action = "CODING_BATCH_GENERATE", objectType = "CodeRule")
+    public Result<List<String>> batchGenerate(@RequestParam String path,
+                                              @RequestParam(required = false) String scopeKey,
+                                              @RequestParam(defaultValue = "1") int count) {
+        return Result.ok(codeRuleService.nextByPath(path, scopeKey, count));
+    }
+
     @Operation(summary = "编码规则列表（含每条规则的下一个编码预览）")
     @GetMapping("/rules")
     @PreAuthorize("hasAuthority('system.coding.read')")

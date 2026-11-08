@@ -235,6 +235,40 @@ public class ItemService {
 
     // ------------------------------------------------------------ 详情
 
+    /**
+     * 换编码（CODE-04）：把旧码的发放流水置为失效（蓝本 `SetCodeState('LoseEfficacy')`），
+     * 再改写对象编码。新编码必须是合法人工编码且未被占用。
+     */
+    @Transactional
+    public ItemDtos.ItemDetail changeCode(Long id, String newCode) {
+        PlmObject object = objectMapper.selectById(id);
+        if (object == null || !OBJECT_TYPE.equals(object.getObjectType())
+                || Boolean.TRUE.equals(object.getDeleted())) {
+            throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "零部件不存在：" + id);
+        }
+        String code = newCode == null ? "" : newCode.trim();
+        if (!manualCodePattern.matcher(code).matches()) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "编码格式不合法（仅允许字母、数字、. _ -，长度 1~64）：" + code);
+        }
+        Long dup = jdbcTemplate.queryForObject("""
+                SELECT COUNT(1) FROM plm_object
+                 WHERE object_type = ? AND code = ? AND deleted = false AND id <> ?
+                """, Long.class, OBJECT_TYPE, code, id);
+        if (dup != null && dup > 0) {
+            throw BizException.of(ErrorCode.COMMON_CONFLICT, "编码已存在：" + code);
+        }
+        String old = object.getCode();
+        if (code.equals(old)) {
+            return detail(id);
+        }
+        // 旧码失效（不删流水），再换新码
+        codeRuleService.markLost(old);
+        object.setCode(code);
+        objectMapper.updateById(object);
+        return detail(id);
+    }
+
     public ItemDtos.ItemDetail detail(Long id) {
         PlmObject object = requireItem(id);
         ItemMaster master = itemMapper.selectById(id);

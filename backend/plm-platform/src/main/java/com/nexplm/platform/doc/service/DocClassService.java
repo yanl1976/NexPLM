@@ -184,7 +184,7 @@ public class DocClassService {
         clazz.setStatus(normalizeStatus(req.status()));
         clazz.setRemark(req.remark());
         clazz.setCodeRuleCode(normalizeCodeRuleCode(entity, req.codeRuleCode(), null));
-        clazz.setCodePath(normalizeCodePath(entity, req.codePath()));
+        clazz.setCodePath(normalizeCodePath(entity, req.codePath(), null));
         clazz.setVersion(0);
         clazz.setDeleted(false);
         clazz.setCreatedBy(userId);
@@ -231,7 +231,7 @@ public class DocClassService {
                 : normalizeCodeRuleCode(existing.getEntityCode(), req.codeRuleCode(), id));
         // 编码路径同理：null=不改，空串=解除绑定（EXP-20261108-46）
         if (req.codePath() != null) {
-            existing.setCodePath(normalizeCodePath(existing.getEntityCode(), req.codePath()));
+            existing.setCodePath(normalizeCodePath(existing.getEntityCode(), req.codePath(), id));
         }
         existing.setUpdatedBy(userId);
         existing.setUpdatedAt(OffsetDateTime.now());
@@ -520,7 +520,7 @@ public class DocClassService {
      *
      * @param raw null=不改；空串=解除绑定
      */
-    private String normalizeCodePath(String entityCode, String raw) {
+    private String normalizeCodePath(String entityCode, String raw, Long excludeClassId) {
         if (raw == null) {
             return null;
         }
@@ -580,7 +580,17 @@ public class DocClassService {
             throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
                     "该种类需要 " + needed + " 个码值，当前路径给了 " + valueCount + " 个");
         }
-        return kindCode + "/" + path + "/*";
+        String normalized = kindCode + "/" + path + "/*";
+        // CODE-03：同一路径不允许被两个分类占用（蓝本 CheckRelatedCodePath）
+        Long clash = jdbcTemplate.queryForObject("""
+                SELECT COUNT(1) FROM doc_class
+                 WHERE entity_code = ? AND code_path = ? AND deleted = false AND id <> ?
+                """, Long.class, entityCode, normalized, excludeClassId == null ? -1L : excludeClassId);
+        if (clash != null && clash > 0) {
+            throw BizException.of(ErrorCode.COMMON_CONFLICT,
+                    "该编码路径已被其他分类占用：" + normalized);
+        }
+        return normalized;
     }
 
     private static int countOccurrences(String text, String token) {

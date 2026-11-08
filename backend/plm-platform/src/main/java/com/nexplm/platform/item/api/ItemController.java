@@ -112,6 +112,18 @@ public class ItemController {
                 releasedFrom, releasedTo, material, specification, classId, includeChildren, attrFilters));
     }
 
+    @Operation(summary = "换编码（旧码的发放流水置为失效）")
+    @PutMapping("/{id}/code")
+    @PreAuthorize("hasAuthority('pse.item.write')")
+    public Result<ItemDtos.ItemDetail> changeCode(@PathVariable Long id,
+                                                  @Valid @RequestBody ChangeCodeReq req) {
+        return Result.ok(itemService.changeCode(id, req.code()));
+    }
+
+    /** 换编码请求。 */
+    public record ChangeCodeReq(@jakarta.validation.constraints.NotBlank(message = "编码不能为空") String code) {
+    }
+
     @Operation(summary = "零部件详情（含设计属性与检出信息）")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('pse.item.read')")

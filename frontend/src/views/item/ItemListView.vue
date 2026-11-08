@@ -243,7 +243,7 @@
               />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col v-if="!editingId" :span="12">
             <el-form-item label="分类">
               <el-tree-select
                 v-model="form.classId"
@@ -256,6 +256,14 @@
                 placeholder="只能选最末级（小类）"
                 style="width: 100%"
               />
+            </el-form-item>
+          </el-col>
+          <el-col v-else :span="12">
+            <el-form-item label="所属分类">
+              <span class="hint">
+                {{ editClassify?.classCode ? `${editClassify.classCode} ${editClassify.className ?? ''}` : '未分类' }}
+              </span>
+              <el-button link type="primary" style="margin-left: 8px" @click="openClassChange">变更</el-button>
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -388,6 +396,27 @@
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="classChangeVisible" title="变更分类" width="520px">
+      <el-form label-width="80px">
+        <el-form-item label="分类">
+          <el-tree-select
+            v-model="classChangeId"
+            :data="classTree"
+            node-key="id"
+            :props="{ label: 'name', children: 'children', disabled: 'selectDisabled' }"
+            check-strictly
+            filterable
+            placeholder="只能选最末级（小类）"
+            style="width: 100%"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="classChangeVisible = false">取消</el-button>
+        <el-button type="primary" :loading="classChanging" @click="submitClassChange">保存</el-button>
       </template>
     </el-dialog>
 
@@ -629,6 +658,7 @@ import {
   itemClassApi,
   type CodePreview,
   type ItemBatchPatch,
+  type ItemClassifyInfo,
   type ItemClassNode,
   type ItemDesignAttr,
   type ItemSaveReq,
@@ -849,6 +879,47 @@ async function refreshCodePreview(): Promise<void> {
   }
 }
 
+// ---------------- 编辑时的分类展示与变更 ----------------
+const editClassify = ref<ItemClassifyInfo | null>(null)
+const classChangeVisible = ref(false)
+const classChangeId = ref<string | null>(null)
+const classChanging = ref(false)
+
+async function loadEditClassify(id: string): Promise<void> {
+  try {
+    editClassify.value = await itemClassApi.info(id)
+  } catch {
+    editClassify.value = null
+  }
+}
+
+function openClassChange(): void {
+  classChangeId.value = editClassify.value?.classId ?? null
+  classChangeVisible.value = true
+}
+
+async function submitClassChange(): Promise<void> {
+  if (!editingId.value) {
+    return
+  }
+  if (!classChangeId.value) {
+    ElMessage.warning('请选择最末级分类')
+    return
+  }
+  classChanging.value = true
+  try {
+    await itemClassApi.assign(editingId.value, classChangeId.value, {})
+    ElMessage.success('已变更分类')
+    classChangeVisible.value = false
+    await loadEditClassify(editingId.value)
+    await load()
+  } catch (error) {
+    ElMessage.error((error as Error).message || '变更分类失败')
+  } finally {
+    classChanging.value = false
+  }
+}
+
 function schedulePreview(): void {
   if (previewTimer) {
     clearTimeout(previewTimer)
@@ -1046,6 +1117,7 @@ function openCreate(): void {
   form.stdCode = ''
   form.remark = ''
   form.classId = null
+  editClassify.value = null
   form.designAttr = emptyDesignAttr()
   // 新建：客制字段清空（布尔一律「未设置」，不预置 false）
   extOriginal.value = {}
@@ -1074,6 +1146,8 @@ async function openEdit(row?: ItemSummary): Promise<void> {
     form.designAttr = { ...emptyDesignAttr(), ...(detail.designAttr ?? {}) }
     extOriginal.value = { ...(detail.ext ?? {}) }
     resetExtForms(detail.ext ?? {})
+    // 分类只读展示：变更走独立入口（PUT /items/{id}/classify）
+    await loadEditClassify(detail.id)
     dialogVisible.value = true
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载详情失败')

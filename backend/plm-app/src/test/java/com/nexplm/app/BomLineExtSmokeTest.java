@@ -56,6 +56,9 @@ class BomLineExtSmokeTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @Test
     void bomLineCarriesExtendedColumns() throws Exception {
         String admin = login();
@@ -100,6 +103,41 @@ class BomLineExtSmokeTest {
                         .content(body("childId", String.valueOf(createItem(admin, "BOM 子件3")),
                                 "qty", 1, "totalQty", -5)))
                 .andExpect(status().isBadRequest());
+    }
+
+    /** 多级展开 + 成环拒绝：A→B→C 三层可展开，C→A 应 400。 */
+    @Test
+    void bomTreeExpandsThreeLevelsAndRejectsCycle() throws Exception {
+        String admin = login();
+        long a = createItem(admin, "层级A");
+        long b = createItem(admin, "层级B");
+        long c = createItem(admin, "层级C");
+        try {
+            call(post("/api/v1/items/{id}/bom", a), admin, body(
+                    "childId", String.valueOf(b), "qty", 1));
+            call(post("/api/v1/items/{id}/bom", b), admin, body(
+                    "childId", String.valueOf(c), "qty", 2));
+
+            JsonNode tree = call(get("/api/v1/items/{id}/bom", a).param("depth", "3"), admin, null);
+            assertThat(tree).hasSize(1);
+            JsonNode bNode = tree.get(0);
+            assertThat(bNode.path("children")).as("第二层应展开").hasSize(1);
+            JsonNode cNode = bNode.path("children").get(0);
+            assertThat(cNode.path("childId").asText()).isEqualTo(String.valueOf(c));
+            assertThat(cNode.path("qty").decimalValue()).isEqualByComparingTo("2");
+
+            // 成环：C 里再放 A
+            mockMvc.perform(post("/api/v1/items/{id}/bom", c)
+                            .header("Authorization", "Bearer " + admin)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body("childId", String.valueOf(a), "qty", 1)))
+                    .andExpect(status().isBadRequest());
+        } finally {
+            jdbcTemplate.update("DELETE FROM bom_line WHERE parent_object_id IN (?, ?, ?)"
+                    + " OR child_object_id IN (?, ?, ?)", a, b, c, a, b, c);
+            jdbcTemplate.update("DELETE FROM item_master WHERE object_id IN (?, ?, ?)", a, b, c);
+            jdbcTemplate.update("DELETE FROM plm_object WHERE id IN (?, ?, ?)", a, b, c);
+        }
     }
 
     // ------------------------------------------------------------ 工具
