@@ -80,7 +80,8 @@ public class DocClassService {
         for (DocClass item : all) {
             nodes.put(item.getId(), new DocClassDtos.ClassNode(item.getId(), item.getParentId(),
                     item.getCode(), item.getName(), item.getPath(), item.getSort(), item.getStatus(),
-                    item.getRemark(), counts.getOrDefault(item.getId(), 0L), new ArrayList<>()));
+                    item.getRemark(), item.getCodeRuleCode(),
+                    counts.getOrDefault(item.getId(), 0L), new ArrayList<>()));
         }
         List<DocClassDtos.ClassNode> roots = new ArrayList<>();
         for (DocClass item : all) {
@@ -134,6 +135,21 @@ public class DocClassService {
         return clazz;
     }
 
+    /**
+     * 按「对象类型 + 关联编码规则」找分类（自动归类建议用）。
+     * <p>一条规则在同一对象类型下至多关联一个分类，由 {@link #normalizeCodeRuleCode} 保证。</p>
+     */
+    public java.util.Optional<DocClass> findByCodeRule(String entityCode, String ruleCode) {
+        if (ruleCode == null || ruleCode.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        return classMapper.selectList(new LambdaQueryWrapper<DocClass>()
+                        .eq(DocClass::getEntityCode, normalizeEntity(entityCode))
+                        .eq(DocClass::getCodeRuleCode, ruleCode.trim())
+                        .last("limit 1"))
+                .stream().findFirst();
+    }
+
     /** 子树分类 ID（含自身），用于「按分类检索文档」时包含子分类。 */
     public List<Long> subtreeIds(Long classId) {
         DocClass root = requireClass(classId);
@@ -167,6 +183,7 @@ public class DocClassService {
         clazz.setSort(req.sort() == null ? 0 : req.sort());
         clazz.setStatus(normalizeStatus(req.status()));
         clazz.setRemark(req.remark());
+        clazz.setCodeRuleCode(normalizeCodeRuleCode(entity, req.codeRuleCode(), null));
         clazz.setVersion(0);
         clazz.setDeleted(false);
         clazz.setCreatedBy(userId);
@@ -207,6 +224,10 @@ public class DocClassService {
         existing.setSort(req.sort() == null ? existing.getSort() : req.sort());
         existing.setStatus(normalizeStatus(req.status() == null ? existing.getStatus() : req.status()));
         existing.setRemark(req.remark());
+        // null=不改（前端编辑回传当前值时可省略），空串=解除关联
+        existing.setCodeRuleCode(req.codeRuleCode() == null
+                ? existing.getCodeRuleCode()
+                : normalizeCodeRuleCode(existing.getEntityCode(), req.codeRuleCode(), id));
         existing.setUpdatedBy(userId);
         existing.setUpdatedAt(OffsetDateTime.now());
         classMapper.updateById(existing);
@@ -478,12 +499,55 @@ public class DocClassService {
         return entityCode == null || entityCode.isBlank() ? ENTITY_CODE : entityCode.trim();
     }
 
+    /**
+     * 校验并归一「关联编码」。
+     * <p>空串 = 解除关联；非空 = 规则必须存在、启用、且对象类型一致；
+     * 同一对象类型下一条规则只能挂一个分类，否则自动归类会产生歧义。</p>
+     *
+     * @param excludeClassId 更新时排除自身
+     */
+    private String normalizeCodeRuleCode(String entityCode, String raw, Long excludeClassId) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String ruleCode = raw.trim();
+        List<Map<String, Object>> rules = jdbcTemplate.queryForList(
+                "SELECT object_type, status FROM code_rule WHERE code = ?", ruleCode);
+        if (rules.isEmpty()) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "关联的编码规则不存在：" + ruleCode);
+        }
+        Map<String, Object> rule = rules.get(0);
+        String objectType = rule.get("object_type") == null ? null : String.valueOf(rule.get("object_type"));
+        if (objectType != null && !objectType.isBlank() && !objectType.equals(entityCode)) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "编码规则「" + ruleCode + "」属于对象类型 " + objectType + "，不能关联到 " + entityCode + " 分类");
+        }
+        if (!"ACTIVE".equals(String.valueOf(rule.get("status")))) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST, "编码规则「" + ruleCode + "」已停用，不能关联");
+        }
+        Long conflict = excludeClassId == null
+                ? jdbcTemplate.queryForObject("""
+                        SELECT COUNT(1) FROM doc_class
+                         WHERE entity_code = ? AND code_rule_code = ? AND deleted = false
+                        """, Long.class, entityCode, ruleCode)
+                : jdbcTemplate.queryForObject("""
+                        SELECT COUNT(1) FROM doc_class
+                         WHERE entity_code = ? AND code_rule_code = ? AND deleted = false AND id <> ?
+                        """, Long.class, entityCode, ruleCode, excludeClassId);
+        if (conflict != null && conflict > 0) {
+            throw BizException.of(ErrorCode.COMMON_CONFLICT,
+                    "编码规则「" + ruleCode + "」已关联到其它分类，同一规则只能对应一个分类");
+        }
+        return ruleCode;
+    }
+
     private String escapeLike(String value) {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     private DocClassDtos.ClassNode toNode(DocClass clazz, Long docCount, List<DocClassDtos.ClassNode> children) {
         return new DocClassDtos.ClassNode(clazz.getId(), clazz.getParentId(), clazz.getCode(), clazz.getName(),
-                clazz.getPath(), clazz.getSort(), clazz.getStatus(), clazz.getRemark(), docCount, children);
+                clazz.getPath(), clazz.getSort(), clazz.getStatus(), clazz.getRemark(),
+                clazz.getCodeRuleCode(), docCount, children);
     }
 }

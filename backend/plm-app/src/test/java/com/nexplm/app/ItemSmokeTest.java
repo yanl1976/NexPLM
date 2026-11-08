@@ -65,6 +65,9 @@ class ItemSmokeTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @Test
     void itemCrudWithTypeFiltersAndDeleteGuard() throws Exception {
         String admin = login("admin", "Admin@12345");
@@ -927,6 +930,61 @@ class ItemSmokeTest {
                 .andExpect(status().isOk())
                 .andReturn();
         return Long.parseLong(body(result).path("data").asText());
+    }
+
+    /**
+     * 台账 B14 ①（T-H-01a）：分类关联编码 → 按编码自动匹配分类。
+     * 覆盖：关联规则后建议命中 → 已归类不再建议 → 同一规则不能挂两个分类（409）
+     * → 跨对象类型规则拒绝（400）→ 未关联规则的分类不给建议。
+     */
+    @Test
+    void classifySuggestedByLinkedCodeRule() throws Exception {
+        String admin = login("admin", "Admin@12345");
+        // 清掉可能残留的关联，保证本用例从"未关联"开始
+        jdbcTemplate.update(
+                "UPDATE doc_class SET code_rule_code = NULL WHERE entity_code = 'PdmItem' AND code_rule_code IS NOT NULL");
+
+        // 1. 建分类并关联编码规则 PdmItem（V56 预置，object_type=PdmItem）
+        JsonNode clazz = call(post("/api/v1/item-classes"), admin, json(Map.of(
+                "code", "AUTO-CODE", "name", "编码自动归类", "codeRuleCode", "PdmItem")));
+        long classId = clazz.path("id").asLong();
+        assertThat(clazz.path("codeRuleCode").asText()).isEqualTo("PdmItem");
+
+        // 2. 新建零件（自动取号 PN-xxxxxx）→ 建议命中该分类
+        long itemId = createItem(admin, "编码自动归类零件", "PART", "MAKE");
+        JsonNode suggestion = call(get("/api/v1/items/{id}/classify/suggestion", itemId), admin, null);
+        assertThat(suggestion.path("matched").asBoolean()).isTrue();
+        assertThat(suggestion.path("classId").asLong()).isEqualTo(classId);
+        assertThat(suggestion.path("codeRuleCode").asText()).isEqualTo("PdmItem");
+
+        // 3. 归类之后不再给建议（蓝本语义：已有分类不覆盖）
+        call(put("/api/v1/items/{id}/classify", itemId), admin, json(Map.of("classId", classId)));
+        JsonNode after = call(get("/api/v1/items/{id}/classify/suggestion", itemId), admin, null);
+        assertThat(after.path("matched").asBoolean()).isFalse();
+        assertThat(after.path("reason").asText()).contains("已有分类");
+
+        // 4. 同一规则不能再挂第二个分类
+        mockMvc.perform(post("/api/v1/item-classes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("code", "AUTO-CODE2", "name", "冲突分类",
+                                "codeRuleCode", "PdmItem")))
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isConflict());
+
+        // 5. 文档类型规则不能挂到零件分类上
+        mockMvc.perform(post("/api/v1/item-classes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("code", "AUTO-CODE3", "name", "错类型分类",
+                                "codeRuleCode", "PdmDoc")))
+                        .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isBadRequest());
+
+        // 6. 未关联规则的分类：建议为空并说明原因
+        jdbcTemplate.update("UPDATE doc_class SET code_rule_code = NULL WHERE id = ?", classId);
+        long anotherItem = createItem(admin, "无关联规则零件", "PART", "MAKE");
+        JsonNode noRule = call(get("/api/v1/items/{id}/classify/suggestion", anotherItem), admin, null);
+        assertThat(noRule.path("matched").asBoolean()).isFalse();
+        assertThat(noRule.path("reason").asText()).contains("未关联分类");
     }
 
     private long businessRoleId(String token) throws Exception {

@@ -79,6 +79,67 @@ public class CodeRuleService {
         return rows.get(0);
     }
 
+    /**
+     * 按编码反查产出它的规则（旧系统 {@code GetPathByCode} 的替代实现）。
+     *
+     * <p>规则段只有 TEXT/DATE/SEQ，其中 DATE 与 SEQ 无法从编码反推，因此用<b>字面量前缀</b>
+     * （规则开头连续的 TEXT 段拼接）做最长匹配：</p>
+     * <ul>
+     *   <li>命中多条且最长前缀等长 → 歧义，返回空（不猜，避免归错分类）；</li>
+     *   <li>前缀为空（规则以 DATE/SEQ 开头）→ 跳过，否则会匹配所有编码。</li>
+     * </ul>
+     *
+     * @param objectType 对象类型（如 {@code PdmItem}）；空表示不限
+     */
+    public java.util.Optional<String> matchRuleCode(String objectType, String code) {
+        if (code == null || code.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        String target = code.trim();
+        boolean filterType = objectType != null && !objectType.isBlank();
+        String sql = SELECT_COLUMNS + " WHERE status = 'ACTIVE'"
+                + (filterType ? " AND object_type = ?" : "") + " ORDER BY code";
+        Object[] args = filterType ? new Object[]{objectType} : new Object[]{};
+        List<CodeRule> rules = jdbcTemplate.query(sql, (rs, i) -> map(
+                rs.getLong("id"), rs.getString("code"), rs.getString("name"),
+                rs.getString("object_type"), rs.getString("segments_json"),
+                rs.getString("reset_policy"), rs.getString("status"), rs.getLong("current_no"),
+                rs.getString("last_period"), rs.getString("remark"), timestamp(rs.getTimestamp("updated_at"))),
+                args);
+
+        String best = null;
+        int bestLength = 0;
+        boolean ambiguous = false;
+        for (CodeRule rule : rules) {
+            String prefix = literalPrefix(rule.segments());
+            if (prefix.isEmpty() || !target.startsWith(prefix)) {
+                continue;
+            }
+            if (prefix.length() > bestLength) {
+                bestLength = prefix.length();
+                best = rule.code();
+                ambiguous = false;
+            } else if (prefix.length() == bestLength) {
+                ambiguous = true;
+            }
+        }
+        return ambiguous ? java.util.Optional.empty() : java.util.Optional.ofNullable(best);
+    }
+
+    /** 规则开头连续的 TEXT 段拼成的字面量前缀（遇到 DATE/SEQ 即停止）。 */
+    private static String literalPrefix(List<Segment> segments) {
+        StringBuilder prefix = new StringBuilder();
+        for (Segment segment : segments) {
+            if (!"TEXT".equalsIgnoreCase(segment.type())) {
+                break;
+            }
+            if (segment.value() != null) {
+                prefix.append(segment.value());
+            }
+        }
+        return prefix.toString();
+    }
+
     // ------------------------------------------------------------ 维护
 
     /** 修改规则：段定义 / 归零策略 / 名称 / 启停，改动一律留审计。 */

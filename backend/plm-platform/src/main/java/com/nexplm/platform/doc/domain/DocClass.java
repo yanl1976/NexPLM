@@ -24,6 +24,8 @@ public class DocClass {
     private Integer sort;
     private String status;
     private String remark;
+    /** 关联编码规则 code（对齐蓝本分类的「关联编码」）；为空表示不参与按编码自动归类。 */
+    private String codeRuleCode;
 
     @Version
     private Integer version;

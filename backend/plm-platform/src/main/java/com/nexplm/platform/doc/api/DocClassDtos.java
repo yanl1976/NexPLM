@@ -17,8 +17,8 @@ public final class DocClassDtos {
 
     /** 分类树节点；docCount 为该分类（不含子分类）下的文档数。 */
     public record ClassNode(Long id, Long parentId, String code, String name, String path,
-                            Integer sort, String status, String remark, Long docCount,
-                            List<ClassNode> children) {
+                            Integer sort, String status, String remark, String codeRuleCode,
+                            Long docCount, List<ClassNode> children) {
     }
 
     public record ClassSaveReq(
@@ -27,7 +27,9 @@ public final class DocClassDtos {
             Long parentId,
             Integer sort,
             String status,
-            @Size(max = 500) String remark) {
+            @Size(max = 500) String remark,
+            /** 关联编码规则 code；传空串表示解除关联。 */
+            @Size(max = 64, message = "关联编码不能超过 64 个字符") String codeRuleCode) {
     }
 
     /** 生效属性：自身属性 + 祖先可继承属性；inherited=true 表示来自祖先分类。 */

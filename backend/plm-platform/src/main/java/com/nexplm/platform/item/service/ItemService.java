@@ -298,6 +298,36 @@ public class ItemService {
     }
 
     /**
+     * 按编码自动匹配分类的建议（对齐蓝本 {@code TSDC/PSE/Js/Classify.js:117-127}）。
+     *
+     * <p>语义与蓝本一致：<b>零件当前没有分类时才给建议</b>（已有分类不覆盖）；
+     * 用编码反查编码规则 → 取该规则关联的分类。任一环节缺失都返回"无建议 + 原因"，不猜。</p>
+     */
+    public ItemDtos.ClassifySuggestion classifySuggestion(Long id) {
+        PlmObject object = requireItem(id);
+        Long classId = jdbcTemplate.query("SELECT class_id FROM item_master WHERE object_id = ?",
+                rs -> rs.next() ? rs.getObject(1, Long.class) : null, id);
+        if (classId != null) {
+            return new ItemDtos.ClassifySuggestion(false, null, null, null, null, "已有分类，不自动建议");
+        }
+        java.util.Optional<String> ruleCode =
+                codeRuleService.matchRuleCode(DocClassService.ENTITY_ITEM, object.getCode());
+        if (ruleCode.isEmpty()) {
+            return new ItemDtos.ClassifySuggestion(false, null, null, null, null,
+                    "编码未能唯一匹配到启用的编码规则");
+        }
+        java.util.Optional<DocClass> matched =
+                classService.findByCodeRule(DocClassService.ENTITY_ITEM, ruleCode.get());
+        if (matched.isEmpty()) {
+            return new ItemDtos.ClassifySuggestion(false, null, null, null, ruleCode.get(),
+                    "编码规则「" + ruleCode.get() + "」未关联分类");
+        }
+        DocClass clazz = matched.get();
+        return new ItemDtos.ClassifySuggestion(true, clazz.getId(), clazz.getCode(), clazz.getName(),
+                ruleCode.get(), "按编码规则「" + ruleCode.get() + "」自动匹配");
+    }
+
+    /**
      * 归类 / 取消归类（{@code classId=null} 表示取消）。
      * <p>属性值按分类"生效属性"做必填与类型校验后写 {@code ext_json.classAttrs}；
      * 与批次 G 的 ERP 客制字段同处 ext_json 但键不重叠，写入时以既有内容为底，互不覆盖。</p>

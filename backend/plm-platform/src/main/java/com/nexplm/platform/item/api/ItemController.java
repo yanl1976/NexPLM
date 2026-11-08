@@ -117,6 +117,13 @@ public class ItemController {
         return Result.ok(itemService.classifyInfo(id));
     }
 
+    @Operation(summary = "按编码自动匹配分类的建议（仅未归类时给出）")
+    @GetMapping("/{id}/classify/suggestion")
+    @PreAuthorize("hasAuthority('pse.item.read')")
+    public Result<ItemDtos.ClassifySuggestion> classifySuggestion(@PathVariable Long id) {
+        return Result.ok(itemService.classifySuggestion(id));
+    }
+
     @Operation(summary = "零部件归类/取消归类（classId 为空表示取消；属性按分类生效属性校验）")
     @PutMapping("/{id}/classify")
     @PreAuthorize("hasAuthority('pse.item.write')")

@@ -89,6 +89,17 @@ public final class ItemDtos {
     public record ClassAssignReq(Long classId, java.util.Map<String, String> attrs) {
     }
 
+    /**
+     * 按编码自动匹配分类的建议（对齐蓝本 {@code Classify.js:117-127}）。
+     *
+     * @param matched      是否给出可用建议
+     * @param codeRuleCode 命中的编码规则（诊断用）
+     * @param reason       无建议时的原因，或命中说明
+     */
+    public record ClassifySuggestion(boolean matched, Long classId, String classCode, String className,
+                                     String codeRuleCode, String reason) {
+    }
+
     /** 零件视图行（旧系统 PSEITEMVIEW）。 */
     public record ItemViewRow(Long id, String viewType, String viewTypeLabel, String description,
                               Boolean isDefault, String lifecycleState, String workflowState,
