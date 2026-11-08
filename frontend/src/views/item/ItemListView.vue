@@ -199,235 +199,11 @@
       />
     </el-card>
 
-    <!-- 新建 / 编辑：基本属性 + 设计属性（对齐旧系统 PSEBASEFORM） -->
-    <el-dialog
+    <ItemFormDialog
       v-model="dialogVisible"
-      :title="editingId ? '编辑零部件' : '新建零部件（分类→编码自动生成）'"
-      width="900px"
-    >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-        <div class="form-section">基本属性</div>
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item label="编码">
-              <el-input
-                :model-value="displayCode"
-                readonly
-                class="code-readonly"
-                :placeholder="editingId ? '' : '选择最末级分类后自动生成'"
-              />
-              <div v-if="!editingId" class="code-preview">
-                <template v-if="previewLoading">正在生成预览…</template>
-                <template v-else-if="codePreview">
-                  将生成：
-                  <span class="code-preview-value">{{ codePreview.code }}</span>
-                  <el-tag size="small" effect="plain" :type="codePreview.source === 'DRAWING' ? 'warning' : 'success'">
-                    {{ codePreview.source === 'DRAWING' ? '按图号' : '按分类' }}
-                  </el-tag>
-                  <span class="code-preview-src">{{ codePreview.ruleName }}（预览不占号）</span>
-                </template>
-                <template v-else>请选择最末级分类</template>
-              </div>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="名称" prop="name">
-              <el-input v-model="form.name" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="类型" prop="itemType">
-              <el-select v-model="form.itemType" style="width: 100%">
-                <el-option v-for="(label, value) in ITEM_TYPE_LABEL" :key="value" :label="label" :value="value" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="图号">
-              <el-input
-                v-model="form.designAttr.dwgNo"
-                placeholder="填图号可自动生成编号，如 0CT.325.503"
-                :disabled="Boolean(editingId)"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col v-if="!editingId" :span="12">
-            <el-form-item label="分类">
-              <el-cascader
-                v-model="form.classId"
-                :options="classTree"
-                :props="{ value: 'id', label: 'name', children: 'children', emitPath: false }"
-                clearable
-                filterable
-                placeholder="逐级选择，只能落在最末级（小类）"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col v-else :span="12">
-            <el-form-item label="所属分类">
-              <span class="hint">
-                {{ editClassify?.classCode ? `${editClassify.classCode} ${editClassify.className ?? ''}` : '未分类' }}
-              </span>
-              <el-button link type="primary" style="margin-left: 8px" @click="openClassChange">变更</el-button>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="项目" required>
-              <el-select
-                v-model="form.projectId"
-                filterable
-                clearable
-                placeholder="新物料必须绑定项目"
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="project in projectOptions"
-                  :key="project.id"
-                  :label="`${project.code} ${project.name}`"
-                  :value="String(project.id)"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="位置">
-              <el-input v-model="form.location" placeholder="绑定项目后自动生成" disabled />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="供应方式">
-              <el-radio-group v-model="form.sourceType">
-                <el-radio value="MAKE">自制</el-radio>
-                <el-radio value="BUY">外购</el-radio>
-              </el-radio-group>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="规格型号">
-              <el-input v-model="form.specification" placeholder="如 M3 Z=24 / Φ50×120" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="材料">
-              <el-input v-model="form.material" placeholder="如 40Cr" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="计量单位">
-              <el-input v-model="form.unit" placeholder="EA / PCS / KG" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="单件重量">
-              <el-input-number v-model="form.weight" :min="0" :precision="4" :step="0.1" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="标准号">
-              <el-input v-model="form.stdCode" placeholder="标准件填写，如 GB/T 5783" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="备注">
-              <el-input v-model="form.remark" type="textarea" :rows="1" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-
-        <div class="form-section">设计属性</div>
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item label="供应商">
-              <el-input v-model="form.designAttr.provider" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="产品类别">
-              <el-input v-model="form.designAttr.productCategory" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="产品型号">
-              <el-input v-model="form.designAttr.productModel" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="产品规格">
-              <el-input v-model="form.designAttr.productSpec" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="毛坯种类">
-              <el-input v-model="form.designAttr.materialType" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="毛坯种类2">
-              <el-input v-model="form.designAttr.materialType2" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="表面处理">
-              <el-input v-model="form.designAttr.surfaceTreatment" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="是否工装">
-              <el-switch v-model="form.designAttr.isTooling" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="是否颜色件">
-              <el-switch v-model="form.designAttr.colorItem" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="重量单位">
-              <el-input v-model="form.designAttr.weightUnit" placeholder="kg / g" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="所属装配">
-              <el-input v-model="form.designAttr.montage" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <template v-if="customFields.length">
-          <div class="form-section">ERP 扩展属性</div>
-          <el-row :gutter="12">
-            <el-col v-for="field in customFields" :key="field.code" :span="12">
-              <el-form-item :label="field.name">
-                <el-select
-                  v-if="isBoolField(field)"
-                  v-model="extBoolForm[field.code]"
-                  style="width: 100%"
-                  :title="`ERP 列：${field.code}`"
-                >
-                  <el-option label="未设置" value="" />
-                  <el-option label="是" :value="true" />
-                  <el-option label="否" :value="false" />
-                </el-select>
-                <el-input
-                  v-else
-                  v-model="extTextForm[field.code]"
-                  :title="`ERP 列：${field.code}`"
-                  :placeholder="`ERP 列 ${field.code}`"
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <div class="form-hint">
-            {{ editingId ? '编辑时只提交改动过的字段，未改动保持原值' : '布尔的「未设置」不提交，由金蝶按默认带出' }}
-          </div>
-        </template>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button v-if="!editingId" :loading="saving" @click="onSave(true)">保存并继续新建</el-button>
-        <el-button type="primary" :loading="saving" @click="onSave()">保存</el-button>
-      </template>
-    </el-dialog>
+      :editing-id="editingId ? String(editingId) : null"
+      @saved="onItemFormSaved"
+    />
 
     <el-dialog v-model="classChangeVisible" title="变更分类" width="520px">
       <el-form label-width="80px">
@@ -707,6 +483,7 @@ import {
 import { useUserStore } from '@/stores/user'
 import StatusDot from '@/components/StatusDot.vue'
 import ColumnSetting from '@/components/ColumnSetting.vue'
+import ItemFormDialog from '@/components/business/ItemFormDialog.vue'
 import type { ColumnDef } from '@/components/columnSetting'
 
 const router = useRouter()
@@ -1250,6 +1027,10 @@ async function onSave(keepOpen = false): Promise<void> {
   } finally {
     saving.value = false
   }
+}
+
+async function onItemFormSaved(): Promise<void> {
+  await load()
 }
 
 async function onDelete(row: ItemSummary): Promise<void> {
