@@ -117,6 +117,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '运行报表' }
       },
       {
+        path: 'ws-console',
+        name: 'ws-console',
+        component: () => import('@/views/workspace/WorkspaceConsoleView.vue'),
+        meta: { title: '工作空间（列表）' }
+      },
+      {
         path: 'item',
         name: 'item-list',
         component: () => import('@/views/item/ItemListView.vue'),
