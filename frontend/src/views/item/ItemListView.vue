@@ -251,22 +251,6 @@
               />
             </el-form-item>
           </el-col>
-          <el-col v-if="!editingId && recentClasses.length" :span="24">
-            <el-form-item label="最近分类">
-              <div class="recent-classes">
-                <el-tag
-                  v-for="item in recentClasses"
-                  :key="item.id"
-                  size="small"
-                  effect="plain"
-                  class="recent-tag"
-                  @click="form.classId = item.id"
-                >
-                  {{ item.label }}
-                </el-tag>
-              </div>
-            </el-form-item>
-          </el-col>
           <el-col v-if="!editingId" :span="12">
             <el-form-item label="分类">
               <el-cascader
@@ -888,54 +872,6 @@ async function loadClassTree(): Promise<void> {
   }
 }
 
-// ---------------- 最近使用的叶子分类（localStorage，最多 6 个） ----------------
-interface RecentClass {
-  id: string
-  label: string
-}
-
-const RECENT_KEY = 'nexplm.recentClasses'
-const recentClasses = ref<RecentClass[]>([])
-
-function loadRecentClasses(): void {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY)
-    recentClasses.value = raw ? (JSON.parse(raw) as RecentClass[]) : []
-  } catch {
-    recentClasses.value = []
-  }
-}
-
-function findClassLabel(nodes: ItemClassNode[], id: string, prefix = ''): string | null {
-  for (const node of nodes) {
-    const label = prefix ? `${prefix} / ${node.name}` : node.name
-    if (node.id === id) {
-      return label
-    }
-    const hit = findClassLabel(node.children ?? [], id, label)
-    if (hit) {
-      return hit
-    }
-  }
-  return null
-}
-
-function rememberClass(id: string): void {
-  const label = findClassLabel(classTree.value, id)
-  if (!label) {
-    return
-  }
-  recentClasses.value = [
-    { id, label },
-    ...recentClasses.value.filter((item) => item.id !== id)
-  ].slice(0, 6)
-  try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(recentClasses.value))
-  } catch {
-    // 隐私模式等场景忽略
-  }
-}
-
 /** 按当前分类/类型预览将生成的编码（不消耗流水）。 */
 async function refreshCodePreview(): Promise<void> {
   codePreview.value = null
@@ -1256,9 +1192,6 @@ async function onSave(keepOpen = false): Promise<void> {
       const drawing = form.designAttr.dwgNo?.trim()
       const code = drawing && codePreview.value ? codePreview.value.code : undefined
       await itemApi.create({ ...form, code, ext })
-      if (form.classId) {
-        rememberClass(form.classId)
-      }
       ElMessage.success('已创建')
     }
     if (keepOpen) {
@@ -1613,7 +1546,6 @@ onMounted(() => {
   loadCustomFields()
   // 分类树：新建时选分类即可实时预览编码
   loadClassTree()
-  loadRecentClasses()
 })
 </script>
 
