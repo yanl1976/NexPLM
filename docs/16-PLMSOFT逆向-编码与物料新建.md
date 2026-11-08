@@ -109,7 +109,61 @@ SetCodeState({ State: "LoseEfficacy", ObjectID: "CODERES_xxx;" })  // 换编码�
 
 ---
 
-## 五、下一步（按此顺序）
+## 五、编码生成协议（反编译 + JS 双向确认，已闭环）
+
+### 5.1 工具链（已装好，可复现）
+
+```
+winget install Microsoft.DotNet.SDK.8          -> 8.0.427
+dotnet tool install -g ilspycmd --version 8.2.0.7535
+$env:DOTNET_ROLL_FORWARD='Major'               -> 让 net6 版 ilspycmd 跑在 net8 上
+ilspycmd -p -o <out> Hoteam.InforCenter.Coding.Maintenance.Bussiness.dll
+```
+
+反编译产物 22 个 `.cs`：`CodeMachineCache.cs`(86KB)、`CodeValueBussiness.cs`(116KB)、`CodeResBussiness.cs`(100KB)、`CodeKindBussiness.cs`(92KB)、`CodeRuleBussiness.cs`(28KB)…
+
+### 5.2 取号（占号）
+
+`CodeMachine.js:1230-1273`：
+
+```js
+para = {
+  GeneratorCount: applyCount,   // 批量取号，正则 ^[0-9]{1,5}$
+  CodeValueId:   codeValueId,   // 末级码值 ID
+  ValuePath:     path,          // 码值路径，形如 "…;…"（分号分隔的 类型_ID）
+  CodeKindId:    codeKindValue, // 编码种类
+  ObjectInfoType, ObjectTypeValue
+}
+DataService.Call("InforCenter.Coding.CodingMaintenanceService.GeneratorMultiCodeWithCodeValuePath", { para })
+```
+
+**结论**：蓝本支持**一次生成 N 个连续码**（`GeneratorCount`），不是一次一个；我们现在的
+`code_sequence` 单条自增只能逐个取，需补批量接口。
+
+### 5.3 只算路径（不占号，用于分类绑定）
+
+`CodeMachine.js:1240-1271`，`GetCodePath: true` 时前端**不发生成请求**，自己拼路径：
+
+```js
+PathArr = path.split(';')
+GeneratorPath = PathArr.map(p => p.split('_')[1].substring(0,16)).join(';')
+CheckRelatedCodePath({ ClassCodePath: GeneratorPath, OldCodePath })   // 该路径是否已被别的分类占用
+return { PathName: `${codeKindName}/${allCode}`, GeneratorPath }
+```
+
+**这解释了 `CLASSCODEPATH` 为什么是 16 位十六进制段**——它是把码值对象 ID
+（`CODEVALUE_<32hex>`）截断到 16 位后的拼接；`PathName` 就是界面上显示的
+「元器件编码规则/1001/02」。
+
+### 5.4 与现有实现的差异（新增 3 条）
+
+| # | 蓝本 | 新系统 | 影响 |
+|---|---|---|---|
+| 6 | 批量取号 `GeneratorCount`（最多 5 位） | 只能一次一个 | 补号/批量建物料场景做不了 |
+| 7 | 路径由**码值对象 ID 前 16 位**拼接，且绑定前用 `CheckRelatedCodePath` 查占用 | 路径直接用码值文本（`1001/02/*`） | 我们的路径可读但**不是蓝本格式**，迁移对照需转换；且缺"路径已被占用"校验 |
+| 8 | `PathName`（人读）+ `GeneratorPath`（机器）双表示 | 只有一种 | UI 展示与存储同源，改码值文本会影响已存路径 |
+
+## 六、下一步（按此顺序）
 
 1. **读 `.page/.model/.schema`**（纯文本，无需工具）：`Coding` 与 `PSEITEM-CREATE` 的字段、校验、按钮绑定——补全 §2 的页面级规则；
 2. **BOM 逆向**：`OperateInBom.js` / `ProductBOM.js` + `PSEBOMLINEEDITCHECKNEW` 过程，产出「BOM 编辑规则清单」；
