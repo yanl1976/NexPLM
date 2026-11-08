@@ -2,7 +2,7 @@
   <el-dialog
     v-model="visible"
     :title="forced ? '首次登录需修改密码' : '修改密码'"
-    :width="'440px'"
+    width="min(440px, 92vw)"
     :show-close="!forced"
     :close-on-click-modal="false"
     :close-on-press-escape="!forced"

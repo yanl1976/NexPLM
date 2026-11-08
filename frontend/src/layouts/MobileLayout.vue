@@ -3,6 +3,7 @@
     <header class="m-header">
       <span class="m-title">{{ pageTitle }}</span>
       <div class="m-actions">
+        <el-button link type="primary" @click="openChangePwd">密码</el-button>
         <el-button link type="primary" @click="goDesktop">电脑版</el-button>
         <el-button link type="primary" @click="onLogout">退出</el-button>
       </div>
@@ -24,14 +25,22 @@
         <span>{{ tab.label }}</span>
       </div>
     </nav>
+
+    <ChangePasswordDialog
+      v-model="pwdVisible"
+      :forced="pwdForced"
+      @success="onPwdChanged"
+      @logout="onLogout"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Camera, Document, List, Tickets } from '@element-plus/icons-vue'
+import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -63,6 +72,29 @@ function onLogout(): void {
   ElMessage.success('已退出登录')
   router.push({ name: 'login' })
 }
+
+// ---------------- 修改密码（移动端与桌面端共用同一弹窗） ----------------
+const pwdVisible = ref(false)
+const pwdForced = ref(false)
+
+function openChangePwd(): void {
+  pwdForced.value = userStore.user?.mustChangePwd === true
+  pwdVisible.value = true
+}
+
+function onPwdChanged(): void {
+  userStore.loadMe().catch(() => {
+    // 刷新失败不影响改密结果
+  })
+}
+
+onMounted(() => {
+  // 首次登录/管理员重置后强制改密：移动端也要拦，否则换个入口就能绕过
+  if (userStore.user?.mustChangePwd) {
+    pwdForced.value = true
+    pwdVisible.value = true
+  }
+})
 </script>
 
 <style scoped>
