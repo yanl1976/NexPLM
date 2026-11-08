@@ -30,6 +30,7 @@
 13. [PLM 复刻方法论](docs/12-PLM复刻方法论.md) —— **复刻类工作的执行规程**：R0~R8 流水线（立项→取证→上下游→差异决策→设计→实现→判等验证→留口→收口）、取证清单与 DLL 红线、六维判等清单、GAP 与遗留台账规则、反模式清单、任务卡/ADR/验收单模板。任务卡存放于 [`docs/tasks/`](docs/tasks/)（一任务一文件，如 `T-H-01.md`）
 14. [TCPLM 数据库结构字典](docs/13-TCPLM数据库结构.md) —— PLM 蓝本库（`198.168.6.26:1433/TCPLM`）的**结构基线**：实例信息、行数 Top30、结构要点、业务域索引、483 表逐表列定义、62 视图、编码体系（`CODERULE`/`CODERES`）。由 [`tools/Dump-TcplmSchema.ps1`](tools/Dump-TcplmSchema.ps1) **只读**生成，结构变化时重跑即可
 15. [TCPLM 分类数据清单](docs/14-TCPLM分类数据清单.md) —— 蓝本分类**数据基线**：264 分类 + 41 分组全量清单、一物多分类分布（16,276 零件中仅 66 件多分类）、属性/属性值规模、迁移口径建议与未解字段。由 [`tools/Dump-TcplmClassify.ps1`](tools/Dump-TcplmClassify.ps1) **只读**生成（`03` A5 数据判等的依据）
+16. [PLMSOFT 逆向笔记（一）：编码与物料新建](docs/16-PLMSOFT逆向-编码与物料新建.md) —— 从部署产物（`Server\InforCenter\Coding`、`PSE\Item` 的 JS 与 `.page`、二开 `ItemSmartInput`）反推真实调用链：**编码 → `GENERATORPATH` → 反查分类 → 带出属性默认值**；含编码状态 `LoseEfficacy`、查重接口、初始码等 5 条差异清单与 4 项待反编译项
 
 ## 快速开始（开发环境）
 
