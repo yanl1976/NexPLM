@@ -120,6 +120,14 @@ nexplm:
       blocked-ext: ${NEXPLM_FILE_BLOCKED_EXT:exe,dll,bat,cmd,ps1,scr,msi,com,pif,jsp,jspx,php,asp,aspx,html,htm,svg}
       # 文件头与扩展名一致性校验（pdf/图片/OOXML/老 Office/zip）；无统一签名的格式自动跳过
       magic-check: ${NEXPLM_FILE_MAGIC_CHECK:true}
+    # scan=clamav 时生效：送检地址与流式分块参数
+    scan-clamav:
+      host: ${NEXPLM_CLAMAV_HOST:127.0.0.1}
+      port: ${NEXPLM_CLAMAV_PORT:3310}
+      # 建连与读超时（毫秒）；大文件走流式，不会整份读入内存
+      timeout-ms: ${NEXPLM_CLAMAV_TIMEOUT_MS:30000}
+      # 每次发送的块大小（字节，1KB~64KB）
+      chunk-size: ${NEXPLM_CLAMAV_CHUNK_SIZE:8192}
     # storage=minio 时生效；启动时自动创建存储桶
     minio:
       endpoint: ${NEXPLM_MINIO_ENDPOINT:http://localhost:9000}
@@ -130,7 +138,7 @@ nexplm:
     maintenance:
       enabled: ${NEXPLM_FILE_MAINTENANCE:true}
       retain-hours: ${NEXPLM_FILE_RETAIN_HOURS:24}
-    # 安全扫描实现：noop（默认不扫描）| 接入杀毒引擎时改为自定义实现名
+    # 安全扫描实现：noop（默认不扫描）| clamav（流式送检 clamd，参数见 scan-clamav）
     scan: ${NEXPLM_FILE_SCAN:noop}
   # P9-6 通知通道（SPI）：邮件 / 企业微信 / 钉钉
   notify:
