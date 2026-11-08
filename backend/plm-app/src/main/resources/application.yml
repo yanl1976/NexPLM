@@ -1,6 +1,8 @@
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
+  # 前置 nginx 终止 TLS 时，让 request.isSecure() 认 X-Forwarded-Proto / -Host（docs/07 ⑥）
+  forward-headers-strategy: framework
   servlet:
     encoding:
       charset: UTF-8
@@ -90,6 +92,10 @@ nexplm:
       secret: ${NEXPLM_JWT_SECRET:nexplm-dev-only-secret-key-change-in-production-32b}
       access-ttl: PT30M
       refresh-ttl: P7D
+    # HTTPS 强制（docs/07 待整改 ⑥）：默认关闭；生产在前置 nginx 终止 TLS 时设为 true，
+    # 未带 X-Forwarded-Proto: https 的请求一律 308 到 https（actuator 探针跳过）
+    https:
+      enforce: ${NEXPLM_HTTPS_ENFORCE:false}
     # 密码策略（docs/07 待整改 ④）：默认安全但不锁死历史账号
     password:
       # 最短长度（上限固定 64）
