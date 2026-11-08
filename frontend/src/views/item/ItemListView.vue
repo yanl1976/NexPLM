@@ -289,6 +289,11 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="位置">
+              <el-input v-model="form.location" placeholder="如 个人空间/2026/电气" clearable />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
             <el-form-item label="供应方式">
               <el-radio-group v-model="form.sourceType">
                 <el-radio value="MAKE">自制</el-radio>
@@ -842,6 +847,7 @@ const form = reactive<ItemSaveReq & { designAttr: ItemDesignAttr }>({
   stdCode: '',
   remark: '',
   classId: null,
+  location: '',
   designAttr: emptyDesignAttr()
 })
 
@@ -900,7 +906,7 @@ function loadRecentClasses(): void {
   }
 }
 
-function findClassLabel(nodes: SelectableClassNode[], id: string, prefix = ''): string | null {
+function findClassLabel(nodes: ItemClassNode[], id: string, prefix = ''): string | null {
   for (const node of nodes) {
     const label = prefix ? `${prefix} / ${node.name}` : node.name
     if (node.id === id) {
@@ -1188,6 +1194,7 @@ function openCreate(): void {
   form.stdCode = ''
   form.remark = ''
   form.classId = null
+  form.location = ''
   editClassify.value = null
   form.designAttr = emptyDesignAttr()
   // 新建：客制字段清空（布尔一律「未设置」，不预置 false）

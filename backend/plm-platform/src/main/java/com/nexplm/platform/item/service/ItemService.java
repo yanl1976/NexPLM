@@ -467,6 +467,7 @@ public class ItemService {
         ItemMaster master = new ItemMaster();
         master.setObjectId(id);
         master.setClassId(req.classId());
+        master.setLocation(trimToNull(req.location()));
         master.setItemType(itemType);
         master.setSpecification(trimToNull(req.specification()));
         master.setMaterial(trimToNull(req.material()));

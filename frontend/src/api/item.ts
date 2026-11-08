@@ -141,6 +141,8 @@ export interface ItemSaveReq {
   securityLevel?: number
   /** 创建时即归类：编码按分类绑定的路径生成（`Kind_xxx/1001/02/*`）。 */
   classId?: string | null
+  /** 位置（工作区/目录路径，自由文本）；与组织、权限无关。 */
+  location?: string | null
   designAttr?: ItemDesignAttr | null
   /**
    * 客制字段（批次 G·方案 A）：键必须是 PdmItem 元数据里已定义的字段码，

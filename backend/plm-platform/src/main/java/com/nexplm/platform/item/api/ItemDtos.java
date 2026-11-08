@@ -71,7 +71,9 @@ public final class ItemDtos {
              * 客制字段（批次 G·方案 A）：键必须是 PdmItem 已发布的元数据字段码，
              * 值写 {@code plm_object.ext_json}。null = 不改动已有客制字段。
              */
-            java.util.Map<String, Object> ext) {
+            java.util.Map<String, Object> ext,
+            /** 位置（工作区/目录路径，自由文本）；与组织、权限无关（V85）。 */
+            @Size(max = 200) String location) {
     }
 
     /**
