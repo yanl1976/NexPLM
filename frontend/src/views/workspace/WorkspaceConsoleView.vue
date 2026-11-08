@@ -26,10 +26,10 @@
         </el-select>
         <el-button size="small" :icon="Refresh" @click="reload">刷新</el-button>
         <el-button size="small" disabled>发送</el-button>
-        <el-button size="small" disabled>新建</el-button>
-        <el-button size="small" disabled>编辑</el-button>
+        <el-button size="small" type="primary" @click="openCreate">新建</el-button>
+        <el-button size="small" :disabled="!selectedRows.length" @click="openItem('edit')">编辑</el-button>
         <el-button size="small" disabled>添加</el-button>
-        <el-button size="small" disabled>BOM 管理</el-button>
+        <el-button size="small" :disabled="!selectedRows.length" @click="openItem('bom')">BOM 管理</el-button>
         <el-button size="small" disabled>产品完整性检查</el-button>
         <el-button size="small" disabled>发起流程</el-button>
         <el-button size="small" disabled>修订</el-button>
@@ -44,6 +44,7 @@
         size="small"
         border
         height="calc(100vh - 220px)"
+        @selection-change="onSelectionChange"
       >
         <el-table-column type="selection" width="42" />
         <el-table-column prop="object_type" label="对象类型" width="110" />
@@ -78,6 +79,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { wsConsoleApi, type WsFolder, type WsObject } from '@/api/wsConsole'
@@ -87,6 +89,7 @@ interface TreeNode {
   label: string
   space: string
   folderId?: string
+  projectId?: string | null
   children: TreeNode[]
 }
 
@@ -103,6 +106,44 @@ const objects = ref<WsObject[]>([])
 const objectLoading = ref(false)
 const pathLabel = ref('')
 const filterType = ref('')
+const router = useRouter()
+const selectedRows = ref<WsObject[]>([])
+const currentFolder = ref<TreeNode | null>(null)
+
+function onSelectionChange(rows: WsObject[]): void {
+  selectedRows.value = rows
+}
+
+/** 新建：复用零部件的新增弹窗（跳 /item?create=1，项目可预填） */
+function openCreate(): void {
+  if (!currentFolder.value?.folderId) {
+    ElMessage.warning('请先在左侧选择文件夹')
+    return
+  }
+  const query: Record<string, string> = { create: '1' }
+  if (currentFolder.value.space === 'PROJECT' && currentFolder.value.projectId) {
+    query.projectId = String(currentFolder.value.projectId)
+  }
+  router.push({ path: '/item', query })
+}
+
+/** 编辑 / BOM 管理：跳零部件详情（同一套页面） */
+function openItem(path: 'edit' | 'bom'): void {
+  const row = selectedRows.value[0]
+  if (!row) {
+    ElMessage.warning('请先选择一行')
+    return
+  }
+  if (row.object_type !== 'PdmItem') {
+    ElMessage.info('当前仅支持零部件，其它对象类型待接入')
+    return
+  }
+  if (path === 'edit') {
+    router.push({ path: '/item', query: { edit: row.id } })
+  } else {
+    router.push(`/item/${row.id}`)
+  }
+}
 
 const visibleObjects = computed(() =>
   filterType.value ? objects.value.filter((row) => row.object_type === filterType.value) : objects.value
@@ -118,6 +159,7 @@ function buildChildren(space: string): TreeNode[] {
       label: `${prefix}${row.name}`,
       space,
       folderId: row.id,
+      projectId: row.project_id ?? null,
       children: []
     })
   }
@@ -157,6 +199,7 @@ async function loadTree(): Promise<void> {
 }
 
 async function onNodeClick(node: TreeNode): Promise<void> {
+  currentFolder.value = node
   pathLabel.value = node.label
   objects.value = []
   if (!node.folderId) {

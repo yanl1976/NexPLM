@@ -675,6 +675,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadFile } from 'element-plus'
 import {
@@ -1587,7 +1588,29 @@ onMounted(() => {
   // 分类树：新建时选分类即可实时预览编码
   loadClassTree()
   loadProjectOptions()
+  applyQueryAction()
 })
+
+const route = useRoute()
+
+/** 供工作空间等页面复用：/item?create=1&projectId=xxx 或 /item?edit=id */
+async function applyQueryAction(): Promise<void> {
+  const create = route.query.create === '1'
+  const editId = typeof route.query.edit === 'string' ? route.query.edit : ''
+  const projectId = typeof route.query.projectId === 'string' ? route.query.projectId : ''
+  if (!create && !editId) {
+    return
+  }
+  await router.replace({ path: '/item' })
+  if (create) {
+    openCreate()
+    if (projectId) {
+      form.projectId = projectId
+    }
+    return
+  }
+  await openEdit({ id: editId } as ItemSummary)
+}
 </script>
 
 <style scoped>
