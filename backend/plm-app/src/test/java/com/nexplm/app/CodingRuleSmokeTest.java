@@ -475,6 +475,74 @@ class CodingRuleSmokeTest {
         }
     }
 
+    /**
+     * T-CORE-12：编码预览**不消耗流水**，且与实际创建出来的编码一致。
+     */
+    @Test
+    void codePreviewDoesNotConsumeSequenceAndMatchesCreated() throws Exception {
+        String admin = login();
+        String kind = "Kind_test04";
+        jdbcTemplate.update("DELETE FROM code_segment_value WHERE kind_code = ?", kind);
+        jdbcTemplate.update("DELETE FROM code_kind WHERE code = ?", kind);
+        jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", kind);
+        jdbcTemplate.update("""
+                        INSERT INTO code_rule (id, code, name, segments_json, scope_json, reset_policy, status,
+                                               version_no, created_at, updated_at, current_no, object_type, remark)
+                        VALUES (?, ?, '预览测试种类',
+                                '[{"type":"VALUE"},{"type":"VALUE"},{"type":"SEQ","width":5,"radix":"DECIMAL"}]'::jsonb,
+                                '{}'::jsonb, 'NEVER', 'ACTIVE', 1, now(), now(), 0, 'PdmItem', 'EXP-20261108-48')
+                        """, IdWorker.getId(), kind);
+        jdbcTemplate.update("""
+                        INSERT INTO code_kind (code, name, legacy_id, rule_code, sort)
+                        VALUES (?, '预览测试种类', 'LEGACY4', ?, 12)
+                        """, kind, kind);
+        jdbcTemplate.update("""
+                        INSERT INTO code_segment_value (id, kind_code, segment, value_path, code_value, name, sort)
+                        VALUES (?, ?, '大类', '4001', '4001', '预览大类', 1)
+                        """, IdWorker.getId(), kind);
+        jdbcTemplate.update("""
+                        INSERT INTO code_segment_value (id, kind_code, segment, value_path, code_value, name, sort)
+                        VALUES (?, ?, '小类', '4001/01', '01', '预览小类', 2)
+                        """, IdWorker.getId(), kind);
+        long classId = 94_400_000_001L;
+        jdbcTemplate.update("DELETE FROM doc_class WHERE id = ?", classId);
+        jdbcTemplate.update("""
+                        INSERT INTO doc_class (id, parent_id, entity_code, code, name, path, sort, status,
+                                               code_path, deleted, version, created_at, updated_at)
+                        VALUES (?, NULL, 'PdmItem', 'T9701', '预览测试分类', '/T9701', 0, 'ACTIVE',
+                                ?, false, 0, now(), now())
+                        """, classId, kind + "/4001/01/*");
+        try {
+            JsonNode first = call(get("/api/v1/items/code-preview")
+                    .param("classId", String.valueOf(classId)), admin, null);
+            JsonNode second = call(get("/api/v1/items/code-preview")
+                    .param("classId", String.valueOf(classId)), admin, null);
+            assertThat(first.path("code").asText()).isEqualTo("40010100001");
+            assertThat(second.path("code").asText())
+                    .as("连续预览应返回同一个号（预览不消耗流水）")
+                    .isEqualTo("40010100001");
+
+            JsonNode item = call(post("/api/v1/items"), admin, json(Map.of(
+                    "name", "预览验证零件", "itemType", "PART", "sourceType", "MAKE",
+                    "classId", String.valueOf(classId))));
+            assertThat(item.path("code").asText()).isEqualTo("40010100001");
+
+            JsonNode after = call(get("/api/v1/items/code-preview")
+                    .param("classId", String.valueOf(classId)), admin, null);
+            assertThat(after.path("code").asText()).isEqualTo("40010100002");
+        } finally {
+            jdbcTemplate.update("DELETE FROM item_master WHERE class_id = ?", classId);
+            jdbcTemplate.update("DELETE FROM plm_object WHERE object_type = 'PdmItem'"
+                    + " AND id NOT IN (SELECT object_id FROM item_master)");
+            jdbcTemplate.update("DELETE FROM doc_class WHERE id = ?", classId);
+            jdbcTemplate.update("DELETE FROM code_sequence WHERE rule_code = ?", kind);
+            jdbcTemplate.update("DELETE FROM code_issue WHERE rule_code = ?", kind);
+            jdbcTemplate.update("DELETE FROM code_segment_value WHERE kind_code = ?", kind);
+            jdbcTemplate.update("DELETE FROM code_kind WHERE code = ?", kind);
+            jdbcTemplate.update("DELETE FROM code_rule WHERE code = ?", kind);
+        }
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {

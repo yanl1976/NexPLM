@@ -206,7 +206,16 @@
         <el-row :gutter="12">
           <el-col :span="12">
             <el-form-item label="编码">
-              <el-input v-model="form.code" placeholder="留空自动取号 PN-000001" :disabled="Boolean(editingId)" />
+              <el-input v-model="form.code" placeholder="留空自动取号" :disabled="Boolean(editingId)" />
+              <div v-if="!editingId" class="code-preview" :class="{ 'is-manual': Boolean(form.code) }">
+                <template v-if="form.code">手工编码：{{ form.code.trim() }}</template>
+                <template v-else-if="previewLoading">正在生成预览…</template>
+                <template v-else-if="codePreview">
+                  将生成：<span class="code-preview-value">{{ codePreview.code }}</span>
+                  <span class="code-preview-src">{{ codePreview.ruleName }}</span>
+                </template>
+                <template v-else>留空自动取号</template>
+              </div>
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -219,6 +228,21 @@
               <el-select v-model="form.itemType" style="width: 100%">
                 <el-option v-for="(label, value) in ITEM_TYPE_LABEL" :key="value" :label="label" :value="value" />
               </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="分类">
+              <el-tree-select
+                v-model="form.classId"
+                :data="classTree"
+                node-key="id"
+                :props="{ label: 'name', children: 'children' }"
+                check-strictly
+                clearable
+                filterable
+                placeholder="选择分类后按分类编码规则取号"
+                style="width: 100%"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -583,7 +607,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadFile } from 'element-plus'
 import {
@@ -594,7 +618,10 @@ import {
   ITEM_USING_STATE_LABEL,
   ITEM_WORKFLOW_LABEL,
   itemApi,
+  itemClassApi,
+  type CodePreview,
   type ItemBatchPatch,
+  type ItemClassNode,
   type ItemDesignAttr,
   type ItemSaveReq,
   type ItemSummary
@@ -753,8 +780,53 @@ const form = reactive<ItemSaveReq & { designAttr: ItemDesignAttr }>({
   weight: null,
   stdCode: '',
   remark: '',
+  classId: null,
   designAttr: emptyDesignAttr()
 })
+
+// ---------------- 分类 → 编码联动（T-CORE-12） ----------------
+const classTree = ref<ItemClassNode[]>([])
+const codePreview = ref<CodePreview | null>(null)
+const previewLoading = ref(false)
+let previewTimer: ReturnType<typeof setTimeout> | null = null
+
+async function loadClassTree(): Promise<void> {
+  try {
+    classTree.value = await itemClassApi.tree()
+  } catch {
+    classTree.value = []
+  }
+}
+
+/** 手工编码优先；否则按当前分类/类型预览将生成的编码（不消耗流水）。 */
+async function refreshCodePreview(): Promise<void> {
+  codePreview.value = null
+  if (editingId.value || form.code?.trim()) {
+    return
+  }
+  previewLoading.value = true
+  try {
+    codePreview.value = await itemApi.previewCode({
+      classId: form.classId || undefined,
+      itemType: form.itemType
+    })
+  } catch {
+    codePreview.value = null
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+function schedulePreview(): void {
+  if (previewTimer) {
+    clearTimeout(previewTimer)
+  }
+  previewTimer = setTimeout(() => {
+    refreshCodePreview()
+  }, 250)
+}
+
+watch(() => [form.classId, form.itemType, form.code], schedulePreview)
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
@@ -941,6 +1013,7 @@ function openCreate(): void {
   form.weight = null
   form.stdCode = ''
   form.remark = ''
+  form.classId = null
   form.designAttr = emptyDesignAttr()
   // 新建：客制字段清空（布尔一律「未设置」，不预置 false）
   extOriginal.value = {}
@@ -1338,10 +1411,35 @@ onMounted(() => {
   load()
   // 客制字段集合一次取够（与详情页共用同一实现）
   loadCustomFields()
+  // 分类树：新建时选分类即可实时预览编码
+  loadClassTree()
 })
 </script>
 
 <style scoped>
+/* 编码预览：手工编码用警示色，自动取号用主色高亮 */
+.code-preview {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
+}
+
+.code-preview.is-manual {
+  color: var(--el-color-warning);
+}
+
+.code-preview-value {
+  font-family: var(--el-font-family-mono, monospace);
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+
+.code-preview-src {
+  margin-left: 6px;
+  color: var(--el-text-color-placeholder);
+}
+
 .page {
   display: flex;
   flex-direction: column;

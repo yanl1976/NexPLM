@@ -139,12 +139,22 @@ export interface ItemSaveReq {
   remark?: string | null
   orgId?: string | null
   securityLevel?: number
+  /** 创建时即归类：编码按分类绑定的路径生成（`Kind_xxx/1001/02/*`）。 */
+  classId?: string | null
   designAttr?: ItemDesignAttr | null
   /**
    * 客制字段（批次 G·方案 A）：键必须是 PdmItem 元数据里已定义的字段码，
    * 值落 ext_json；不传=保留既有值，传空串=清空。
    */
   ext?: Record<string, unknown> | null
+}
+
+/** 编码预览（不消耗流水）。source：`CLASS_PATH` / `CLASS_CODE`。 */
+export interface CodePreview {
+  code: string
+  ruleCode: string
+  ruleName: string
+  source: string
 }
 
 /** 列表查询条件（对齐旧系统 PSEITEM 的 8 项 + 材料/规格 + 分类维度）。 */
@@ -745,6 +755,10 @@ export const itemApi = {
   },
   detail(id: string): Promise<ItemDetail> {
     return http.get<ItemDetail>(`/items/${id}`)
+  },
+  /** 编码预览（不消耗流水）：选分类后显示将生成的编码。 */
+  previewCode(params: { classId?: string | null; itemType?: string }): Promise<CodePreview> {
+    return http.get<CodePreview>('/items/code-preview', params)
   },
   create(req: ItemSaveReq): Promise<ItemDetail> {
     return http.post<ItemDetail>('/items', req)
