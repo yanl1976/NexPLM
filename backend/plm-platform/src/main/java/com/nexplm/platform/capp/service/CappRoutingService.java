@@ -152,7 +152,7 @@ public class CappRoutingService {
     public CappDtos.RoutingDetail create(CappDtos.RoutingSaveReq req, Long companyId, Long userId) {
         boolean typical = Boolean.TRUE.equals(req.typical());
         // 典型工艺不绑零件；零件路线必须给零件（object_id 在库里已允许为空，靠这里守住语义）
-        ObjectRef object = typical ? null : requirePart(requireObjectId(req.objectId()));
+        ObjectRef object = typical ? null : requirePart(requireObjectId(req.objectId()), companyId);
         String name = req.name().trim();
         if (typical) {
             requireUniqueTypicalName(name, null, companyId);
@@ -183,7 +183,7 @@ public class CappRoutingService {
                     current.typical() ? "典型工艺不能改成零件路线（请用「套用到零件」）"
                             : "零件路线不能改成典型工艺（请用「另存为典型工艺」）");
         }
-        ObjectRef object = current.typical() ? null : requirePart(requireObjectId(req.objectId()));
+        ObjectRef object = current.typical() ? null : requirePart(requireObjectId(req.objectId()), companyId);
         String name = req.name().trim();
         if (current.typical()) {
             requireUniqueTypicalName(name, id, companyId);
@@ -303,7 +303,7 @@ public class CappRoutingService {
             throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
                     "只有典型工艺可以套用到零件；零件路线请用「复制」");
         }
-        ObjectRef object = requirePart(requireObjectId(req.objectId()));
+        ObjectRef object = requirePart(requireObjectId(req.objectId()), companyId);
         String name = req.name() == null || req.name().isBlank() ? typical.name() : req.name().trim();
         return cloneRouting(typical, object.id(), object.objectType(), false, name,
                 nextVersionNo(object.id(), companyId), companyId, userId);
@@ -589,13 +589,19 @@ public class CappRoutingService {
                 .collect(Collectors.joining(" → "));
     }
 
-    /** 校验并返回零件（只允许 PdmItem，避免把工艺路线挂到文档上）。 */
-    private ObjectRef requirePart(Long objectId) {
+    /**
+     * 校验并返回零件（只允许 PdmItem，且必须属于当前公司）。
+     * <p>带 {@code company_id} 是为了消除"用他公司 id 探测对象是否存在"的信息泄露
+     * （docs/06 EXP-20261108-21 第 4 条）：不带公司条件时，别家公司的对象会得到
+     * "类型不对"而不是"不存在"。</p>
+     */
+    private ObjectRef requirePart(Long objectId, Long companyId) {
         List<ObjectRef> rows = jdbcTemplate.query("""
                         SELECT id, object_type FROM plm_object
-                         WHERE id = ? AND deleted = false
+                         WHERE id = ? AND company_id = ? AND deleted = false
                         """,
-                (rs, rowNum) -> new ObjectRef(rs.getLong("id"), rs.getString("object_type")), objectId);
+                (rs, rowNum) -> new ObjectRef(rs.getLong("id"), rs.getString("object_type")),
+                objectId, companyId);
         if (rows.isEmpty()) {
             throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "零件不存在：" + objectId);
         }
