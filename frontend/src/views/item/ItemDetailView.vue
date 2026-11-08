@@ -646,6 +646,30 @@
         <el-form-item label="损耗率(%)">
           <el-input-number v-model="bomForm.lossRate" :min="0" :max="100" :precision="2" style="width: 100%" />
         </el-form-item>
+        <el-form-item label="总用量">
+          <el-input-number
+            v-model="bomForm.totalQty"
+            :min="0"
+            :precision="3"
+            placeholder="空 = 按层级累乘"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="BOM 类型">
+          <el-select v-model="bomForm.bomType" clearable style="width: 100%">
+            <el-option v-for="(label, value) in BOM_TYPE_LABEL" :key="value" :label="label" :value="value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="工序路线">
+          <el-input v-model="bomForm.itemRoute" placeholder="如 R10 / 装配-调试" />
+        </el-form-item>
+        <el-form-item label="数据来源">
+          <el-select v-model="bomForm.dataSource" clearable style="width: 100%">
+            <el-option label="手工" value="MANUAL" />
+            <el-option label="导入" value="IMPORT" />
+            <el-option label="ERP 回写" value="ERP" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="有效期">
           <div class="effect-range">
             <el-date-picker
@@ -1326,6 +1350,12 @@ const childLoading = ref(false)
 const bomForm = reactive<BomLineReq>({
   childId: '',
   qty: 1,
+  totalQty: null,
+  surplusQty: null,
+  subUseQty: null,
+  bomType: 'DESIGN',
+  itemRoute: '',
+  dataSource: '',
   unit: '',
   lossRate: 0,
   effectFrom: null,
@@ -2090,6 +2120,12 @@ function openAddBom(): void {
   bomEditingLineId.value = null
   bomForm.childId = ''
   bomForm.qty = 1
+  bomForm.totalQty = null
+  bomForm.surplusQty = null
+  bomForm.subUseQty = null
+  bomForm.bomType = 'DESIGN'
+  bomForm.itemRoute = ''
+  bomForm.dataSource = ''
   bomForm.unit = ''
   bomForm.lossRate = 0
   bomForm.effectFrom = null
@@ -2104,6 +2140,12 @@ function openEditBom(row: BomNode): void {
   bomEditingLineId.value = row.lineId
   bomForm.childId = row.childId
   bomForm.qty = Number(row.qty)
+  bomForm.totalQty = row.totalQty == null ? null : Number(row.totalQty)
+  bomForm.surplusQty = row.surplusQty == null ? null : Number(row.surplusQty)
+  bomForm.subUseQty = row.subUseQty == null ? null : Number(row.subUseQty)
+  bomForm.bomType = row.bomType ?? 'DESIGN'
+  bomForm.itemRoute = row.itemRoute ?? ''
+  bomForm.dataSource = row.dataSource ?? ''
   bomForm.unit = row.unit ?? ''
   bomForm.lossRate = row.lossRate ?? 0
   bomForm.effectFrom = row.effectFrom ?? null
@@ -2120,6 +2162,10 @@ async function onSaveBom(): Promise<void> {
   }
   if (!bomForm.qty || Number(bomForm.qty) <= 0) {
     ElMessage.warning('用量必须大于 0')
+    return
+  }
+  if (bomForm.totalQty != null && Number(bomForm.totalQty) < 0) {
+    ElMessage.warning('总用量不能为负（留空表示按层级累乘）')
     return
   }
   bomSaving.value = true

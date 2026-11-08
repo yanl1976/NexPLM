@@ -416,6 +416,18 @@ export interface BomNode {
 export interface BomLineReq {
   childId?: string
   qty: number
+  /** 总用量（蓝本 TOTALQTY）；空表示按层级累乘。 */
+  totalQty?: number | null
+  /** 剩余用量（蓝本 SURPLUSQTY）。 */
+  surplusQty?: number | null
+  /** 子用量（蓝本 SUBUSEQTY）。 */
+  subUseQty?: number | null
+  /** BOM 类型（蓝本 LBOMTYPE）：DESIGN / QUOTE / MANUFACTURE。 */
+  bomType?: string | null
+  /** 工序路线（蓝本 ITEMROUTE）。 */
+  itemRoute?: string | null
+  /** 数据来源（蓝本 DATASOURCE）：MANUAL / IMPORT / ERP。 */
+  dataSource?: string | null
   unit?: string | null
   lossRate?: number | null
   effectFrom?: string | null
@@ -757,7 +769,7 @@ export const itemApi = {
     return http.get<ItemDetail>(`/items/${id}`)
   },
   /** 编码预览（不消耗流水）：选分类后显示将生成的编码。 */
-  previewCode(params: { classId?: string | null; itemType?: string; dwgNo?: string }): Promise<CodePreview> {
+  previewCode(params: { classId?: string; itemType?: string; dwgNo?: string }): Promise<CodePreview> {
     return http.get<CodePreview>('/items/code-preview', params)
   },
   create(req: ItemSaveReq): Promise<ItemDetail> {
