@@ -733,7 +733,9 @@ public class ItemService {
             }
         }
         if (ids.isEmpty()) {
-            return Map.of();
+            // 不能返回 Map.of()：调用方会拿 createdBy（可能为 null）去 get，
+            // 而不可变 Map 的 get(null) 会抛 NPE（迁移导入/系统创建的对象 created_by 就是空）
+            return new HashMap<>();
         }
         Map<Long, String> names = new HashMap<>();
         String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
