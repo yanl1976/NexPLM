@@ -1,92 +1,166 @@
 <template>
-  <div class="ws-console">
-    <aside class="side">
-      <div class="side-title">导航</div>
-      <el-tree
-        v-loading="treeLoading"
-        :data="treeData"
-        node-key="id"
-        :props="{ label: 'label', children: 'children' }"
-        default-expand-all
-        highlight-current
-        @node-click="onNodeClick"
-      />
-    </aside>
-
-    <section class="main">
-      <div class="crumb">
-        下级对象列表
-        <span v-if="pathLabel" class="path">：{{ pathLabel }}</span>
+  <div class="ws-shell">
+    <header class="ws-header">
+      <div class="ws-header-left">
+        <span class="ws-title">工作空间</span>
+        <span class="ws-header-sep"></span>
+        <span class="ws-header-sub">个人门户 / 工作空间</span>
       </div>
-
-      <div class="tools">
-        <el-select v-model="filterType" size="small" style="width: 110px">
-          <el-option label="全部" value="" />
-          <el-option v-for="(label, value) in TYPE_LABEL" :key="value" :label="label" :value="value" />
-        </el-select>
+      <div class="ws-header-right">
+        <el-input v-model="keyword" size="small" clearable placeholder="在当前结果中查找" style="width: 210px">
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
         <el-button size="small" :icon="Refresh" @click="reload">刷新</el-button>
-        <el-button size="small" disabled>发送</el-button>
-        <el-dropdown size="small" trigger="click" @command="onCreateCommand">
-          <el-button size="small" type="primary">
-            新建<el-icon class="el-icon--right"><ArrowDown /></el-icon>
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="item">零部件</el-dropdown-item>
-              <el-dropdown-item command="doc" disabled>文档（待接入）</el-dropdown-item>
-              <el-dropdown-item command="purchase" disabled>请购单（待接入）</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-        <el-button size="small" :disabled="!selectedRows.length" @click="openEdit">编辑</el-button>
-        <el-button size="small" :disabled="!selectedRows.length" @click="onCheckout">检出</el-button>
-        <el-button size="small" :disabled="!selectedRows.length" @click="onCheckin">取消检出</el-button>
-        <el-button size="small" @click="openAdd">添加</el-button>
-        <el-button size="small" :disabled="!selectedRows.length" @click="openBom">BOM 管理</el-button>
-        <el-button size="small" disabled>产品完整性检查</el-button>
-        <el-button size="small" disabled>发起流程</el-button>
-        <el-button size="small" disabled>修订</el-button>
-        <el-button size="small" disabled>权限更改</el-button>
-        <el-button size="small" disabled>ERP 集成</el-button>
-        <el-button size="small" disabled>下载</el-button>
       </div>
+    </header>
 
-      <el-table
-        v-loading="objectLoading"
-        :data="visibleObjects"
-        size="small"
-        border
-        height="calc(100vh - 220px)"
-        @selection-change="onSelectionChange"
-      >
-        <el-table-column type="selection" width="42" />
-        <el-table-column prop="object_type" label="对象类型" width="110" />
-        <el-table-column prop="item_type" label="物料类型" width="100" />
-        <el-table-column prop="code" label="编号" width="150" />
-        <el-table-column prop="name" label="名称" min-width="180" />
-        <el-table-column prop="project_code" label="项目代号" width="110" />
-        <el-table-column label="版本" width="80">
-          <template #default="{ row }">A.{{ String(row.iteration ?? 1).padStart(3, '0') }}</template>
-        </el-table-column>
-        <el-table-column prop="using_state" label="使用状态" width="100" />
-        <el-table-column prop="specification" label="规格型号/图号" min-width="150" />
-        <el-table-column prop="checkout_user" label="检出人" width="100">
-          <template #default="{ row }">{{ row.checkout_user || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="检出状态" width="100">
-          <template #default="{ row }">
-            <el-tag v-if="row.checkout_user" size="small" type="warning">已检出</el-tag>
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="checked_out_at" label="检出时间" width="160">
-          <template #default="{ row }">{{ row.checked_out_at?.replace('T', ' ').slice(0, 19) || '-' }}</template>
-        </el-table-column>
-        <template #empty>
-          <span class="hint">该文件夹下暂无对象</span>
-        </template>
-      </el-table>
-    </section>
+    <div class="ws-body">
+      <aside class="side">
+        <div class="side-head">
+          <span class="side-head-title">空间导航</span>
+          <el-input v-model="folderFilter" size="small" clearable placeholder="过滤文件夹" />
+        </div>
+        <div class="side-tree">
+          <el-tree
+            ref="treeRef"
+            v-loading="treeLoading"
+            :data="treeData"
+            node-key="id"
+            :props="{ label: 'label', children: 'children' }"
+            :filter-node-method="filterNode"
+            default-expand-all
+            highlight-current
+            @node-click="onNodeClick"
+          >
+            <template #default="{ data }">
+              <span class="tree-node">
+                <el-icon><FolderOpened v-if="!data.folderId" /><Folder v-else /></el-icon>
+                <span class="tree-label">{{ data.label }}</span>
+              </span>
+            </template>
+          </el-tree>
+        </div>
+        <div class="side-foot">共 {{ folderCount }} 个文件夹</div>
+      </aside>
+
+      <section class="main">
+        <div class="crumb-bar">
+          <el-breadcrumb separator="/">
+            <el-breadcrumb-item>工作空间</el-breadcrumb-item>
+            <el-breadcrumb-item>{{ spaceLabel }}</el-breadcrumb-item>
+            <el-breadcrumb-item v-if="pathLabel">{{ pathLabel }}</el-breadcrumb-item>
+          </el-breadcrumb>
+          <span class="crumb-count">下级对象列表（{{ searchedObjects.length }}）</span>
+        </div>
+
+        <div class="toolbar">
+          <div class="tool-group">
+            <el-select v-model="filterType" size="small" style="width: 100px">
+              <el-option label="全部" value="" />
+              <el-option v-for="(label, value) in TYPE_LABEL" :key="value" :label="label" :value="value" />
+            </el-select>
+            <el-button size="small" :icon="Refresh" @click="reload">刷新</el-button>
+          </div>
+          <el-divider direction="vertical" />
+          <div class="tool-group">
+            <el-dropdown size="small" trigger="click" @command="onCreateCommand">
+              <el-button size="small" type="primary">
+                新建<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="item">零部件</el-dropdown-item>
+                  <el-dropdown-item command="doc" disabled>文档（待接入）</el-dropdown-item>
+                  <el-dropdown-item command="purchase" disabled>请购单（待接入）</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button size="small" :disabled="!selectedRows.length" @click="openEdit">编辑</el-button>
+            <el-button size="small" @click="openAdd">添加</el-button>
+            <el-button size="small" disabled>删除</el-button>
+          </div>
+          <el-divider direction="vertical" />
+          <div class="tool-group">
+            <el-button size="small" :disabled="!selectedRows.length" @click="onCheckout">检出</el-button>
+            <el-button size="small" :disabled="!selectedRows.length" @click="onCheckin">取消检出</el-button>
+            <el-button size="small" :disabled="!selectedRows.length" @click="openBom">BOM 管理</el-button>
+            <el-button size="small" disabled>产品完整性检查</el-button>
+          </div>
+          <el-divider direction="vertical" />
+          <div class="tool-group">
+            <el-button size="small" disabled>发起流程</el-button>
+            <el-button size="small" disabled>修订</el-button>
+            <el-button size="small" disabled>权限更改</el-button>
+            <el-button size="small" disabled>ERP 集成</el-button>
+            <el-button size="small" disabled>下载</el-button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <el-table
+            v-loading="objectLoading"
+            :data="pagedObjects"
+            size="small"
+            border
+            stripe
+            height="100%"
+            @selection-change="onSelectionChange"
+          >
+            <el-table-column type="index" label="序号" width="58" align="center" />
+            <el-table-column type="selection" width="38" />
+            <el-table-column label="对象类型" width="110">
+              <template #default="{ row }">
+                <span class="type-cell"><el-icon><Document /></el-icon>{{ TYPE_LABEL[row.object_type] || row.object_type }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="code" label="编号" width="150" />
+            <el-table-column prop="name" label="名称" min-width="180" />
+            <el-table-column prop="project_code" label="项目代号" width="105" />
+            <el-table-column label="版本" width="78">
+              <template #default="{ row }">A.{{ String(row.iteration ?? 1).padStart(3, '0') }}</template>
+            </el-table-column>
+            <el-table-column prop="using_state" label="使用状态" width="95" />
+            <el-table-column prop="specification" label="规格型号/图号" min-width="150" />
+            <el-table-column prop="item_type" label="物料类型" width="95" />
+            <el-table-column prop="checkout_user" label="检出人" width="95">
+              <template #default="{ row }">{{ row.checkout_user || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="检出状态" width="92">
+              <template #default="{ row }">
+                <el-tag v-if="row.checkout_user" size="small" type="warning" effect="plain">已检出</el-tag>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="checked_out_at" label="检出时间" width="160">
+              <template #default="{ row }">{{ row.checked_out_at?.replace('T', ' ').slice(0, 19) || '-' }}</template>
+            </el-table-column>
+            <template #empty>
+              <span class="hint">该文件夹下暂无对象</span>
+            </template>
+          </el-table>
+        </div>
+
+        <div class="pager">
+          <span class="pager-info">共 {{ searchedObjects.length }} 条 · 每页 {{ pageSize }}</span>
+          <el-pagination
+            v-model:current-page="page"
+            v-model:page-size="pageSize"
+            :total="searchedObjects.length"
+            :page-sizes="[20, 50, 100]"
+            layout="prev, pager, next, sizes"
+            size="small"
+          />
+          <el-button size="small" :icon="Refresh" @click="reload">刷新</el-button>
+        </div>
+      </section>
+    </div>
+
+    <footer class="status-bar">
+      <span>当前用户：{{ userLabel }}</span>
+      <span>{{ currentFolder?.space === 'PROJECT' ? '项目空间' : (currentFolder?.space === 'MY' ? '个人工作区' : '公共空间') }}</span>
+      <span>对象 {{ searchedObjects.length }} 条</span>
+      <span class="status-right">关于我们 · 服务条款 · 法律声明</span>
+    </footer>
 
     <ItemFormDialog
       v-model="formVisible"
@@ -142,9 +216,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, Document, Folder, FolderOpened, Refresh, Search } from '@element-plus/icons-vue'
 import { wsConsoleApi, type WsFolder, type WsObject } from '@/api/wsConsole'
 import ItemFormDialog from '@/components/business/ItemFormDialog.vue'
 import {
@@ -179,11 +253,44 @@ const objects = ref<WsObject[]>([])
 const objectLoading = ref(false)
 const pathLabel = ref('')
 const filterType = ref('')
+const keyword = ref('')
+const folderFilter = ref('')
+const page = ref(1)
+const pageSize = ref(50)
+const treeRef = ref<any>(null)
+const folderCount = computed(() => folders.value.length)
+const spaceLabel = computed(() =>
+  currentFolder.value?.space === 'PROJECT' ? '项目空间' : currentFolder.value?.space === 'MY' ? '个人工作区' : '公共空间'
+)
+const userLabel = computed(() => {
+  try {
+    const raw = localStorage.getItem('nexplm.user')
+    return raw ? (JSON.parse(raw).username ?? '当前用户') : '当前用户'
+  } catch {
+    return '当前用户'
+  }
+})
+
+function filterNode(value: string, data: TreeNode): boolean {
+  return !value || data.label.toLowerCase().includes(value.toLowerCase())
+}
+watch(folderFilter, (value) => treeRef.value?.filter(value))
+watch([keyword, filterType], () => (page.value = 1))
 const selectedRows = ref<WsObject[]>([])
 const currentFolder = ref<TreeNode | null>(null)
 
 const visibleObjects = computed(() =>
   filterType.value ? objects.value.filter((row) => row.object_type === filterType.value) : objects.value
+)
+const searchedObjects = computed(() => {
+  const key = keyword.value.trim().toLowerCase()
+  return key
+    ? visibleObjects.value.filter((row) =>
+        `${row.code} ${row.name} ${row.specification ?? ''}`.toLowerCase().includes(key))
+    : visibleObjects.value
+})
+const pagedObjects = computed(() =>
+  searchedObjects.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
 )
 
 function buildChildren(space: string): TreeNode[] {
@@ -417,50 +524,199 @@ onMounted(loadTree)
 </script>
 
 <style scoped>
-.ws-console {
-  display: grid;
-  grid-template-columns: 290px 1fr;
-  gap: 12px;
-  padding: 12px;
-}
-
-.side {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 4px;
-  padding: 8px;
-  max-height: calc(100vh - 110px);
-  overflow: auto;
-}
-
-.side-title {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
-.main {
-  min-width: 0;
-}
-
-.crumb {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 6px;
-}
-
-.path {
-  color: var(--el-text-color-primary);
-}
-
-.tools {
+.ws-shell {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
+  flex-direction: column;
+  height: calc(100vh - 56px);
+  min-width: 980px;
+  background: #f2f5f9;
+  border: 1px solid #cfd9e6;
 }
 
-.code-readonly :deep(.el-input__wrapper) {
-  background-color: var(--el-fill-color-dark, #e6e8eb);
+.ws-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 12px;
+  background: linear-gradient(180deg, #f8fbff, #e8f0fa);
+  border-bottom: 1px solid #cfd9e6;
+}
+
+.ws-header-left,
+.ws-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f4e94;
+}
+
+.ws-header-sep {
+  width: 1px;
+  height: 16px;
+  background: #c7d4e5;
+}
+
+.ws-header-sub {
+  font-size: 12px;
+  color: #6b7a90;
+}
+
+.ws-body {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  padding: 8px;
+}
+
+.side,
+.main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #fff;
+  border: 1px solid #cfd9e6;
+  border-radius: 2px;
+}
+
+.side-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: #f4f8fd;
+  border-bottom: 1px solid #d8e2ef;
+}
+
+.side-head-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f4e94;
+}
+
+.side-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px;
+}
+
+.side-foot {
+  padding: 5px 8px;
+  font-size: 11px;
+  color: #6b7a90;
+  background: #f8fafc;
+  border-top: 1px solid #e2e9f2;
+}
+
+.tree-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.tree-label {
+  white-space: nowrap;
+}
+
+.crumb-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 10px;
+  background: #f4f8fd;
+  border-bottom: 1px solid #d8e2ef;
+  font-size: 12px;
+}
+
+.crumb-count {
+  color: #6b7a90;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 8px;
+  overflow-x: auto;
+  background: #fbfdff;
+  border-bottom: 1px solid #d8e2ef;
+}
+
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+
+.toolbar :deep(.el-divider--vertical) {
+  margin: 0 4px;
+  height: 18px;
+}
+
+.table-wrap {
+  flex: 1;
+  min-height: 0;
+  padding: 0 8px;
+}
+
+.table-wrap :deep(.el-table__header th) {
+  background: #eef4fb;
+  color: #2c4a6e;
+  font-weight: 600;
+}
+
+.type-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.muted,
+.hint {
+  color: #9aa8b8;
+  font-size: 12px;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 38px;
+  padding: 0 10px;
+  background: #f8fafc;
+  border-top: 1px solid #d8e2ef;
+}
+
+.pager-info {
+  font-size: 11px;
+  color: #6b7a90;
+}
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 26px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: #5c6b7f;
+  background: #eef3f9;
+  border-top: 1px solid #cfd9e6;
+}
+
+.status-right {
+  margin-left: auto;
 }
 </style>
