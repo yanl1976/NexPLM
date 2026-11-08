@@ -206,15 +206,19 @@
         <el-row :gutter="12">
           <el-col :span="12">
             <el-form-item label="编码">
-              <el-input v-model="form.code" placeholder="留空自动取号" :disabled="Boolean(editingId)" />
-              <div v-if="!editingId" class="code-preview" :class="{ 'is-manual': Boolean(form.code) }">
-                <template v-if="form.code">手工编码：{{ form.code.trim() }}</template>
-                <template v-else-if="previewLoading">正在生成预览…</template>
+              <el-input
+                :model-value="displayCode"
+                readonly
+                :placeholder="editingId ? '' : '选择最末级分类后自动生成'"
+              />
+              <div v-if="!editingId" class="code-preview">
+                <template v-if="previewLoading">正在生成预览…</template>
                 <template v-else-if="codePreview">
-                  将生成：<span class="code-preview-value">{{ codePreview.code }}</span>
-                  <span class="code-preview-src">{{ codePreview.ruleName }}</span>
+                  将生成：
+                  <span class="code-preview-value">{{ codePreview.code }}</span>
+                  <span class="code-preview-src">{{ codePreview.ruleName }}（预览不占号）</span>
                 </template>
-                <template v-else>留空自动取号</template>
+                <template v-else>请选择最末级分类</template>
               </div>
             </el-form-item>
           </el-col>
@@ -236,11 +240,11 @@
                 v-model="form.classId"
                 :data="classTree"
                 node-key="id"
-                :props="{ label: 'name', children: 'children' }"
+                :props="{ label: 'name', children: 'children', disabled: 'selectDisabled' }"
                 check-strictly
                 clearable
                 filterable
-                placeholder="选择分类后按分类编码规则取号"
+                placeholder="只能选最末级（小类）"
                 style="width: 100%"
               />
             </el-form-item>
@@ -784,24 +788,47 @@ const form = reactive<ItemSaveReq & { designAttr: ItemDesignAttr }>({
   designAttr: emptyDesignAttr()
 })
 
-// ---------------- 分类 → 编码联动（T-CORE-12） ----------------
-const classTree = ref<ItemClassNode[]>([])
+// ---------------- 分类 → 编码联动（T-CORE-12 / T-CORE-13） ----------------
+// 成品库（80）与产号（CH）不属于物料分类，选择器里剔除
+const EXCLUDED_CLASS_ROOTS = ['80', 'CH']
+
+interface SelectableClassNode extends ItemClassNode {
+  /** 有子节点 = 大类/中类，不允许选（只能选最末级小类） */
+  selectDisabled: boolean
+}
+
+function toSelectableClassTree(nodes: ItemClassNode[]): SelectableClassNode[] {
+  return nodes
+    .filter((node) => !EXCLUDED_CLASS_ROOTS.includes(node.code))
+    .map((node) => ({
+      ...node,
+      selectDisabled: (node.children?.length ?? 0) > 0,
+      children: toSelectableClassTree(node.children ?? [])
+    }))
+}
+
+const classTree = ref<SelectableClassNode[]>([])
 const codePreview = ref<CodePreview | null>(null)
 const previewLoading = ref(false)
 let previewTimer: ReturnType<typeof setTimeout> | null = null
 
+/** 新建时编码框只读展示预览值；编辑时展示已有编码。 */
+const displayCode = computed(() =>
+  editingId.value ? form.code ?? '' : codePreview.value?.code ?? ''
+)
+
 async function loadClassTree(): Promise<void> {
   try {
-    classTree.value = await itemClassApi.tree()
+    classTree.value = toSelectableClassTree(await itemClassApi.tree())
   } catch {
     classTree.value = []
   }
 }
 
-/** 手工编码优先；否则按当前分类/类型预览将生成的编码（不消耗流水）。 */
+/** 按当前分类/类型预览将生成的编码（不消耗流水）。 */
 async function refreshCodePreview(): Promise<void> {
   codePreview.value = null
-  if (editingId.value || form.code?.trim()) {
+  if (editingId.value) {
     return
   }
   previewLoading.value = true
@@ -826,7 +853,7 @@ function schedulePreview(): void {
   }, 250)
 }
 
-watch(() => [form.classId, form.itemType, form.code], schedulePreview)
+watch(() => [form.classId, form.itemType], schedulePreview)
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],

@@ -543,6 +543,37 @@ class CodingRuleSmokeTest {
         }
     }
 
+    /** T-CORE-13：大类/中类（有子节点）不允许用于取号，只有最末级小类可以。 */
+    @Test
+    void previewRejectsNonLeafClass() throws Exception {
+        String admin = login();
+        long parentId = 94_500_000_001L;
+        long childId = 94_500_000_002L;
+        jdbcTemplate.update("DELETE FROM doc_class WHERE id IN (?, ?)", parentId, childId);
+        jdbcTemplate.update("""
+                        INSERT INTO doc_class (id, parent_id, entity_code, code, name, path, sort, status,
+                                               deleted, version, created_at, updated_at)
+                        VALUES (?, NULL, 'PdmItem', 'T9801', '测试中类', '/T9801', 0, 'ACTIVE', false, 0, now(), now())
+                        """, parentId);
+        jdbcTemplate.update("""
+                        INSERT INTO doc_class (id, parent_id, entity_code, code, name, path, sort, status,
+                                               deleted, version, created_at, updated_at)
+                        VALUES (?, ?, 'PdmItem', 'T980101', '测试小类', '/T9801/T980101', 0, 'ACTIVE', false, 0, now(), now())
+                        """, childId, parentId);
+        try {
+            mockMvc.perform(get("/api/v1/items/code-preview")
+                            .param("classId", String.valueOf(parentId))
+                            .header("Authorization", "Bearer " + admin))
+                    .andExpect(status().isBadRequest());
+
+            JsonNode leaf = call(get("/api/v1/items/code-preview")
+                    .param("classId", String.valueOf(childId)), admin, null);
+            assertThat(leaf.path("code").asText()).isNotBlank();
+        } finally {
+            jdbcTemplate.update("DELETE FROM doc_class WHERE id IN (?, ?)", childId, parentId);
+        }
+    }
+
     // ------------------------------------------------------------ 工具
 
     private String login() throws Exception {

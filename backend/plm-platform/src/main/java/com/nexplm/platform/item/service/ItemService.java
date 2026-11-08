@@ -873,6 +873,7 @@ public class ItemService {
      */
     public ItemDtos.CodePreview previewCode(Long classId, String itemType) {
         if (classId != null) {
+            ensureLeafClass(classId);
             var clazz = classService.requireClass(classId, OBJECT_TYPE);
             String codePath = clazz.getCodePath();
             var preview = codePath != null && !codePath.isBlank()
@@ -887,6 +888,20 @@ public class ItemService {
                 preview.ruleName(), preview.source());
     }
 
+    /**
+     * 只有最末级分类（小类）才允许用于取号（`EXP-20261108-49`）：
+     * 大类/中类是分组，选它生成的编码没有意义。判定 = 该分类下没有未删除的子分类。
+     */
+    private void ensureLeafClass(Long classId) {
+        Long children = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM doc_class WHERE parent_id = ? AND deleted = false",
+                Long.class, classId);
+        if (children != null && children > 0) {
+            throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
+                    "只能选择最末级（小类）分类，大类/中类不可用于取号");
+        }
+    }
+
     private String resolveCode(String code, String itemType, Long classId) {
         if (code != null && !code.isBlank()) {
             String trimmed = code.trim();
@@ -897,6 +912,7 @@ public class ItemService {
             return trimmed;
         }
         if (classId != null) {
+            ensureLeafClass(classId);
             var clazz = classService.requireClass(classId, OBJECT_TYPE);
             // 蓝本真实机制（EXP-20261108-44）：分类绑定「编码种类 + 码值路径」，按路径取号；
             // 例 100102 → Kind_61a2…/1001/02/* → 1001 + 02 + 00001

@@ -4,7 +4,7 @@
  * 旧系统 13 个页面维护的其实是同一件事——**编码由哪些段拼成、流水走到几、什么时候归零**。
  * 这里收敛成一张规则表 + 两个对话框（编辑段定义 / 重置跳号）。
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Delete } from '@element-plus/icons-vue'
 import { codingApi } from '@/api/coding'
@@ -497,6 +497,24 @@ async function submitBinding(): Promise<void> {
     bindSaving.value = false
   }
 }
+
+// 直接点「码值」页签（未从种类页跳转）时，自动选中第一个种类并加载，避免"没数据"
+watch(activeTab, (tab) => {
+  if (tab !== 'values') {
+    return
+  }
+  if (!currentKind.value) {
+    const first = kinds.value[0]
+    if (first) {
+      currentKind.value = first
+      loadValues(first.code)
+    }
+    return
+  }
+  if (!values.value.length) {
+    loadValues(currentKind.value.code)
+  }
+})
 
 onMounted(() => {
   load()
