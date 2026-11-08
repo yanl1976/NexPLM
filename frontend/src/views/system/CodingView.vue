@@ -265,6 +265,38 @@ function buildValueTree(rows: CodeValueRow[]): ValueTreeNode[] {
 
 const valueTree = computed<ValueTreeNode[]>(() => buildValueTree(values.value))
 
+/** 当前选中的中类（左侧「分类」栏）。 */
+const currentMajor = ref<CodeValueRow | null>(null)
+
+/** 中类按大类（前 2 位）分组：`10 电气元件` 下挂 `1001 断路器` / `1002 接触器`。 */
+const majorGroups = computed(() => {
+  const groups = new Map<string, { majorCode: string; majorName: string; items: CodeValueRow[] }>()
+  for (const row of values.value) {
+    if (row.valuePath.includes('/')) {
+      continue
+    }
+    const majorCode = row.valuePath.slice(0, 2)
+    if (!groups.has(majorCode)) {
+      groups.set(majorCode, { majorCode, majorName: row.majorName ?? '', items: [] })
+    }
+    groups.get(majorCode)!.items.push(row)
+  }
+  return Array.from(groups.values())
+})
+
+/** 当前中类下的小类码值。 */
+const currentChildren = computed<CodeValueRow[]>(() => {
+  const major = currentMajor.value
+  if (!major) {
+    return []
+  }
+  return values.value.filter((row) => row.valuePath.startsWith(`${major.valuePath}/`))
+})
+
+function selectMajor(row: CodeValueRow): void {
+  currentMajor.value = row
+}
+
 async function loadKinds(): Promise<void> {
   kindsLoading.value = true
   try {
@@ -284,8 +316,13 @@ function openKindValues(row: CodeKindRow): void {
 
 async function loadValues(code: string): Promise<void> {
   valuesLoading.value = true
+  const keep = currentMajor.value?.valuePath
   try {
-    values.value = await codingApi.kindValues(code)
+    const rows = await codingApi.kindValues(code)
+    values.value = rows
+    // 尽量保持当前选中的中类；首次进入默认选第一个
+    const found = keep ? rows.find((row) => row.valuePath === keep) : undefined
+    currentMajor.value = found ?? rows.find((row) => !row.valuePath.includes('/')) ?? null
   } catch (error) {
     ElMessage.error((error as Error).message || '加载码值失败')
   } finally {
@@ -313,8 +350,17 @@ const renameVisible = ref(false)
 const renameSaving = ref(false)
 const renameForm = reactive({ valuePath: '', name: '', deleted: false })
 
-function openCreateValue(): void {
+/** 新增中类（4 位，含大类前缀）；父码值为空。 */
+function openCreateMajor(): void {
   valueForm.parentPath = ''
+  valueForm.codeValue = ''
+  valueForm.name = ''
+  valueDialogVisible.value = true
+}
+
+/** 新增小类（2 位，挂在某个中类下），`+` 按钮与「新增小类」共用。 */
+function openCreateChild(parent: CodeValueRow): void {
+  valueForm.parentPath = parent.valuePath
   valueForm.codeValue = ''
   valueForm.name = ''
   valueDialogVisible.value = true
@@ -347,10 +393,10 @@ async function submitValue(): Promise<void> {
   }
 }
 
-function openRenameValue(node: ValueTreeNode): void {
-  renameForm.valuePath = node.path
-  renameForm.name = node.name ?? ''
-  renameForm.deleted = node.deleted
+function openRenameValue(row: CodeValueRow): void {
+  renameForm.valuePath = row.valuePath
+  renameForm.name = row.name ?? ''
+  renameForm.deleted = row.deleted
   renameVisible.value = true
 }
 
@@ -546,39 +592,78 @@ onMounted(() => {
           <template #header>
             <div class="card-header">
               <div>
-                <span class="title">码值树</span>
+                <span class="title">码值</span>
                 <span class="hint">
                   {{ currentKind ? `种类：${currentKind.name}（${currentKind.code}）` : '请先在「编码种类」里点「查看码值」' }}
+                  · 编码 = 大类(2) + 中类(2) + 小类(2) + 流水(5)
                 </span>
               </div>
               <el-button v-if="currentKind" :icon="Refresh" @click="loadValues(currentKind.code)">刷新</el-button>
             </div>
           </template>
-          <div class="value-toolbar">
-            <el-button type="primary" plain :icon="Plus" :disabled="!currentKind" @click="openCreateValue">
-              新增码值
-            </el-button>
-            <span class="hint">码值只增不改值；停用后不再允许新绑定，历史编码仍引用</span>
-          </div>
           <el-empty v-if="!currentKind" description="在「编码种类」页点「查看码值」" />
-          <el-tree
-            v-else
-            v-loading="valuesLoading"
-            :data="valueTree"
-            node-key="path"
-            :props="{ label: 'label', children: 'children' }"
-            default-expand-all
-            class="value-tree"
-          >
-            <template #default="{ data }">
-              <span class="value-row" :class="{ 'is-disabled': data.deleted }">
-                <span class="value-code">{{ data.codeValue }}</span>
-                <span class="value-name">{{ data.name || '-' }}</span>
-                <el-tag v-if="data.deleted" size="small" type="info" effect="plain">已停用</el-tag>
-                <el-button link type="primary" size="small" @click.stop="openRenameValue(data)">改名/停用</el-button>
-              </span>
-            </template>
-          </el-tree>
+          <div v-else v-loading="valuesLoading" class="value-layout">
+            <div class="value-side">
+              <div class="value-side-head">
+                <span>分类（中类）</span>
+                <el-button link type="primary" :icon="Plus" @click="openCreateMajor">新增中类</el-button>
+              </div>
+              <div v-for="group in majorGroups" :key="group.majorCode" class="major-group">
+                <div class="major-title">{{ group.majorCode }} {{ group.majorName || '' }}</div>
+                <div
+                  v-for="item in group.items"
+                  :key="item.valuePath"
+                  class="major-item"
+                  :class="{ 'is-active': currentMajor?.valuePath === item.valuePath, 'is-disabled': item.deleted }"
+                  @click="selectMajor(item)"
+                >
+                  <span class="value-code">{{ item.codeValue }}</span>
+                  <span class="value-name">{{ item.name || '-' }}</span>
+                </div>
+              </div>
+              <el-empty v-if="!majorGroups.length" description="还没有中类码值" :image-size="60" />
+            </div>
+            <div class="value-main">
+              <template v-if="currentMajor">
+                <div class="value-main-head">
+                  <span>
+                    <span class="value-code">{{ currentMajor.codeValue }}</span>
+                    <span class="value-name value-name-strong">{{ currentMajor.name || '-' }}</span>
+                  </span>
+                  <el-button type="primary" plain :icon="Plus" @click="openCreateChild(currentMajor)">
+                    新增小类
+                  </el-button>
+                </div>
+                <el-table :data="currentChildren" size="small" border>
+                  <el-table-column label="小类码值" width="110">
+                    <template #default="{ row }">{{ row.codeValue }}</template>
+                  </el-table-column>
+                  <el-table-column label="名称" min-width="190">
+                    <template #default="{ row }">{{ row.name || '-' }}</template>
+                  </el-table-column>
+                  <el-table-column label="完整码" width="140">
+                    <template #default="{ row }">{{ row.valuePath.replace('/', '') }}</template>
+                  </el-table-column>
+                  <el-table-column label="状态" width="90">
+                    <template #default="{ row }">
+                      <el-tag v-if="row.deleted" size="small" type="info" effect="plain">已停用</el-tag>
+                      <el-tag v-else size="small" type="success" effect="plain">启用</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="180" fixed="right">
+                    <template #default="{ row }">
+                      <el-button link type="primary" :icon="Plus" @click="openCreateChild(currentMajor)">同级</el-button>
+                      <el-button link type="primary" @click="openRenameValue(row)">改名/停用</el-button>
+                    </template>
+                  </el-table-column>
+                  <template #empty>
+                    <span class="hint">该中类下还没有小类码值，点「新增小类」或行内「同级」</span>
+                  </template>
+                </el-table>
+              </template>
+              <el-empty v-else description="选择左侧中类后编辑码值" />
+            </div>
+          </div>
         </el-card>
       </el-tab-pane>
 
@@ -713,7 +798,11 @@ onMounted(() => {
     </el-dialog>
 
     <!-- 新增码值（只增不改值） -->
-    <el-dialog v-model="valueDialogVisible" title="新增码值" width="520px">
+    <el-dialog
+      v-model="valueDialogVisible"
+      :title="valueForm.parentPath ? '新增小类码值' : '新增中类码值'"
+      width="520px"
+    >
       <el-form label-width="90px">
         <el-form-item label="所属种类">
           <span class="hint">{{ currentKind ? `${currentKind.name}（${currentKind.code}）` : '-' }}</span>
@@ -731,7 +820,10 @@ onMounted(() => {
           />
         </el-form-item>
         <el-form-item label="码值">
-          <el-input v-model="valueForm.codeValue" placeholder="如 1001 / 02" />
+          <el-input
+            v-model="valueForm.codeValue"
+            :placeholder="valueForm.parentPath ? '2 位小数，如 09（小类）' : '4 位，如 1006（中类）'"
+          />
         </el-form-item>
         <el-form-item label="名称">
           <el-input v-model="valueForm.name" placeholder="如 断路器 / 抽出式框架断路器" />
@@ -818,11 +910,80 @@ onMounted(() => {
   overflow: auto;
 }
 
-.value-toolbar {
+/* 码值两栏：左侧中类（按大类分组），右侧该中类下的小类 */
+.value-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 12px;
+  min-height: 320px;
+}
+
+.value-side {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  padding: 8px;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.value-side-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 6px;
+}
+
+.major-group + .major-group {
+  margin-top: 8px;
+}
+
+.major-title {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  padding: 4px 6px;
+}
+
+.major-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.major-item:hover {
+  background: var(--el-fill-color-light);
+}
+
+.major-item.is-active {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+
+.major-item.is-disabled {
+  color: var(--el-text-color-disabled);
+  text-decoration: line-through;
+}
+
+.value-main {
+  min-width: 0;
+}
+
+.value-main-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.value-name-strong {
+  margin-left: 6px;
+  color: var(--el-text-color-primary);
+  font-weight: 500;
 }
 
 .value-row {

@@ -103,7 +103,7 @@ public class CodeRuleService {
      * <p>{@code deleted=true} 表示已停用：不再允许新绑定，但历史编码仍引用它。</p>
      */
     public record ValueRow(String valuePath, String codeValue, String name, String segment, int sort,
-                           boolean deleted) {
+                           boolean deleted, String majorName) {
     }
 
     /** 编码种类列表（含码值数与已绑定分类数）。 */
@@ -159,7 +159,7 @@ public class CodeRuleService {
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, IdWorker.getId(), kind, segment, path, value,
                 name == null || name.isBlank() ? null : name.trim(), sort);
-        return new ValueRow(path, value, name, segment, sort, false);
+        return new ValueRow(path, value, name, segment, sort, false, null);
     }
 
     /**
@@ -210,16 +210,26 @@ public class CodeRuleService {
         if (kindCode == null || kindCode.isBlank()) {
             return List.of();
         }
-        // 停用的码值也要返回（前端才能"启用"），用 deleted 标记区分
+        // 停用的码值也要返回（前端才能"启用"）；名称缺失时用分类树里的同名节点兜底：
+        // `1001` 取 doc_class(1001)、`1001/01` 取 doc_class(100101)、大类名取 doc_class(10)
         return jdbcTemplate.query("""
-                SELECT value_path, code_value, name, segment, sort, deleted
-                  FROM code_segment_value
-                 WHERE kind_code = ?
-                 ORDER BY sort, code_value
+                SELECT v.value_path, v.code_value,
+                       COALESCE(NULLIF(v.name, ''), dc.name) AS name,
+                       v.segment, v.sort, v.deleted,
+                       major.name AS major_name
+                  FROM code_segment_value v
+                  LEFT JOIN doc_class dc
+                         ON dc.entity_code = 'PdmItem' AND dc.deleted = false
+                        AND dc.code = replace(v.value_path, '/', '')
+                  LEFT JOIN doc_class major
+                         ON major.entity_code = 'PdmItem' AND major.deleted = false
+                        AND major.code = left(v.value_path, 2)
+                 WHERE v.kind_code = ?
+                 ORDER BY v.sort, v.code_value
                 """,
                 (rs, rowNum) -> new ValueRow(rs.getString("value_path"), rs.getString("code_value"),
                         rs.getString("name"), rs.getString("segment"), rs.getInt("sort"),
-                        rs.getBoolean("deleted")),
+                        rs.getBoolean("deleted"), rs.getString("major_name")),
                 kindCode.trim());
     }
 

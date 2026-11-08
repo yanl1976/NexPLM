@@ -59,6 +59,8 @@ export interface CodeValueRow {
   sort: number
   /** 已停用：不允许新绑定，历史编码仍引用。 */
   deleted: boolean
+  /** 大类名称（分类树 `10`/`11`/`12`），用于左侧分组展示。 */
+  majorName?: string | null
 }
 
 /** 新增码值请求；parentPath 为空表示大类。 */
