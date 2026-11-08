@@ -38,7 +38,9 @@ public final class ItemDtos {
                              ItemDesignAttr designAttr, CheckoutInfo checkout,
                              java.util.Map<String, Object> ext,
                              /** 位置（工作区/目录路径）；V85。 */
-                             String location) {
+                             String location,
+                             /** 所属项目（V86）。 */
+                             Long projectId) {
                              }
 
     /** 设计属性（旧系统 PSEBASEFORM）：独立表，随零件 1:1。 */
@@ -75,7 +77,9 @@ public final class ItemDtos {
              */
             java.util.Map<String, Object> ext,
             /** 位置（工作区/目录路径，自由文本）；与组织、权限无关（V85）。 */
-            @Size(max = 200) String location) {
+            @Size(max = 200) String location,
+            /** 所属项目（V86）；为空表示未绑定项目。 */
+            Long projectId) {
     }
 
     /**

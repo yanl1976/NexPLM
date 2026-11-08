@@ -143,6 +143,8 @@ export interface ItemSaveReq {
   classId?: string | null
   /** 位置（工作区/目录路径，自由文本）；与组织、权限无关。 */
   location?: string | null
+  /** 所属项目（prj_project.id）；新物料必须绑定。 */
+  projectId?: string | null
   designAttr?: ItemDesignAttr | null
   /**
    * 客制字段（批次 G·方案 A）：键必须是 PdmItem 元数据里已定义的字段码，
@@ -769,6 +771,10 @@ export const itemApi = {
   },
   detail(id: string): Promise<ItemDetail> {
     return http.get<ItemDetail>(`/items/${id}`)
+  },
+  /** 项目下拉选项（绑定物料用）。 */
+  projectOptions(): Promise<Array<{ id: string; code: string; name: string }>> {
+    return http.get<Array<{ id: string; code: string; name: string }>>('/items/project-options')
   },
   /** 编码预览（不消耗流水）：选分类后显示将生成的编码。 */
   previewCode(params: { classId?: string; itemType?: string; dwgNo?: string }): Promise<CodePreview> {

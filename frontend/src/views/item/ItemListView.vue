@@ -273,8 +273,26 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="项目" required>
+              <el-select
+                v-model="form.projectId"
+                filterable
+                clearable
+                placeholder="新物料必须绑定项目"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="project in projectOptions"
+                  :key="project.id"
+                  :label="`${project.code} ${project.name}`"
+                  :value="String(project.id)"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
             <el-form-item label="位置">
-              <el-input v-model="form.location" placeholder="如 个人空间/2026/电气" clearable />
+              <el-input v-model="form.location" placeholder="绑定项目后自动生成" disabled />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -832,6 +850,7 @@ const form = reactive<ItemSaveReq & { designAttr: ItemDesignAttr }>({
   remark: '',
   classId: null,
   location: '',
+  projectId: null,
   designAttr: emptyDesignAttr()
 })
 
@@ -855,6 +874,26 @@ function toSelectableClassTree(nodes: ItemClassNode[]): SelectableClassNode[] {
 }
 
 const classTree = ref<SelectableClassNode[]>([])
+const projectOptions = ref<Array<{ id: string; code: string; name: string }>>([])
+
+async function loadProjectOptions(): Promise<void> {
+  try {
+    projectOptions.value = await itemApi.projectOptions()
+  } catch {
+    projectOptions.value = []
+  }
+}
+
+// 绑定项目后，位置按「个人空间/{项目编码}/物料」自动生成
+watch(
+  () => form.projectId,
+  (id) => {
+    const hit = projectOptions.value.find((item) => String(item.id) === String(id))
+    if (hit) {
+      form.location = `个人空间/${hit.code}/物料`
+    }
+  }
+)
 const codePreview = ref<CodePreview | null>(null)
 const previewLoading = ref(false)
 let previewTimer: ReturnType<typeof setTimeout> | null = null
@@ -1131,6 +1170,7 @@ function openCreate(): void {
   form.remark = ''
   form.classId = null
   form.location = ''
+  form.projectId = null
   editClassify.value = null
   form.designAttr = emptyDesignAttr()
   // 新建：客制字段清空（布尔一律「未设置」，不预置 false）
@@ -1546,6 +1586,7 @@ onMounted(() => {
   loadCustomFields()
   // 分类树：新建时选分类即可实时预览编码
   loadClassTree()
+  loadProjectOptions()
 })
 </script>
 

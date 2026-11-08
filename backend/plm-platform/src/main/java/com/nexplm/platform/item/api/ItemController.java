@@ -69,6 +69,13 @@ public class ItemController {
 
     // ------------------------------------------------------------ 列表与详情
 
+    @Operation(summary = "项目下拉选项（绑定物料用）")
+    @GetMapping("/project-options")
+    @PreAuthorize("hasAuthority('pse.item.read')")
+    public Result<List<java.util.Map<String, Object>>> projectOptions() {
+        return Result.ok(itemService.projectOptions());
+    }
+
     @Operation(summary = "编码预览（不消耗流水）：新建表单选完分类后显示将生成的编码")
     @GetMapping("/code-preview")
     @PreAuthorize("hasAuthority('pse.item.read')")

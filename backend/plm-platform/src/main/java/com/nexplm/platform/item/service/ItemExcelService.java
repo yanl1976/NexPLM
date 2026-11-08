@@ -323,6 +323,8 @@ public class ItemExcelService {
                     // Excel 导入不含客制字段（模板列固定），保留既有 ext_json
                     null,
                     // Excel 导入不含位置
+                    null,
+                    // Excel 导入不含项目
                     null);
         }
 

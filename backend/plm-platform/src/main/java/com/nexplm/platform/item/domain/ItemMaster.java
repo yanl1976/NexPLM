@@ -21,6 +21,8 @@ public class ItemMaster {
     private Long classId;
     /** 位置（工作区/目录路径，自由文本；与组织/权限无关，V85）。 */
     private String location;
+    /** 所属项目（prj_project.id；V86）。 */
+    private Long projectId;
     private String itemType;
     private String specification;
     private String material;

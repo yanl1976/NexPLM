@@ -292,7 +292,8 @@ public class ItemService {
                 object.getUpdatedBy(), names.get(object.getUpdatedBy()), object.getReleasedAt(),
                 object.getCreatedAt(), object.getUpdatedAt(),
                 designAttr(id), checkoutInfo(id), ext,
-                master == null ? null : master.getLocation());
+                master == null ? null : master.getLocation(),
+                master == null ? null : master.getProjectId());
     }
 
     /** 设计属性（旧系统 PSEBASEFORM）；未填过时返回空对象而不是 null，前端表单绑定更稳。 */
@@ -469,6 +470,17 @@ public class ItemService {
         master.setObjectId(id);
         master.setClassId(req.classId());
         master.setLocation(trimToNull(req.location()));
+        master.setProjectId(req.projectId());
+        // 未手填位置时，按「个人空间/{项目编码}/物料」自动生成（V86）
+        if (master.getLocation() == null && req.projectId() != null) {
+            List<String> projectCodes = jdbcTemplate.queryForList(
+                    "SELECT code FROM prj_project WHERE id = ? AND deleted = false",
+                    String.class, req.projectId());
+            if (projectCodes.isEmpty()) {
+                throw BizException.of(ErrorCode.OBJ_NOT_FOUND, "项目不存在：" + req.projectId());
+            }
+            master.setLocation("个人空间/" + projectCodes.get(0) + "/物料");
+        }
         master.setItemType(itemType);
         master.setSpecification(trimToNull(req.specification()));
         master.setMaterial(trimToNull(req.material()));
@@ -955,6 +967,15 @@ public class ItemService {
             throw BizException.of(ErrorCode.COMMON_BAD_REQUEST,
                     "只能选择最末级（小类）分类，大类/中类不可用于取号");
         }
+    }
+
+    /** 项目下拉选项（新建物料绑定项目用，V86）。 */
+    public List<Map<String, Object>> projectOptions() {
+        return jdbcTemplate.queryForList("""
+                SELECT id, code, name FROM prj_project
+                 WHERE deleted = false
+                 ORDER BY code
+                """);
     }
 
     private String resolveCode(String code, String itemType, Long classId) {

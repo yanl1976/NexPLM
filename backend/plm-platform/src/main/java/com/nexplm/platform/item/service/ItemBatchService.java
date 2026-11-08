@@ -178,6 +178,8 @@ public class ItemBatchService {
                 // 批量改属性不碰客制字段：传 null 让服务端保留 ext_json 里既有值
                 null,
                 // 批量补丁不改位置
+                null,
+                // 批量补丁不改项目
                 null);
     }
 
