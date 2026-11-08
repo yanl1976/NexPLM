@@ -12,7 +12,7 @@
 - **证据**：`CodeMachine.js:1230-1273`；`CodingMaintenanceService.GeneratorMultiCodeWithCodeValuePath`
 - **现状**：`CodeRuleService.nextByPath` 一次只生成一个
 - **差异**：D1 缺批量
-- **处置**：新增 `nextByPath(path, scope, count)`；`code_issue` 批量落流水；状态：**待开发**
+- **处置**：新增 `nextByPath(path, scope, count)`；`code_issue` 批量落流水；状态：**已对齐**（EXP-20261108-56，`POST /system/coding/generate`）
 
 ## CODE-02 只算路径（不占号）
 
@@ -28,7 +28,7 @@
 - **证据**：`CodeMachine.js:1247-1266`；`CLASSIFYCLASS.CLASSCODEPATH` 实测 4 段 16hex
 - **现状**：`normalizeCodePath` 只校验种类/码值/`*`/段数，**没有占用校验**
 - **差异**：D3
-- **处置**：给 `normalizeCodePath` 加"同一 `code_path` 是否已被其他分类占用"检查；状态：**待开发**
+- **处置**：给 `normalizeCodePath` 加"同一 `code_path` 是否已被其他分类占用"检查；状态：**已对齐**（EXP-20261108-56，冲突 409）
 
 ## CODE-04 编码状态（换码失效）
 
@@ -36,7 +36,7 @@
 - **证据**：`EditItem.js:148-150`（`SetCodeState({State:"LoseEfficacy"})`）
 - **现状**：`code_issue` 无状态字段
 - **差异**：D4
-- **处置**：`V83` 给 `code_issue` 加 `state`（ACTIVE/LOSE_EFFICACY）+ 换码接口；状态：**待开发**
+- **处置**：`V84` 给 `code_issue` 加 `state`（ACTIVE/LOSE_EFFICACY）+ 换码接口；状态：**已对齐**（EXP-20261108-56，`PUT /items/{id}/code`）
 
 ## CODE-05 编码重复检查
 
@@ -44,7 +44,7 @@
 - **证据**：`CreateItem.js:67-69`、`185-194`
 - **现状**：仅 DB 唯一索引（`object_type + code`），无前端即时校验
 - **差异**：D5
-- **处置**：`GET /items/code-exists?code=`；表单失焦提示；状态：**待开发**
+- **处置**：`GET /items/code-exists?code=`；表单失焦提示；状态：**已对齐**（接口已交付，表单失焦提示待接）
 
 ## CODE-06 流水初始码
 
@@ -52,7 +52,7 @@
 - **证据**：`CodeMachine.js:281-289`
 - **现状**：`code_sequence` 只能从 1 开始
 - **差异**：D6
-- **处置**：加 `PUT /system/coding/sequences`（设起始值，仅当当前为 0）；状态：**待开发**
+- **处置**：加 `PUT /system/coding/sequences`（设起始值，仅当当前未发号）；状态：**已对齐**（EXP-20261108-59）
 
 ## CODE-07 编码 → 反查分类 → 属性默认值
 
@@ -76,11 +76,11 @@
 
 | 编号 | 主题 | 差异 | 状态 |
 |---|---|---|---|
-| CODE-01 | 批量取号 | D1 | 待开发 |
+| CODE-01 | 批量取号 | D1 | 已对齐（EXP-56） |
 | CODE-02 | 只算路径 | D2 | 待开发 |
-| CODE-03 | 路径格式/占用 | D3 | 待开发 |
-| CODE-04 | 编码状态 | D4 | 待开发 |
-| CODE-05 | 重复检查 | D5 | 待开发 |
-| CODE-06 | 初始码 | D6 | 待开发 |
+| CODE-03 | 路径格式/占用 | D3 | 已对齐（占用校验；16hex 格式仍待） |
+| CODE-04 | 编码状态 | D4 | 已对齐（EXP-56） |
+| CODE-05 | 重复检查 | D5 | 已对齐（接口） |
+| CODE-06 | 初始码 | D6 | 已对齐（EXP-59） |
 | CODE-07 | 反查分类 | D7 | 待开发 |
 | CODE-08 | 长度约束 | D8 | 待开发 |
