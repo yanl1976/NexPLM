@@ -41,6 +41,7 @@
           router
           class="menu"
         >
+          <!-- 固定：个人门户、工作空间 -->
           <el-menu-item index="/">
             <el-icon><HomeFilled /></el-icon>
             <template #title>个人门户</template>
@@ -49,6 +50,8 @@
             <el-icon><Document /></el-icon>
             <template #title>工作空间</template>
           </el-menu-item>
+
+          <!-- 日常工作：个人、图文档、零部件、流程、变更、项目、工艺、质量、供应商 -->
           <el-sub-menu index="/my">
             <template #title>
               <el-icon><Star /></el-icon>
@@ -59,37 +62,6 @@
             <el-menu-item index="/my/recent">最近访问</el-menu-item>
             <el-menu-item index="/my/search">高级查询</el-menu-item>
             <el-menu-item index="/my/messages">站内消息</el-menu-item>
-          </el-sub-menu>
-          <el-menu-item v-if="canReadDashboard" index="/report/dashboard">
-            <el-icon><DataAnalysis /></el-icon>
-            <template #title>统计看板</template>
-          </el-menu-item>
-          <el-menu-item v-if="canReadBoard" index="/report/boards">
-            <el-icon><Grid /></el-icon>
-            <template #title>自定义看板</template>
-          </el-menu-item>
-          <el-menu-item v-if="canReadReport" index="/report/templates">
-            <el-icon><Document /></el-icon>
-            <template #title>报表管理</template>
-          </el-menu-item>
-          <el-sub-menu index="/system">
-            <template #title>
-              <el-icon><Setting /></el-icon>
-              <span>系统管理</span>
-            </template>
-            <el-menu-item index="/system/org">组织架构</el-menu-item>
-            <el-menu-item index="/system/user">用户管理</el-menu-item>
-            <el-menu-item index="/system/role">角色与授权</el-menu-item>
-            <el-menu-item index="/system/meta">元数据建模</el-menu-item>
-            <el-menu-item index="/system/security">安全策略</el-menu-item>
-            <el-menu-item index="/system/sso">单点登录</el-menu-item>
-            <el-menu-item index="/system/lifecycle">生命周期</el-menu-item>
-            <el-menu-item index="/system/coding">编码管理</el-menu-item>
-            <el-menu-item v-if="canReadNotify" index="/system/notify">通知通道</el-menu-item>
-            <el-menu-item v-if="canReadSession" index="/system/session">在线用户</el-menu-item>
-            <el-menu-item v-if="canReadBroadcast" index="/system/broadcast">系统广播</el-menu-item>
-            <el-menu-item v-if="canReadLog" index="/system/log">运行日志</el-menu-item>
-            <el-menu-item v-if="canReadThreeRole" index="/system/three-role">三员管理</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="/doc-center">
             <template #title>
@@ -121,6 +93,17 @@
             <el-icon><Refresh /></el-icon>
             <template #title>变更管理</template>
           </el-menu-item>
+          <el-sub-menu index="/project">
+            <template #title>
+              <el-icon><Calendar /></el-icon>
+              <span>项目管理</span>
+            </template>
+            <el-menu-item index="/project">项目列表</el-menu-item>
+            <el-menu-item index="/project/portal">项目门户</el-menu-item>
+            <el-menu-item index="/project/my-tasks">我的任务</el-menu-item>
+            <el-menu-item index="/project/my-timesheets">我的工时</el-menu-item>
+            <el-menu-item index="/project/templates">项目模板</el-menu-item>
+          </el-sub-menu>
           <el-sub-menu index="/capp">
             <template #title>
               <el-icon><Operation /></el-icon>
@@ -136,17 +119,6 @@
             <el-menu-item index="/capp/volume">工艺成册</el-menu-item>
             <el-menu-item index="/capp/quality">质量规划</el-menu-item>
             <el-menu-item index="/capp/dispatch">ERP下发（预留）</el-menu-item>
-          </el-sub-menu>
-          <el-sub-menu index="/project">
-            <template #title>
-              <el-icon><Calendar /></el-icon>
-              <span>项目管理</span>
-            </template>
-            <el-menu-item index="/project">项目列表</el-menu-item>
-            <el-menu-item index="/project/portal">项目门户</el-menu-item>
-            <el-menu-item index="/project/my-tasks">我的任务</el-menu-item>
-            <el-menu-item index="/project/my-timesheets">我的工时</el-menu-item>
-            <el-menu-item index="/project/templates">项目模板</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="/quality">
             <template #title>
@@ -167,6 +139,41 @@
             </template>
             <el-menu-item index="/sup/suppliers">供应商主数据</el-menu-item>
           </el-sub-menu>
+
+          <!-- 分析报表 -->
+          <el-menu-item v-if="canReadDashboard" index="/report/dashboard">
+            <el-icon><DataAnalysis /></el-icon>
+            <template #title>统计看板</template>
+          </el-menu-item>
+          <el-menu-item v-if="canReadBoard" index="/report/boards">
+            <el-icon><Grid /></el-icon>
+            <template #title>自定义看板</template>
+          </el-menu-item>
+          <el-menu-item v-if="canReadReport" index="/report/templates">
+            <el-icon><Document /></el-icon>
+            <template #title>报表管理</template>
+          </el-menu-item>
+
+          <!-- 管理 / 设置：后移 -->
+          <el-sub-menu index="/system">
+            <template #title>
+              <el-icon><Setting /></el-icon>
+              <span>系统管理</span>
+            </template>
+            <el-menu-item index="/system/org">组织架构</el-menu-item>
+            <el-menu-item index="/system/user">用户管理</el-menu-item>
+            <el-menu-item index="/system/role">角色与授权</el-menu-item>
+            <el-menu-item index="/system/meta">元数据建模</el-menu-item>
+            <el-menu-item index="/system/security">安全策略</el-menu-item>
+            <el-menu-item index="/system/sso">单点登录</el-menu-item>
+            <el-menu-item index="/system/lifecycle">生命周期</el-menu-item>
+            <el-menu-item index="/system/coding">编码管理</el-menu-item>
+            <el-menu-item v-if="canReadNotify" index="/system/notify">通知通道</el-menu-item>
+            <el-menu-item v-if="canReadSession" index="/system/session">在线用户</el-menu-item>
+            <el-menu-item v-if="canReadBroadcast" index="/system/broadcast">系统广播</el-menu-item>
+            <el-menu-item v-if="canReadLog" index="/system/log">运行日志</el-menu-item>
+            <el-menu-item v-if="canReadThreeRole" index="/system/three-role">三员管理</el-menu-item>
+          </el-sub-menu>
           <el-sub-menu index="/itg">
             <template #title>
               <el-icon><Connection /></el-icon>
@@ -174,7 +181,7 @@
             </template>
             <el-menu-item index="/itg">端点 / 映射 / 任务</el-menu-item>
             <el-menu-item index="/itg/erp-mapping">ERP 字段映射</el-menu-item>
-            </el-sub-menu>
+          </el-sub-menu>
         </el-menu>
       </el-aside>
 
