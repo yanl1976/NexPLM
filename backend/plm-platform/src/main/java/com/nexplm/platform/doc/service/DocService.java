@@ -209,12 +209,18 @@ public class DocService {
     public PageResult<DocDtos.DocSummary> page(int page, int size, String keyword,
                                                String docType, String lifecycleState, Long classId,
                                                String fullText) {
-        return page(page, size, keyword, docType, lifecycleState, classId, fullText, null);
+        return page(page, size, keyword, docType, lifecycleState, classId, fullText, null, null);
     }
 
     public PageResult<DocDtos.DocSummary> page(int page, int size, String keyword,
                                                String docType, String lifecycleState, Long classId,
                                                String fullText, String fileExt) {
+        return page(page, size, keyword, docType, lifecycleState, classId, fullText, fileExt, null);
+    }
+
+    public PageResult<DocDtos.DocSummary> page(int page, int size, String keyword,
+                                               String docType, String lifecycleState, Long classId,
+                                               String fullText, String fileExt, String excludeFileExt) {
         int pageNo = Math.max(1, page);
         int pageSize = Math.min(Math.max(1, size), 200);
         LambdaQueryWrapper<PlmObject> wrapper = new LambdaQueryWrapper<PlmObject>()
@@ -250,6 +256,11 @@ public class DocService {
         if (fileExt != null && !fileExt.isBlank()) {
             // 图纸库：doc_master.file_ext = 'dwg'
             wrapper.apply("id IN (SELECT object_id FROM doc_master WHERE file_ext = {0})", fileExt.trim());
+        }
+        if (excludeFileExt != null && !excludeFileExt.isBlank()) {
+            // 文档库：排除图纸（file_ext='dwg'）
+            wrapper.apply("id NOT IN (SELECT object_id FROM doc_master WHERE file_ext = {0})",
+                    excludeFileExt.trim());
         }
         scopeApplier.apply(wrapper, PlmObject::getCompanyId, PlmObject::getOrgId, PlmObject::getOwnerId);
 

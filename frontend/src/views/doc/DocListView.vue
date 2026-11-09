@@ -426,7 +426,9 @@ async function load(): Promise<void> {
       q: query.q || undefined,
       docType: query.docType || undefined,
       lifecycleState: query.lifecycleState || undefined,
-      classId: query.classId || undefined
+      classId: query.classId || undefined,
+      // 文档库只显示文档：排除图纸（file_ext='dwg'）
+      excludeFileExt: 'dwg'
     })
     rows.value = page.items
     total.value = page.total
